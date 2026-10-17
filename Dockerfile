@@ -2,9 +2,7 @@ FROM node:24-alpine
 WORKDIR /app
 ENV NODE_ENV=production HOST=0.0.0.0 PORT=3000 DATA_DIR=/app/.data DROP_TO_NODE=true
 COPY --chown=node:node package.json package-lock.json ./
-RUN --mount=type=secret,id=build_ca \
-    if [ -f /run/secrets/build_ca ]; then export NODE_EXTRA_CA_CERTS=/run/secrets/build_ca; fi; \
-    npm ci --ignore-scripts --include=dev --no-audit && mkdir .data && chown node:node .data
+RUN npm ci --ignore-scripts --include=dev --no-audit && mkdir .data && chown node:node .data
 COPY --chown=node:node src ./src
 COPY --chown=node:node public ./public
 RUN npm run build && npm prune --omit=dev --ignore-scripts --offline --no-audit
