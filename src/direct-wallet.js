@@ -5,6 +5,7 @@ import {DEFAULT_OWNER} from './security.js';
 import {SOL,DEFAULTS} from './engine.js';
 import {rankMarket} from './strategy.js';
 import {LIVE_LIMITS} from './solana.js';
+import {availableProfitLamports,PROFIT_RECIPIENT} from './profit.js';
 
 const hash=tx=>createHash('sha256').update(tx.message.serialize()).digest('hex');
 export function verifyOwnerTransaction(encoded,owner=DEFAULT_OWNER){
@@ -20,20 +21,23 @@ export function verifyOwnerTransaction(encoded,owner=DEFAULT_OWNER){
 // This service never possesses a wallet key or signs. The owner's wallet signs in the browser.
 export class DirectWallet{
  constructor(execution){this.execution=execution;this.owner=DEFAULT_OWNER;this.intent=null;this.watched=[];}
- configure({heliusKey}){
-  if(heliusKey&&(typeof heliusKey!=='string'||!/^[\x21-\x7e]{8,256}$/.test(heliusKey)))throw Error('Helius API key không hợp lệ.');
-  if(heliusKey)this.execution.configureHelius(heliusKey);
-  return {walletMode:'owner',rpcProvider:this.execution.provider,swapProvider:'PumpSwap',swapReady:true,signingMode:'owner-wallet'};
- }
+ configure(){return {walletMode:'owner',rpcProvider:this.execution.provider,swapProvider:'PumpSwap',swapReady:true,signingMode:'owner-wallet',unattendedSigning:false,profitRecipient:PROFIT_RECIPIENT};}
  async status(){
   try{await this.execution.network();const balanceSol=await this.execution.balance(this.owner),tokenBalances={};
    if(this.watched.length)for(const a of await this.execution.holdings(this.owner)){const d=a.account.data;if(d.length>=165){const mint=new PublicKey(d.subarray(0,32)).toBase58();if(this.watched.includes(mint))tokenBalances[mint]=(BigInt(tokenBalances[mint]??'0')+d.readBigUInt64LE(64)).toString();}}
    return {...this.configure({}),publicKey:this.owner,balanceSol,tokenBalances,lastSyncAt:Date.now()};}
-  catch{throw Error('Chưa đọc được số dư ví chủ. Kiểm tra Helius/RPC rồi thử lại.');}
+  catch{throw Error('Chưa đọc được số dư ví chủ. Các RPC công khai có thể đang giới hạn lượt gọi; bấm thử lại kết nối.');}
  }
  async prepare(input,feed){
   if(this.intent){if(this.intent.signature||await this.execution.height()<=this.intent.lastValidBlockHeight)throw Error('Còn giao dịch trước cần ký hoặc đối soát.');this.intent=null;}
-  if(feed.error||!feed.updatedAt||Date.now()-feed.updatedAt>90000||!Number.isFinite(feed.solUsd)||feed.solUsd<=0)throw Error('Chờ dữ liệu thị trường mới.');
+  if(input.side==='PROFIT'){
+   const balance=await this.execution.balance(this.owner),allowed=availableProfitLamports(input.profitState??{},balance);
+   if(!allowed||String(input.amount)!==String(allowed)||input.recipient!==PROFIT_RECIPIENT)throw Error('Chưa có đủ lãi đã chốt sau dự phòng vốn và phí.');
+   const prepared=await this.execution.prepareProfit(this.owner,allowed,Math.max(.05,input.profitState.initialSol-(input.profitState.remainingCostSol??0))),tx=VersionedTransaction.deserialize(prepared.bytes);
+   this.intent={id:randomBytes(16).toString('hex'),owner:this.owner,side:'PROFIT',symbol:'SOL',recipient:PROFIT_RECIPIENT,amount:String(allowed),reason:'realized-profit',lastValidBlockHeight:prepared.lastValidBlockHeight,messageHash:hash(tx),at:Date.now()};
+   return {intent:this.intent,transaction:Buffer.from(prepared.bytes).toString('base64')};
+  }
+  if(feed.error||!feed.updatedAt||Date.now()-feed.updatedAt>90000||feed.updatedAt>Date.now()||!Number.isFinite(feed.solUsd)||feed.solUsd<=0)throw Error('Chờ dữ liệu thị trường mới.');
   const side=input.side;if(!['BUY','SELL'].includes(side))throw Error('Loại lệnh không hợp lệ.');
   const market=feed.markets.find(m=>m.mint===input.mint);if(!market)throw Error('Token chưa có dữ liệu trong tập quét.');
   const holdings=await this.execution.holdings(this.owner);
@@ -71,8 +75,8 @@ export class DirectWallet{
  cancel(id){if(this.intent?.id===id){if(this.intent.signature)throw Error('Giao dịch đã gửi; phải đối soát.');this.intent=null;}return {cancelled:true};}
  async reconcile({intent,transaction}){
   const signed=verifyOwnerTransaction(transaction,this.owner);
-  if(!intent||intent.owner!==this.owner||intent.messageHash!==signed.messageHash||!['BUY','SELL'].includes(intent.side)||!Number.isFinite(intent.solUsd)||intent.solUsd<=0||!Number.isSafeInteger(intent.lastValidBlockHeight))throw Error('Nhật ký chờ không hợp lệ.');
-  new PublicKey(intent.mint);
+  if(!intent||intent.owner!==this.owner||intent.messageHash!==signed.messageHash||!['BUY','SELL','PROFIT'].includes(intent.side)||(intent.side!=='PROFIT'&&(!Number.isFinite(intent.solUsd)||intent.solUsd<=0))||!Number.isSafeInteger(intent.lastValidBlockHeight))throw Error('Nhật ký chờ không hợp lệ.');
+  if(intent.side!=='PROFIT')new PublicKey(intent.mint);else if(intent.recipient!==PROFIT_RECIPIENT||!/^\d{1,9}$/.test(intent.amount)||Number(intent.amount)<1000000||Number(intent.amount)>300000000)throw Error('Nhật ký chuyển lãi không hợp lệ.');
   const status=await this.execution.status(signed.signature);
   const clear=()=>{if(this.intent?.id===intent.id)this.intent=null;};
   if(status?.err){const tx=await this.execution.rpc.getParsedTransaction(signed.signature,{maxSupportedTransactionVersion:0,commitment:'confirmed'});if(!tx)return {status:'pending'};clear();return {status:'failed',signature:signed.signature,feeSol:tx.meta.fee/1e9};}
@@ -80,10 +84,14 @@ export class DirectWallet{
    if(!status&&await this.execution.height()>intent.lastValidBlockHeight){clear();return {status:'expired',signature:signed.signature};}
    return {status:'pending',signature:signed.signature};
   }
+  if(intent.side==='PROFIT'){
+   const receipt=await this.execution.profitReceipt(signed.signature,this.owner,intent.amount);if(!receipt)return {status:'pending'};
+   clear();return {status:'confirmed',signature:signed.signature,...receipt};
+  }
   const receipt=await this.execution.receipt(signed.signature,this.owner,intent.mint);if(!receipt)return {status:'pending'};
   if(!Number.isInteger(receipt.decimals)||receipt.decimals<0||receipt.decimals>9)throw Error('Không xác minh được decimals.');
   if(intent.side==='BUY'&&(intent.amount!=='30000000'||receipt.tokenDelta<=0n||receipt.solDelta>=0||-receipt.solDelta>LIVE_LIMITS.orderSol+.005))throw Error('Receipt mua không khớp giới hạn.');
   if(intent.side==='SELL'&&(receipt.tokenDelta!==-BigInt(intent.amount)||receipt.solDelta<=0))throw Error('Receipt bán không khớp lượng đã ký.');
-  clear();return {status:'confirmed',signature:signed.signature,slot:receipt.slot,solDelta:receipt.solDelta,tokenDelta:receipt.tokenDelta.toString(),decimals:receipt.decimals};
+  clear();return {status:'confirmed',signature:signed.signature,slot:receipt.slot,solDelta:receipt.solDelta,tokenDelta:receipt.tokenDelta.toString(),decimals:receipt.decimals,feeSol:receipt.feeSol??null};
  }
 }

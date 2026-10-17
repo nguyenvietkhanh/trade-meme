@@ -1,3 +1,4 @@
+import {SCREENER_RULES as R} from './desk-rules.js';
 /** Auditable screener/score, not a trained model or a probability of profit. */
 const clamp=(v,min,max)=>Math.min(max,Math.max(min,v));
 export function rankMarket(m,s,now=Date.now()){
@@ -5,9 +6,9 @@ export function rankMarket(m,s,now=Date.now()){
  const fresh=Number.isFinite(m.updatedAt)&&now-m.updatedAt<=s.maxPriceAgeMs&&now>=m.updatedAt;
  const liquid=Number.isFinite(m.liquidityUsd)&&m.liquidityUsd>=s.minLiquidityUsd;
  const volume=Number.isFinite(m.volume24hUsd)&&m.volume24hUsd>=s.minVolume24hUsd;
- const momentum=Number.isFinite(m.change5mPct)&&m.change5mPct>=1&&m.change5mPct<=12;
- const activity=Number.isFinite(m.buys5m)&&m.buys5m>=10;
- const pressure=Number.isFinite(m.sells5m)&&m.sells5m>=0&&m.buys5m>m.sells5m*1.3;
+ const momentum=Number.isFinite(m.change5mPct)&&m.change5mPct>=R.minMomentumPct&&m.change5mPct<=R.maxMomentumPct;
+ const activity=Number.isFinite(m.buys5m)&&m.buys5m>=R.minBuys;
+ const pressure=Number.isFinite(m.sells5m)&&m.sells5m>=0&&m.buys5m>m.sells5m*R.minBuySellRatio;
  const aged=Number.isFinite(m.pairCreatedAt)&&m.pairCreatedAt>0&&now-m.pairCreatedAt>=s.minPairAgeMs;
  const valuation=Number.isFinite(m.valuationUsd)&&m.valuationUsd>=s.minMarketCapUsd&&m.valuationUsd<=s.maxMarketCapUsd;
  const sustainable=valuation&&m.liquidityUsd/m.valuationUsd>=.05;
@@ -15,10 +16,12 @@ export function rankMarket(m,s,now=Date.now()){
  const profile=m.hasProfile===true;
  const v5=m.volume5mUsd,v1=m.volume1hUsd;
  const acceleration=Number.isFinite(v5)&&Number.isFinite(v1)&&v1>v5?v5/((v1-v5)/11):0;
- const activeVolume=v5>=1000&&acceleration>=1.2;
- const trend=Number.isFinite(m.change1hPct)&&m.change1hPct>0&&m.change1hPct<=80;
- const collapse=Number.isFinite(m.change6hPct)&&m.change6hPct< -30;
- const extended=Number.isFinite(m.change24hPct)&&m.change24hPct>500;
+ const activeVolume=v5>=R.minVolume5mUsd&&acceleration>=R.minAcceleration;
+ const trend=Number.isFinite(m.change1hPct)&&m.change1hPct>0&&m.change1hPct<=R.maxHourGainPct;
+ const collapse=Number.isFinite(m.change6hPct)&&m.change6hPct<R.minSixHourChangePct;
+ const extended=Number.isFinite(m.change24hPct)&&m.change24hPct>R.maxDayGainPct;
+ if(!(m.priceUsd>0&&Number.isFinite(m.priceUsd)))reasons.push('Thiếu giá token hợp lệ');
+ if(!(v5>=0&&v1>=v5&&m.volume24hUsd>=v1))reasons.push('Volume giữa các khung thời gian không nhất quán');
  if(!fresh)reasons.push('Giá cũ hoặc thiếu');
  if(!dex)reasons.push('Không phải pool PumpSwap');
  if(!profile)reasons.push('Thiếu profile token');
@@ -38,6 +41,6 @@ export function rankMarket(m,s,now=Date.now()){
  const buyShare=m.buys5m/Math.max(1,m.buys5m+m.sells5m);
  const parts={depth:clamp((m.liquidityUsd||0)/50000,0,1)*15,activity:clamp((v5||0)/10000,0,1)*10,momentum:momentum?(m.change5mPct<=6?15:clamp(15-(m.change5mPct-6)*1.5,0,15)):0,buyPressure:clamp((buyShare-.5)/.3,0,1)*15,acceleration:clamp(acceleration/3,0,1)*15,trend:trend?(m.change1hPct<=40?10:5):0,confirmation:m.signalConfirmed?10:0,profile:profile?5:0,valuation:valuation?(m.valuationSource==='marketCap'?5:2):0};
  const score=Math.round(Object.values(parts).reduce((a,b)=>a+b,0));
- if(score<70)reasons.push('Điểm tổng dưới 70/100');
+ if(score<R.minScore)reasons.push('Điểm tổng dưới 70/100');
  return {score,eligible:reasons.length===0,reasons,scoreParts:parts,volumeAcceleration:acceleration,buyShare};
 }

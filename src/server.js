@@ -10,6 +10,8 @@ import {observeMarkets} from './signals.js';
 import {OwnerAuth,DEFAULT_OWNER} from './security.js';
 import {SolanaExecution} from './solana.js';
 import {DirectWallet} from './direct-wallet.js';
+import {STRATEGY_VERSION} from './desk-rules.js';
+import {OwnerAgent,signerRequestAllowed} from './owner-agent.js';
 import {initializeStorage} from './storage.js';
 
 // Railway may use the Docker/npm entry point instead of the configured wrapper.
@@ -38,6 +40,8 @@ const expectedOrigin=process.env.PUBLIC_ORIGIN??(onRailway?'https://'+(process.e
 const auth=new OwnerAuth({owner:DEFAULT_OWNER,origin:expectedOrigin});
 const execution=new SolanaExecution();
 const direct=new DirectWallet(execution);
+const ownerAgent=liveOnly&&process.env.SIGNER_MODE!=='disabled'?new OwnerAgent(dataDir,direct,execution):null;
+await ownerAgent?.load();
 let feed={markets:[],solUsd:null,updatedAt:null,error:null};
 let refreshing=false;
 async function save(){await writeFile(statePath+'.tmp',JSON.stringify(state,null,2),{mode:0o600});await rename(statePath+'.tmp',statePath);}
@@ -47,7 +51,7 @@ function serial(fn){const task=pending.then(fn);pending=task.catch(()=>{});retur
 async function refresh(){
   if(refreshing)return;refreshing=true;
   try{
-    const latest=await loadMarkets([...new Set([...state.positions.map(p=>p.mint),...direct.watched,...state.watchlist])]);
+    const latest=await loadMarkets([...new Set([...state.positions.map(p=>p.mint),...direct.watched,...(ownerAgent?.trackedMints()??[]),...state.watchlist])]);
     await serial(async()=>{latest.markets=observeMarkets(state,latest.markets);feed={...latest,error:null};
       if(liveOnly){
         state.lastEvaluationAt=Date.now();
@@ -64,19 +68,37 @@ function snapshot(req){
   const rankings=feed.markets.map(m=>({...m,...rankMarket(m,state.settings)})).sort((a,b)=>b.score-a.score);
   if(liveOnly){
     const authenticated=auth.authenticated(req);
-    const diagnostics={...diagnose({...state,running:false},feed,rankings),phase:authenticated?'owner-wallet':'owner-required',message:authenticated?'Ví chủ ký trực tiếp. Bật theo dõi để bot đề xuất lệnh; mỗi giao dịch cần xác nhận trong ví.':'Kết nối đúng ví chủ để đọc số dư và giao dịch trực tiếp.'};
+    const diagnostics={...diagnose({...state,running:false},feed,rankings),phase:authenticated?'owner-wallet':'owner-required',message:authenticated?ownerAgent?'Mở khóa bộ ký để bot tự giao dịch trên server; không chờ ký từng lệnh.':'Ví chủ ký trực tiếp. Mỗi giao dịch cần xác nhận trong ví.':'Kết nối đúng ví chủ để đọc số dư và giao dịch trực tiếp.'};
     return {mode:'live',walletMode:'owner',ownerAuthenticated:authenticated,readOnly:true,running:false,automationRequested:false,settings:DEFAULTS,rankings,diagnostics,feed,buildRevision:process.env.RAILWAY_GIT_COMMIT_SHA??'local',cashSol:null,equitySol:null,pnlSol:null,positions:[],trades:[],curve:[],events:[],watchlist:[],halted:null,peakEquity:null,maxDrawdownObservedPct:null,closedCount:0,winRate:null,decisionStats:state.decisionStats,decisions:state.decisions};
   }
   return {...state,rankings,diagnostics:diagnose(state,feed,rankings),buildRevision:process.env.RAILWAY_GIT_COMMIT_SHA??'local',mode:'paper',readOnly,feed,equitySol:feed.solUsd?value:null,pnlSol:feed.solUsd?value-state.settings.initialSol:null,winRate:closed.length?closed.filter(t=>(t.positionPnlSol??t.pnlSol)>0).length/closed.length:null,closedCount:closed.length};
 }
 function json(res,status,data){res.writeHead(status,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'});res.end(JSON.stringify(data));}
-async function body(req){const chunks=[];let size=0;for await(const c of req){size+=c.length;if(size>4096)throw Error('Yêu cầu quá lớn.');chunks.push(c);}return JSON.parse(Buffer.concat(chunks).toString('utf8')||'{}');}
+async function body(req,limit=4096){const chunks=[];let size=0;for await(const c of req){size+=c.length;if(size>limit)throw Error('Yêu cầu quá lớn.');chunks.push(c);}return JSON.parse(Buffer.concat(chunks).toString('utf8')||'{}');}
 const assets={'/spider.js':['spider.js','text/javascript'],'/wallet.js':['wallet.js','text/javascript'],'/':['index.html','text/html'],'/app.js':['app.js','text/javascript'],'/style.css':['style.css','text/css']};
 const server=http.createServer(async(req,res)=>{
   try{
     const url=new URL(req.url,'http://localhost');
-    if(url.pathname.startsWith('/api/auth/')||url.pathname.startsWith('/api/live/')||url.pathname.startsWith('/api/direct/')){
-      if(req.method==='GET'&&url.pathname==='/api/auth/status')return json(res,200,{owner:auth.owner,authenticated:auth.authenticated(req),walletMode:'owner'});
+    if(url.pathname.startsWith('/api/auth/')||url.pathname.startsWith('/api/live/')||url.pathname.startsWith('/api/direct/')||url.pathname.startsWith('/api/signer/')){
+      if(req.method==='GET'&&url.pathname==='/api/auth/status')return json(res,200,{owner:auth.owner,authenticated:auth.authenticated(req),walletMode:'owner',signerAvailable:!!ownerAgent,signerLocation:onRailway?'Railway':'local'});
+      if(url.pathname.startsWith('/api/signer/')){
+        if(!ownerAgent||!signerRequestAllowed(req,expectedOrigin,onRailway))return json(res,403,{error:'Bộ ký chỉ dùng trên Railway HTTPS hoặc localhost 127.0.0.1.'});
+        if(!auth.authenticated(req))return json(res,401,{error:'Cần xác thực đúng ví chủ để điều khiển bộ ký.'});
+        if(req.method==='GET'&&url.pathname==='/api/signer/status')return json(res,200,{...await ownerAgent.status(),storageMode:process.env.RAILWAY_VOLUME_MOUNT_PATH?'persistent-volume':onRailway?'ephemeral':'local-disk'});
+        if(req.method!=='POST'||!auth.sameOrigin(req))return json(res,403,{error:'Origin không hợp lệ.'});
+        if(['/api/signer/import','/api/signer/unlock'].includes(url.pathname))auth.limit(req.socket.remoteAddress??'unknown');
+        const input=await body(req,url.pathname==='/api/signer/restore'?2*1024*1024:4096);
+        if(url.pathname==='/api/signer/import'){try{await ownerAgent.serial(()=>ownerAgent.vault.importKey(input.secret,input.password));}finally{input.secret='';input.password='';}}
+        else if(url.pathname==='/api/signer/unlock'){try{await ownerAgent.serial(()=>ownerAgent.vault.unlock(input.password));}finally{input.password='';}}
+        else if(url.pathname==='/api/signer/enable'){if(input.confirm!=='ENABLE OWNER SIGNER')throw Error('Thiếu xác nhận bật bộ ký.');await ownerAgent.enable();}
+        else if(url.pathname==='/api/signer/pause')await ownerAgent.pause();
+        else if(url.pathname==='/api/signer/lock')await ownerAgent.pause(true);
+        else if(url.pathname==='/api/signer/close')await ownerAgent.close(input.mint,feed);
+        else if(url.pathname==='/api/signer/restore')await ownerAgent.restore(input.ledger);
+        else if(url.pathname==='/api/signer/export'){res.writeHead(200,{'Content-Type':'application/json','Cache-Control':'no-store'});return res.end(JSON.stringify(ownerAgent.state));}
+        else return json(res,404,{error:'Không tìm thấy thao tác bộ ký.'});
+        return json(res,200,{ok:true,vault:ownerAgent.vault.status()});
+      }
       if(req.method==='GET'&&url.pathname==='/api/direct/status'){
         if(!auth.authenticated(req))return json(res,401,{error:'Cần xác thực bằng ví chủ.'});
         return json(res,200,await direct.status());
@@ -100,6 +122,7 @@ const server=http.createServer(async(req,res)=>{
         if(!Array.isArray(input.mints)||input.mints.length>20||input.mints.some(m=>typeof m!=='string'||! /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(m)))throw Error('Danh sách token không hợp lệ.');
         const changed=direct.watched.join(',')!==input.mints.join(',');direct.watched=[...new Set(input.mints)];if(changed)setImmediate(refresh);return json(res,200,{watching:direct.watched.length});
       }
+      if(ownerAgent?.vault.exists&&['/api/direct/prepare','/api/direct/submit'].includes(url.pathname))return json(res,409,{error:'Bộ ký server đang quản lý ví; không tạo ngân sách hoặc lệnh từ tab khác.'});
       if(url.pathname==='/api/direct/prepare')return await serial(async()=>json(res,200,await direct.prepare(input,feed)));
       if(url.pathname==='/api/direct/submit')return await serial(async()=>json(res,200,await direct.submit(input)));
       if(url.pathname==='/api/direct/reconcile')return await serial(async()=>json(res,200,await direct.reconcile(input)));
@@ -107,7 +130,7 @@ const server=http.createServer(async(req,res)=>{
       return json(res,404,{error:'Không tìm thấy thao tác ví.'});
     }
     if(req.method==='GET'&&url.pathname==='/api/state')return json(res,200,snapshot(req));
-    if(req.method==='GET'&&url.pathname==='/api/health')return json(res,200,{status:'ok',mode:liveOnly?'live':'paper',swapProvider:liveOnly?'PumpSwap':null,signingMode:liveOnly?'owner-wallet':null,buildRevision:process.env.RAILWAY_GIT_COMMIT_SHA??'local',running:liveOnly?false:state.running,readOnly,marketReady:!!feed.updatedAt,marketFresh:!!feed.updatedAt&&!feed.error&&Date.now()-feed.updatedAt<90000});
+    if(req.method==='GET'&&url.pathname==='/api/health')return json(res,200,{status:'ok',mode:liveOnly?'live':'paper',rpcMode:'keyless',apiKeyRequired:false,unattendedSigningAvailable:!!ownerAgent,strategyVersion:STRATEGY_VERSION,swapProvider:liveOnly?'PumpSwap':null,signingMode:ownerAgent?'owner-agent':liveOnly?'owner-wallet':null,buildRevision:process.env.RAILWAY_GIT_COMMIT_SHA??'local',running:liveOnly?false:state.running,readOnly,marketReady:!!feed.updatedAt,marketFresh:!!feed.updatedAt&&!feed.error&&Date.now()-feed.updatedAt<90000});
     if(req.method==='GET'&&url.pathname==='/api/export'){
       if(liveOnly){if(!auth.authenticated(req))return json(res,401,{error:'Cần xác thực bằng ví chủ.'});return json(res,200,{mode:'live',walletMode:'owner',message:'Xuất lịch sử trong phần ví chủ trên trình duyệt đang giao dịch.'});}
       res.writeHead(200,{'Content-Type':'application/json','Content-Disposition':'attachment; filename="paper-trades.json"','Cache-Control':'no-store'});return res.end(JSON.stringify({mode:'paper',exportedAt:new Date().toISOString(),settings:state.settings,trades:state.trades},null,2));
@@ -152,6 +175,7 @@ const server=http.createServer(async(req,res)=>{
 });
 const host=process.env.HOST??(onRailway?'0.0.0.0':'127.0.0.1'),port=Number(process.env.PORT??3000);
 server.listen(port,host,()=>{if(!auth.origin)auth.origin=`http://127.0.0.1:${server.address().port}`;console.log(`Meme Desk listening on ${host}:${server.address().port} — ${liveOnly?'MAINNET / OWNER AUTH REQUIRED':'PAPER TEST WORKSPACE'}`);refresh();});
-const timer=setInterval(refresh,30000);
-async function shutdown(){clearInterval(timer);server.close();await serial(async()=>{state.running=false;await save();});process.exit(0);}
+const timer=setInterval(refresh,ownerAgent?5000:30000);
+const agentTimer=ownerAgent?setInterval(()=>ownerAgent.tick(feed),2000):null;
+async function shutdown(){clearInterval(timer);if(agentTimer)clearInterval(agentTimer);server.close();if(ownerAgent)await ownerAgent.pause(true);await serial(async()=>{state.running=false;await save();});process.exit(0);}
 process.on('SIGTERM',shutdown);process.on('SIGINT',shutdown);
