@@ -6,7 +6,10 @@ import {DEFAULTS,freshState,equity,event,buy,sell,tick} from './engine.js';
 import {loadMarkets} from './market.js';
 import {rankMarket} from './strategy.js';
 
-const readOnly=process.env.PUBLIC_READ_ONLY==='true';
+// Railway may use the Docker/npm entry point instead of the configured wrapper.
+// Apply the public paper-demo policy here so every entry point behaves the same.
+const onRailway=Boolean(process.env.RAILWAY_SERVICE_ID||process.env.RAILWAY_ENVIRONMENT_ID);
+const readOnly=onRailway||process.env.PUBLIC_READ_ONLY==='true';
 const root=fileURLToPath(new URL('../',import.meta.url));
 const dataDir=process.env.DATA_DIR??path.join(root,'.data');
 await mkdir(dataDir,{recursive:true});
@@ -17,7 +20,7 @@ catch(e) {if(e.code!=='ENOENT') throw e;state=freshState();}
 // Restart pauses until a fresh feed arrives; explicitly requested automation then resumes.
 state.running=false;
 state.automationRequested??=false;
-if(process.env.PAPER_AUTOSTART==='true')state.automationRequested=true;
+if(onRailway||process.env.PAPER_AUTOSTART==='true')state.automationRequested=true;
 state.settings={...DEFAULTS,...state.settings};
 state.strategy='autonomous';state.watchlist??=[];state.decisions??=[];
 state.decisionStats??={evaluated:0,bought:0,rejected:0};
@@ -47,7 +50,7 @@ const server=http.createServer(async(req,res)=>{
   try{
     const url=new URL(req.url,'http://localhost');
     if(req.method==='GET'&&url.pathname==='/api/state')return json(res,200,snapshot());
-    if(req.method==='GET'&&url.pathname==='/api/health')return json(res,200,{status:'ok',mode:'paper',marketReady:!!feed.updatedAt,marketFresh:!!feed.updatedAt&&!feed.error&&Date.now()-feed.updatedAt<90000});
+    if(req.method==='GET'&&url.pathname==='/api/health')return json(res,200,{status:'ok',mode:'paper',running:state.running,readOnly,marketReady:!!feed.updatedAt,marketFresh:!!feed.updatedAt&&!feed.error&&Date.now()-feed.updatedAt<90000});
     if(req.method==='GET'&&url.pathname==='/api/export'){
       res.writeHead(200,{'Content-Type':'application/json','Content-Disposition':'attachment; filename="paper-trades.json"','Cache-Control':'no-store'});return res.end(JSON.stringify({mode:'paper',exportedAt:new Date().toISOString(),settings:state.settings,trades:state.trades},null,2));
     }
@@ -90,7 +93,7 @@ const server=http.createServer(async(req,res)=>{
     json(res,404,{error:'Không tìm thấy.'});
   }catch(e){json(res,400,{error:e.message});}
 });
-const host=process.env.HOST??'127.0.0.1',port=Number(process.env.PORT??3000);
+const host=process.env.HOST??(onRailway?'0.0.0.0':'127.0.0.1'),port=Number(process.env.PORT??3000);
 server.listen(port,host,()=>{console.log(`Meme Desk listening on ${host}:${server.address().port} — PAPER ONLY`);refresh();});
 const timer=setInterval(refresh,30000);
 async function shutdown(){clearInterval(timer);server.close();await serial(async()=>{state.running=false;await save();});process.exit(0);}

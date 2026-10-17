@@ -92,7 +92,7 @@ Chưa triển khai giao dịch mainnet. Cần đánh giá forward test, bổ sun
 
 ## Railway — demo công khai
 
-Repository có `railway.json`, dùng Dockerfile và chạy `src/railway.js`. Entry point này bind `0.0.0.0`, nhận `PORT` do Railway cấp, tự chạy paper trading sau khi lấy được giá mới, và khóa toàn bộ API điều khiển để khách truy cập chỉ xem dashboard. Không cần secret hoặc ví. Dùng Railway CLI đã đăng nhập:
+Repository có `railway.json`, dùng Dockerfile và chạy `src/railway.js`. Entry point này bind `0.0.0.0`, nhận `PORT` do Railway cấp, tự chạy paper trading sau khi lấy được giá mới, và khóa toàn bộ API điều khiển để khách truy cập chỉ xem dashboard. Server cũng tự nhận diện các biến nền tảng Railway, nên vẫn áp dụng đúng chế độ tự chạy và chỉ xem nếu Railway dùng lệnh npm/Docker mặc định thay cho entry point riêng; risk halt đã lưu vẫn được giữ. Không cần secret hoặc ví. Dùng Railway CLI đã đăng nhập:
 
 ```bash
 railway init --name meme-pilot
