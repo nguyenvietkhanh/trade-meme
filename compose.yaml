@@ -1,0 +1,16 @@
+services:
+  meme-pilot:
+    build: .
+    restart: unless-stopped
+    init: true
+    ports:
+      - "127.0.0.1:3000:3000"
+    volumes:
+      - paper-data:/app/.data
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+volumes:
+  paper-data:

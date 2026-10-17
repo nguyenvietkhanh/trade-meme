@@ -1,0 +1,18 @@
+# Linux systemd user service. Replace both /ABSOLUTE/PATH entries first.
+# Install in ~/.config/systemd/user/meme-pilot.service on your local machine.
+[Unit]
+Description=Meme Pilot paper trading dashboard
+After=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/ABSOLUTE/PATH/trade-meme
+# Use absolute Node 24+ path if installed through nvm/fnm.
+ExecStart=/ABSOLUTE/PATH/node --use-env-proxy --env-file-if-exists=.env src/server.js
+Restart=on-failure
+RestartSec=10
+TimeoutStopSec=20
+Environment=NODE_ENV=production
+
+[Install]
+WantedBy=default.target
