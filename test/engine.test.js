@@ -31,7 +31,7 @@ test('UTC day rollover resets daily baseline but never silently clears a halt',(
  const s=freshState(now);s.halted='risk';s.cashSol=.28;riskCheck(s,[],sol,now+86400000);close(s.dayStartEquity,.28);assert.equal(s.halted,'risk');
 });
 test('strategy selects momentum and rejects missing signal',()=>{
- const s=freshState(now);s.running=true;tick(s,[market({change5mPct:0})],sol,now);assert.equal(s.positions.length,0);
+ const s=freshState(now);s.running=true;tick(s,[market({signalConfirmed:false})],sol,now);assert.equal(s.positions.length,0);
  tick(s,[market()],sol,now+1);assert.equal(s.positions.length,1);assert.equal(s.trades[0].reason,'auto-score:100');
 });
 test('stale price never creates automatic entry or exit',()=>{

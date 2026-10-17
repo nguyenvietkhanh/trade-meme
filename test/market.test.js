@@ -48,3 +48,18 @@ test('held positions retain their original pool even when another pool advertise
  t.mock.method(globalThis,'fetch',async url=>new Response(JSON.stringify({pairs:String(url).endsWith(SOL)?[{...pair(SOL,'SOL',999999),priceUsd:'150'}]:[pair('held','MEME',2000),pair('held','MEME',999999)]}),{status:200}));
  const feed=await loadMarkets(['held'],{held:'pair-2000'});assert.equal(feed.markets[0].pairAddress,'pair-2000');assert.equal(feed.markets[0].liquidityUsd,2000);
 });
+test('new PumpSwap pools join discovery independently of token profile publication',async t=>{
+ const mint='11111111111111111111111111111115';
+ t.mock.method(globalThis,'fetch',async url=>{
+  const u=String(url);let data;
+  if(u.includes('geckoterminal.com'))data={data:[{relationships:{dex:{data:{id:'pumpswap'}},base_token:{data:{id:'solana_'+mint}}}}]};
+  else if(u.endsWith('/token-profiles/latest/v1'))data=[];
+  else data={pairs:u.endsWith(SOL)?[{...pair(SOL,'SOL',999999),priceUsd:'150'}]:u.includes('/tokens/')?[pair(mint,'NEW',200000)]:[]};
+  return new Response(JSON.stringify(data));
+ });
+ const f=await loadMarkets();assert.equal(f.sources.newPumpSwapPools,1);assert.ok(f.markets.some(m=>m.mint===mint));
+});
+test('zero-like cap strings cannot disguise an FDV fallback as an actual market cap',async t=>{
+ t.mock.method(globalThis,'fetch',async url=>new Response(JSON.stringify({pairs:String(url).endsWith(SOL)?[{...pair(SOL,'SOL',999999),priceUsd:'150'}]:[{...pair('ordinary-mint','SMALL',200000),marketCap:'0',fdv:123456},{...pair('samplepump','SMALL2',200000),marketCap:null,fdv:234567}]})));
+ const f=await loadMarkets();assert.equal(f.markets.find(m=>m.mint==='ordinary-mint').valuationSource,'fdv');assert.equal(f.markets.find(m=>m.mint==='samplepump').valuationSource,'pump-fdv');
+});

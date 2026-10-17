@@ -58,3 +58,17 @@ test('the real preparation path builds a PumpSwap swap using RPC only, with no J
   assert.equal(prepared.signature,null);const result=VersionedTransaction.deserialize(prepared.bytes);assert.ok(result.signatures[0].every(b=>b===0));assert.equal(result.message.staticAccountKeys[0].toBase58(),owner);assert.ok(prepared.bytes.length<=1232);assert.equal(prepared.quote.inAmount,'30000000');assert.equal(prepared.quote.routePlan[0].swapInfo.label,'PumpSwap');
  }finally{globalThis.fetch=original;}
 });
+test('stale entry feeds block BUY but allow a fresh on-chain SELL preparation',async()=>{
+ const f=setup(),data=Buffer.alloc(165);new PublicKey(mint).toBuffer().copy(data);data.writeBigUInt64LE(1000000n,64);f.execution.holdings=async()=>[{account:{data}}];
+ const feed={markets:[market()],solUsd:100,updatedAt:Date.now()-60000,error:'Dex offline'};
+ await assert.rejects(f.desk.prepare({side:'BUY',mint},feed),/dữ liệu/);
+ const sell=await f.desk.prepare({side:'SELL',mint,amount:'1000000',reason:'max-hold'},feed);assert.equal(sell.intent.side,'SELL');assert.equal(f.request.output,SOL);
+});
+test('the authoritative rank fixes a 0.02 SOL tier even when a caller asks for more',async()=>{
+ const f=setup(),m=market();m.hasProfile=false;m.sells5m=12;delete m.evidence.higherLows;delete m.evidence.pullback30mPct;delete m.evidence.greenCandleConfirmed;
+ const prepared=await f.desk.prepare({side:'BUY',mint,orderSol:99},{markets:[m],solUsd:100,updatedAt:Date.now()});assert.equal(prepared.intent.amount,'20000000');assert.equal(f.request.amount,'20000000');
+});
+test('live entry binds the pool minimum output to a fresh Jupiter reference for the actual tier size',async()=>{
+ const f=setup();let quotedAmount;f.execution.entryQuote=async(_mint,amount)=>{quotedAmount=amount;return {minOut:'1000',checkedAt:Date.now()};};
+ await f.desk.prepare({side:'BUY',mint},{markets:[market()],solUsd:100,updatedAt:Date.now()});assert.equal(quotedAmount,'30000000');assert.equal(f.request.referenceMinOut,'1000');
+});

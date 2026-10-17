@@ -7,21 +7,22 @@ import {nextOwnerOrder} from '../src/owner-ledger.js';
 import {TRADE_RULES as R,executionSlippageBps} from '../src/desk-rules.js';
 import {verifiedMarket} from './fixtures/verified-market.js';
 const now=Date.UTC(2026,9,17,12);
-test('every mandatory evidence field is fail-closed, including false, missing and stale data',()=>{
+test('all mandatory safety facts remain fail-closed; optional creator and score inputs do not veto',()=>{
  const m=verifiedMarket({},now);assert.equal(decideMarket(m,R,now).action,'BUY');
- for(const key of Object.keys(m.evidence)){
-  const e={...m.evidence};delete e[key];const rank=rankMarket({...m,evidence:e},R,now);assert.equal(rank.eligible,false,`missing ${key}`);assert.ok(Number.isInteger(rank.score)&&rank.score>=0&&rank.score<=100,`finite score with missing ${key}`);
+ for(const key of ['mint','pairAddress','checkedAt','mintRevoked','freezeRevoked','tokenProgram','lpSecuredPct','probeSol','roundTripQuoteOk','roundTripLossPct','buyImpactPct','sellImpactPct','top10Pct','top10ExcludesPool','largestHolderPct','riskWarningsChecked','criticalWarnings']){
+  const e={...m.evidence};delete e[key];const rank=rankMarket({...m,evidence:e},R,now);assert.equal(rank.eligible,false,key);assert.ok(Number.isInteger(rank.score));
  }
- for(const e of [{mintRevoked:false},{freezeRevoked:false},{lpSecuredPct:89.99},{sellSimulationOk:false},{probeSol:.3},{sellTaxPct:5.01},{sellImpactPct:3.01},{top10Pct:30.01},{top10ExcludesPool:false},{devPct:5.01},{bundleSniperPct:10.01},{uniqueBuyers5m:9},{uniqueBuyers5m:41},{washTradingDetected:true},{roundTripCostPct:8.01},{criticalWarnings:['LP unlocked']},{checkedAt:now-90001},{checkedAt:now+1},{mint:'other'},{pairAddress:'other'},{holderCount:99},{previousHolderAt:now},{higherLows:false},{change15mPct:100.01}])assert.equal(rankMarket({...m,evidence:{...m.evidence,...e}},R,now).eligible,false,JSON.stringify(e));
+ for(const e of [{mintRevoked:false},{freezeRevoked:false},{lpSecuredPct:89.99},{probeSol:.02},{roundTripLossPct:6.01},{buyImpactPct:2.01},{sellImpactPct:2.01},{top10Pct:35.01},{top10ExcludesPool:false},{largestHolderPct:8.01},{devPct:5.01},{checkedAt:now-30001},{checkedAt:now+1},{mint:'other'},{pairAddress:'other'},{criticalWarnings:['danger']}])assert.equal(rankMarket({...m,evidence:{...m.evidence,...e}},R,now).eligible,false,JSON.stringify(e));
+ const unknownDev={...m.evidence};delete unknownDev.devPct;const smaller=rankMarket({...m,evidence:unknownDev},R,now);assert.equal(smaller.eligible,true);assert.equal(smaller.orderSol,.02);
 });
-test('mandatory market boundaries use SOL price, actual cap and pool age, with no FDV or profile substitute',()=>{
+test('coarse market gates and raw quote liquidity apply independently of USD liquidity',()=>{
  const m=verifiedMarket({},now);
- for(const change of [{liquidityUsd:2999},{liquidityUsd:49999},{solUsd:0},{valuationSource:'fdv'},{pairCreatedAt:now-899999},{pairCreatedAt:now-86400001},{buys1h:39},{sells1h:0},{buys5m:1.5},{buys5m:9,evidence:{...m.evidence,uniqueBuyers5m:9}},{volume1hUsd:1},{priceUsd:NaN},{updatedAt:now+1}])assert.equal(rankMarket({...m,...change},R,now).eligible,false,JSON.stringify(change));
- assert.equal(rankMarket({...m,hasProfile:false},R,now).eligible,true,'a social profile does not prove safety');
+ for(const change of [{liquidityQuoteSol:19.99},{liquidityUsd:29999},{valuationSource:'fdv'},{pairCreatedAt:now-899999},{pairCreatedAt:now-86400001},{buys5m:7},{buys5m:8,sells5m:6},{buys1h:39},{priceUsd:NaN},{updatedAt:now+1},{change5mPct:-8.01},{change1hPct:150.01},{symbol:'BONK'}])assert.equal(rankMarket({...m,...change},R,now).eligible,false,JSON.stringify(change));
+ assert.equal(rankMarket({...m,hasProfile:false},R,now).eligible,true);
  assert.equal(rankMarket({...m,pairCreatedAt:now-900000},R,now).eligible,true);
  assert.equal(rankMarket({...m,pairCreatedAt:now-86400000},R,now).eligible,true);
- const r=rankMarket({...m,boosted:true},R,now);assert.equal(r.score,95);assert.equal(Object.values(r.scoreParts).reduce((a,b)=>a+b,0),100);
- const decision=decideMarket({...m,evidence:{}},R,now);assert.equal(decision.action,'SKIP');assert.ok(decision.reasons.length<=3);assert.deepEqual(Object.keys(decision),['action','token','sell_percent','score','reasons','red_flags']);
+ assert.equal(rankMarket({...m,boosted:true},R,now).score,95);
+ const d=decideMarket({...m,evidence:{}},R,now);assert.equal(d.action,'SKIP');assert.ok(d.reasons.length<=3);assert.deepEqual(Object.keys(d),['action','token','sell_percent','score','reasons','red_flags']);
 });
 function account(){const s=freshState(now),m=verifiedMarket({priceUsd:1},now);recordBuy(s,m,1,{quantity:100,costSol:100,priceUsd:1},now,'fixture');Object.assign(s.settings,{feeSol:0,slippageBps:0});return {s,p:s.positions[0],m};}
 test('moonbag trailing stop uses the peak since recovery, not a fixed entry stop',()=>{
@@ -63,12 +64,10 @@ test('stop loss includes SOL/USD opportunity cost and fees rather than testing t
  assert.equal(exitPlan(s.positions[0],m,150,s.settings,now)?.reason,'stop-loss');
  const d=freshState(now);d.cashSol=.254;riskCheck(d,[],150,now);assert.equal(d.haltKind,'drawdown');assert.equal(d.dailyLossBlocked,true);
 });
-test('unique buyer diversity uses all five-minute transactions, not just buy transactions',()=>{
- const m=verifiedMarket({buys5m:40,sells5m:20,evidence:{uniqueBuyers5m:12}},now);
- // 12/40=30% of buys but 12/60=20% of all trades: must be rejected.
- assert.ok(rankMarket(m,R,now).red_flags.includes('WASH_TRADING'));
- const boundary=verifiedMarket({buys5m:40,sells5m:20,evidence:{uniqueBuyers5m:15}},now);
- assert.equal(rankMarket(boundary,R,now).red_flags.includes('WASH_TRADING'),false);
+test('missing optional structure receives half points; abnormal volume/flow is penalized, not a hard veto',()=>{
+ const m=verifiedMarket({},now),e={...m.evidence};delete e.higherLows;delete e.pullback30mPct;delete e.greenCandleConfirmed;
+ const r=rankMarket({...m,evidence:e},R,now);assert.equal(r.scoreParts.structure,10);assert.equal(r.eligible,true);assert.ok(r.missingScoreData.includes('structure'));
+ const odd=rankMarket({...m,buys5m:20,sells5m:4,volume5mUsd:2000000,volume1hUsd:3000000,volume24hUsd:4000000},R,now);assert.ok(odd.washPenalty>0);assert.equal(odd.red_flags.includes('SUSPICIOUS_TICKET_VOLUME'),false);
 });
 test('stop loss takes precedence over the time stop so emergency slippage remains available',()=>{
  const {s,p,m}=account();const plan=exitPlan(p,{...m,priceUsd:.7},1,s.settings,now+2700000);

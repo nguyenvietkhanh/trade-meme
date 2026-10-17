@@ -7,13 +7,13 @@ const now=Date.UTC(2026,9,17,12);
 const m=verifiedMarket({mint:'mint'},now);
 test('score is transparent and all conditions are required for an automatic entry',()=>{
  const rank=rankMarket(m,DEFAULTS,now);assert.equal(rank.score,100);assert.equal(rank.eligible,true);assert.deepEqual(rank.reasons,[]);
- for(const override of [{valuationUsd:100000000},{valuationUsd:0},{liquidityUsd:2999},{volume24hUsd:1},{change5mPct:30},{buys5m:9},{sells5m:100},{pairCreatedAt:0},{pairCreatedAt:now-1000},{updatedAt:now-90001}]){
+ for(const override of [{valuationUsd:100000000},{valuationUsd:0},{liquidityQuoteSol:19},{volume24hUsd:1},{change5mPct:-9},{buys5m:7},{sells5m:100},{pairCreatedAt:0},{pairCreatedAt:now-1000},{updatedAt:now-90001}]){
   const rank=rankMarket({...m,...override},DEFAULTS,now);assert.equal(rank.eligible,false);assert.ok(rank.reasons.length);
  }
 });
 test('autonomous loop buys eligible token, logs rejection reason, and avoids duplicate positions',()=>{
  const s=freshState(now);s.running=true;
- const markets=[m,{...m,mint:'bad',symbol:'BAD',change5mPct:50}];
+ const markets=[m,{...m,mint:'bad',symbol:'BAD',change5mPct:-9}];
  tick(s,markets,150,now);assert.equal(s.positions.length,1);assert.equal(s.positions[0].mint,'mint');
  assert.equal(s.decisionStats.bought,1);assert.equal(s.decisionStats.rejected,1);assert.equal(s.decisionStats.evaluated,2);
  assert.ok(s.decisions.some(d=>d.mint==='bad'&&d.action==='SKIP'&&d.reason.includes('5m')));

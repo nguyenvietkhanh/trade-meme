@@ -48,7 +48,7 @@ test('the autonomous agent transfers confirmed realized profit to the fixed reci
 test('a failed durable write never broadcasts and an invalid token is skipped with cooldown instead of stopping the service',async()=>{
  const f=await fixture();try{
   await f.agent.enable();f.execution.mintCheck=async()=>{throw new TradePolicyError('unsafe token');};await f.agent.tick(f.feed());assert.equal(f.sends,0);assert.ok(f.agent.state.cooldowns[f.mint]>Date.now());assert.equal(f.agent.state.running,true);
-  delete f.agent.state.cooldowns[f.mint];f.agent.lastDecisionFeed=null;f.execution.mintCheck=async()=>{};const saved=f.agent.save.bind(f.agent);let writes=0;f.agent.save=async()=>{if(++writes===2)throw Error('disk full');return saved();};await f.agent.tick(f.feed());assert.equal(f.sends,0);assert.ok(f.agent.state.pending?.signature);assert.equal(f.agent.state.running,false);
+  delete f.agent.state.cooldowns[f.mint];f.agent.lastDecisionFeed=null;f.execution.mintCheck=async()=>{};const saved=f.agent.save.bind(f.agent);let writes=0;f.agent.save=async()=>{if(++writes===3)throw Error('disk full');return saved();};await f.agent.tick(f.feed());assert.equal(f.sends,0);assert.ok(f.agent.state.pending?.signature);assert.equal(f.agent.state.running,false);
  }finally{await f.cleanup();}
 });
 test('pause interrupts preparation before signing; locking still clears the key if saving fails',async()=>{
@@ -66,6 +66,20 @@ test('pausing and resuming keeps a valid command epoch, and drawdown review neve
   await f.agent.enable();await f.agent.pause();assert.ok(Number.isSafeInteger(f.agent.commandEpoch));await f.agent.enable();await f.agent.tick(f.feed());assert.equal(f.sends,1);await f.agent.tick(f.feed());
   await f.agent.pause();Object.assign(f.agent.state,{haltKind:'drawdown',halted:'review-required',dailyLossBlocked:true});
   await assert.rejects(f.agent.enable(),/review-required/);
-  const market=f.feed().markets[0];await f.agent.reviewRisk({markets:[market],solUsd:100,updatedAt:Date.now()});assert.equal(f.agent.state.running,false);assert.equal(f.agent.state.haltKind,'daily');assert.equal(f.agent.state.pending,null);
+  f.agent.state.positions=[];const market=f.feed().markets[0];await f.agent.reviewRisk({markets:[market],solUsd:100,updatedAt:Date.now()});assert.equal(f.agent.state.running,false);assert.equal(f.agent.state.haltKind,'daily');assert.equal(f.agent.state.pending,null);
  }finally{await f.cleanup();}
+});
+test('a failed preparation gets at most three retries and unknown signed outcomes never start another attempt',async()=>{
+ const f=await fixture();try{
+  await f.agent.enable();let attempts=0;f.execution.prepare=async()=>{attempts++;throw Error('quote policy failure');};
+  const order={side:'BUY',mint:f.mint,symbol:'TEST',reason:'test'};
+  for(let i=0;i<4;i++)await assert.rejects(f.agent.execute(order,f.feed()),/quote policy/);
+  await assert.rejects(f.agent.execute(order,f.feed()),/3 lần retry/);assert.equal(attempts,4);assert.equal(f.sends,0);
+ }finally{await f.cleanup();}
+});
+test('kill and BUY-pause during RPC reads prevent a buy from reaching the signer',async()=>{
+ for(const mode of ['kill','pause-buy']){const f=await fixture();try{
+  await f.agent.enable();let entered,resolve;const ready=new Promise(r=>entered=r);f.execution.balance=async()=>{entered();await new Promise(r=>resolve=r);return .3;};
+  const tick=f.agent.tick(f.feed());await ready;const stopped=mode==='kill'?f.agent.pause(true):f.agent.pauseBuys();resolve();await Promise.all([tick,stopped]);assert.equal(f.sends,0);assert.equal(f.agent.state.pending,null);
+ }finally{await f.cleanup();}}
 });

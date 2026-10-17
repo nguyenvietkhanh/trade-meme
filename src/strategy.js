@@ -1,57 +1,69 @@
-import {SCREENER_RULES as R,TRADE_RULES as T} from './desk-rules.js';
-const finite=Number.isFinite;
-const pct=v=>finite(v)&&v>=0&&v<=100;
-const clamp=v=>Number.isFinite(v)?Math.max(0,Math.min(1,v)):0;
-/** Pure decision module: never signs or executes. Unknown is never treated as safe. */
+import {TRADE_RULES as T} from './desk-rules.js';
+const finite=Number.isFinite,pct=v=>finite(v)&&v>=0&&v<=100;
+const clamp=v=>finite(v)?Math.max(0,Math.min(1,v)):0;
+const MAJOR_NAMES=new Set(['SOL','SOLANA','WSOL','USDC','USD COIN','USDT','TETHER','BONK','WIF','DOGWIFHAT','POPCAT']);
+// Known large-token identities are deliberately outside the low-cap entry universe.
+export function coarseMarket(m,s=T,now=Date.now()){
+ m=m&&typeof m==='object'?m:{};const reasons=[],red_flags=[];
+ const fail=(ok,code,text)=>{if(!ok){red_flags.push(code);reasons.push(text);}};
+ const age=now-m.pairCreatedAt;
+ fail(m.blacklisted!==true,'BLACKLISTED_MINT','Mint đã vào blacklist giả mạo token lớn');
+ fail(m.dexId==='pumpswap','UNSUPPORTED_DEX','Không phải pool PumpSwap');
+ fail(finite(m.valuationUsd)&&m.valuationUsd>=s.minMarketCapUsd&&m.valuationUsd<=s.maxMarketCapUsd&&(['marketCap','pump-fdv'].includes(m.valuationSource)),'INVALID_MARKET_CAP','Vốn hóa ngoài $10k–$5m hoặc thiếu; FDV chỉ dùng mint đuôi pump');
+ fail(m.valuationSource!=='pump-fdv'||String(m.mint??'').endsWith('pump'),'INVALID_FDV_FALLBACK','Không cho FDV thay market cap với mint khác đuôi pump');
+ fail(finite(m.pairCreatedAt)&&age>=s.minPairAgeMs&&age<=s.maxPairAgeMs,'POOL_AGE','Tuổi pool ngoài 15 phút–24 giờ');
+ fail(![m.symbol,m.name].some(x=>MAJOR_NAMES.has(String(x??'').normalize('NFKC').replace(/[\u200B-\u200D\uFEFF]/g,'').trim().toUpperCase())),'MAJOR_TOKEN_OR_IMPERSONATOR','Tên/symbol thuộc token lớn; không mua bản trùng tên trong tập low-cap');
+ return {eligible:!reasons.length,reasons,red_flags};
+}
+/** Deterministic six-stage analyst. Missing optional score data earns half, mandatory safety stays closed. */
 export function rankMarket(m,s=T,now=Date.now()){
  m=m&&typeof m==='object'&&!Array.isArray(m)?m:{};
- const reasons=[],red_flags=[];
+ const coarse=coarseMarket(m,s,now);if(m.coarseCooldownUntil>now)return {roughEligible:false,score:0,eligible:false,reasons:['Tầng 0: nghỉ token 30 phút'],red_flags:['COARSE_COOLDOWN'],scoreParts:{},orderSol:0,coarseRejected:true};
+ const reasons=[...coarse.reasons],red_flags=[...coarse.red_flags];
  const fail=(ok,code,text)=>{if(!ok){red_flags.push(code);reasons.push(text);}};
  const e=m.evidence??{},fresh=t=>finite(t)&&t<=now&&now-t<=s.maxPriceAgeMs;
- fail(fresh(m.updatedAt),'STALE_MARKET','Giá cũ, thiếu hoặc ở tương lai');
- fail(typeof m.mint==='string'&&m.mint.length>0&&typeof m.pairAddress==='string'&&m.pairAddress.length>0,'MISSING_IDENTITY','Thiếu địa chỉ token/pool');
- fail(finite(m.priceUsd)&&m.priceUsd>0,'INVALID_PRICE','Thiếu giá token hợp lệ');
- fail(m.dexId==='pumpswap','UNSUPPORTED_DEX','Chỉ hỗ trợ thực thi pool PumpSwap');
- fail(finite(m.solUsd)&&m.solUsd>0&&finite(m.liquidityUsd)&&m.liquidityUsd>=s.minLiquiditySol*m.solUsd,'LOW_LIQUIDITY','Thanh khoản chưa đạt 20 SOL hoặc thiếu giá SOL');
- fail(m.valuationSource==='marketCap'&&finite(m.valuationUsd)&&m.valuationUsd>=s.minMarketCapUsd&&m.valuationUsd<=s.maxMarketCapUsd,'INVALID_MARKET_CAP','Cần market cap thật trong $10k–$5m; FDV không thay thế market cap');
+ fail(fresh(m.updatedAt),'STALE_MARKET','Dữ liệu quá 30 giây hoặc không hợp lệ');
+ fail(typeof m.mint==='string'&&m.mint.length>0&&typeof m.pairAddress==='string'&&m.pairAddress.length>0,'MISSING_IDENTITY','Thiếu mint/pool');
+ fail(finite(m.priceUsd)&&m.priceUsd>0,'INVALID_PRICE','Thiếu giá hợp lệ');
+ fail(finite(m.liquidityQuoteSol)&&m.liquidityQuoteSol>=20,'LOW_QUOTE_LIQUIDITY','Cần dự trữ quote thực ≥20 SOL');
  const depth=m.liquidityUsd/m.valuationUsd;
- fail(finite(depth)&&depth>=.05,'THIN_DEPTH','Thanh khoản dưới 5% vốn hóa');
- const age=now-m.pairCreatedAt;
- fail(finite(m.pairCreatedAt)&&m.pairCreatedAt>0&&age>=s.minPairAgeMs&&age<=s.maxPairAgeMs,'POOL_AGE','Tuổi pool phải từ 15 phút đến 24 giờ');
- fail(finite(m.volume5mUsd)&&m.volume5mUsd>=0&&finite(m.volume1hUsd)&&m.volume1hUsd>0&&m.volume1hUsd>=m.volume5mUsd&&finite(m.volume24hUsd)&&m.volume24hUsd>=m.volume1hUsd,'INCONSISTENT_VOLUME','Volume thiếu hoặc mâu thuẫn giữa các khung');
- fail(Number.isSafeInteger(m.buys5m)&&m.buys5m>=R.minBuys,'LOW_RECENT_ACTIVITY','Cần ít nhất 10 lượt mua trong 5 phút');
+ fail(finite(depth)&&depth>=.03,'THIN_DEPTH','Tổng thanh khoản dưới 3% vốn hóa');
  const counts=[m.buys5m,m.sells5m,m.buys1h,m.sells1h];
- fail(counts.every(v=>Number.isSafeInteger(v)&&v>=0)&&m.buys1h>=m.buys5m&&m.sells1h>=m.sells5m&&m.buys1h+m.sells1h>=100,'LOW_ACTIVITY','Cần ít nhất 100 giao dịch/1h và số lệnh nhất quán');
- fail(e.mint===m.mint&&e.pairAddress===m.pairAddress&&fresh(e.checkedAt),'MISSING_SAFETY_EVIDENCE','Thiếu kiểm chứng an toàn mới cho đúng token/pool');
- fail(e.mintRevoked===true&&e.freezeRevoked===true,'ACTIVE_OR_UNKNOWN_AUTHORITY','Quyền mint/freeze chưa được xác nhận đã revoke');
- fail(pct(e.lpSecuredPct)&&e.lpSecuredPct>=90,'LP_UNVERIFIED','LP burn/lock chưa được xác nhận đạt 90%');
- fail(e.probeSol===s.orderSol&&e.sellSimulationOk===true&&pct(e.sellTaxPct)&&e.sellTaxPct<=5&&pct(e.sellImpactPct)&&e.sellImpactPct<=3,'SELL_UNVERIFIED','Chưa mô phỏng bán thành công với thuế ≤5%, impact ≤3%');
- fail(pct(e.top10Pct)&&e.top10Pct<=30&&e.top10ExcludesPool===true,'HOLDER_CONCENTRATION','Top 10 (trừ pool) chưa được xác nhận ≤30%');
- fail(pct(e.devPct)&&e.devPct<=5,'DEV_CONCENTRATION','Tỷ lệ ví dev chưa được xác nhận ≤5%');
- fail(e.bundleChecked===true&&pct(e.bundleSniperPct)&&e.bundleSniperPct<=10,'BUNDLE_UNVERIFIED','Bundle/sniper chưa kiểm chứng hoặc nắm trên 10%');
- const trades=m.buys5m+m.sells5m,unique=e.uniqueBuyers5m;
- fail(e.buyersWindowComplete===true&&Number.isSafeInteger(unique)&&unique>=0&&unique<=m.buys5m&&unique/Math.max(1,trades)>=.25,'WASH_TRADING','Thiếu số ví mua riêng biệt hoặc tỷ lệ ví mua/tổng giao dịch 5m <25%');
- // A 1:1 aggregate by itself cannot prove wash trading. Require corroborating wallet data.
- fail(!(trades<20&&m.volume5mUsd/Math.max(1,trades)>m.liquidityUsd*.25),'SUSPICIOUS_TICKET_VOLUME','Volume quá lớn so với số lệnh và thanh khoản');
- fail(e.washTradingDetected===false,'WASH_UNVERIFIED','Chưa kiểm chứng giao dịch giả');
- fail(finite(e.roundTripCostPct)&&e.roundTripCostPct>=0&&e.roundTripCostPct<=s.maxRoundTripCostPct,'EXCESSIVE_OR_UNKNOWN_COST','Tổng phí/trượt giá khứ hồi chưa được xác nhận ≤8%');
- fail(e.riskWarningsChecked===true&&Array.isArray(e.criticalWarnings)&&e.criticalWarnings.length===0,'RUG_WARNINGS','Cảnh báo rủi ro nghiêm trọng hoặc thiếu kiểm tra');
- fail(m.signalConfirmed===true,'UNCONFIRMED_SIGNAL','Chờ xác nhận tín hiệu qua các lần quét');
- fail(finite(m.change1hPct)&&m.change1hPct>0&&m.change1hPct<=150&&finite(e.change15mPct)&&e.change15mPct<=100&&e.change15mPct>=0,'CHASE_RISK','Thiếu giá 15m hoặc tăng quá 100%/15m, 150%/1h');
- const acceleration=m.volume1hUsd>m.volume5mUsd?m.volume5mUsd/((m.volume1hUsd-m.volume5mUsd)/11):0;
- const ratio=m.buys5m/Math.max(1,m.sells5m),hourRatio=m.buys1h/Math.max(1,m.sells1h);
- const higherLows=e.higherLows===true;
- const growth=Number.isSafeInteger(e.holderCount)&&e.holderCount>0&&Number.isSafeInteger(e.previousHolderCount)&&e.previousHolderCount>0&&e.holderCount>e.previousHolderCount&&finite(e.previousHolderAt)&&e.previousHolderAt<e.checkedAt&&e.checkedAt-e.previousHolderAt>=30000&&e.checkedAt-e.previousHolderAt<=900000;
- fail(higherLows&&growth,'MISSING_TREND_HISTORY','Chưa có nến đáy cao hơn và lịch sử số holder tăng');
- fail(finite(m.change5mPct)&&m.change5mPct>=1&&m.change5mPct<=12&&acceleration>=1.2,'WEAK_MOMENTUM','Động lượng 5m hoặc tăng tốc volume chưa đạt');
- fail(ratio>=1.3&&ratio<=8&&hourRatio>1&&hourRatio<=8,'BUY_PRESSURE','Lực mua chưa nghiêng về mua hoặc quá cực đoan');
- const parts={momentum:(higherLows?10:0)+clamp(acceleration/3)*10+(m.change1hPct>0&&m.change1hPct<=80?10:0),holders:(growth?10:0)+(pct(e.top10Pct)?clamp((40-e.top10Pct)/20)*10:0)+(pct(e.devPct)?clamp((10-e.devPct)/5)*5:0),depth:finite(depth)?clamp(depth/.1)*20:0,buyPressure:ratio>=1.3&&ratio<=8&&hourRatio>1&&hourRatio<=8?clamp(unique/Math.max(1,m.buys5m)) *15:0,notChasing:finite(e.change15mPct)&&e.change15mPct>=0&&e.change15mPct<=100&&m.change1hPct<=150?10:0};
- const boostPenalty=m.boosted===true?5:0;
- const score=Math.max(0,Math.min(100,Math.round(Object.values(parts).reduce((a,b)=>a+b,0)-boostPenalty)));
- fail(score>=R.minScore,'LOW_SCORE','Điểm tổng dưới 70/100');
- return {score,eligible:reasons.length===0,reasons,red_flags,scoreParts:parts,boostPenalty,volumeAcceleration:acceleration,buyShare:trades?m.buys5m/trades:0};
+ fail(counts.every(v=>Number.isSafeInteger(v)&&v>=0)&&m.buys5m>=8&&m.buys5m+m.sells5m>=15&&m.buys1h+m.sells1h>=80&&m.buys1h>=m.buys5m&&m.sells1h>=m.sells5m,'LOW_ACTIVITY','Cần ≥8 mua/5m, ≥15 lệnh/5m, ≥80 lệnh/1h, số liệu nhất quán');
+ fail(finite(m.change1hPct)&&m.change1hPct<=150&&finite(m.change5mPct)&&m.change5mPct>=-8,'DUMP_OR_CHASE','Giá đang xả dưới −8%/5m hoặc tăng quá 150%/1h');
+ const volumes=[m.volume5mUsd,m.volume1hUsd,m.volume24hUsd];
+ fail(volumes.every(v=>v==null||finite(v)&&v>=0)&&!(finite(volumes[0])&&finite(volumes[1])&&volumes[0]>volumes[1])&&!(finite(volumes[1])&&finite(volumes[2])&&volumes[1]>volumes[2]),'INCONSISTENT_VOLUME','Volume âm hoặc mâu thuẫn');
+ const roughEligible=reasons.length===0;
+ fail(e.mint===m.mint&&e.pairAddress===m.pairAddress&&fresh(e.checkedAt),'MISSING_SAFETY_EVIDENCE','Thiếu kiểm chứng an toàn mới, đúng mint/pool');
+ fail(e.mintRevoked===true&&e.freezeRevoked===true,'ACTIVE_OR_UNKNOWN_AUTHORITY','Mint/freeze chưa xác nhận revoke');
+ fail(e.tokenProgram==='spl-token'||e.tokenProgram==='spl-token-2022'&&e.extensionsSafe===true,'UNSAFE_TOKEN_PROGRAM','Token program hoặc extension chưa được kiểm tra');
+ fail(pct(e.lpSecuredPct)&&e.lpSecuredPct>=90,'LP_UNVERIFIED','LP burn/lock chưa xác nhận ≥90%');
+ fail(e.top10ExcludesPool===true&&pct(e.top10Pct)&&e.top10Pct<=35&&pct(e.largestHolderPct)&&e.largestHolderPct<=8,'HOLDER_CONCENTRATION','Top 10 trừ vault/curve phải ≤35%; mỗi ví ≤8%');
+ fail(e.devPct==null||pct(e.devPct)&&e.devPct<=5,'DEV_CONCENTRATION','Creator nắm quá 5% hoặc dữ liệu sai');
+ fail(e.riskWarningsChecked===true&&Array.isArray(e.criticalWarnings)&&e.criticalWarnings.length===0,'RUG_WARNINGS','Thiếu RugCheck hoặc có rủi ro nghiêm trọng');
+ fail(e.roundTripQuoteOk===true&&e.probeSol===.03&&finite(e.roundTripLossPct)&&e.roundTripLossPct>=0&&e.roundTripLossPct<=6&&pct(e.buyImpactPct)&&e.buyImpactPct<=2&&pct(e.sellImpactPct)&&e.sellImpactPct<=2,'ROUND_TRIP_UNVERIFIED','Jupiter quote vòng 0,03 SOL chưa đạt hao hụt ≤6%, impact mỗi chiều ≤2%');
+ fail(m.signalConfirmed===true,'UNCONFIRMED_SIGNAL','Chờ 2 lần quét liên tiếp cách 10–15 giây');
+ const acceleration=finite(m.volume5mUsd)&&finite(m.volume1hUsd)&&m.volume1hUsd>m.volume5mUsd?m.volume5mUsd/((m.volume1hUsd-m.volume5mUsd)/11):null;
+ const ratio=m.buys5m/Math.max(1,m.sells5m);
+ const missing=[];
+ const component=(key,known,max,calculate)=>{if(!known){missing.push(key);return max/2;}return Math.max(0,Math.min(max,calculate()));};
+ const parts={
+  momentum:component('momentum',finite(acceleration)&&finite(m.change5mPct),25,()=>15*clamp(acceleration/1.5)+(m.change5mPct>0&&m.change5mPct<=12?10:0)),
+  flow:component('flow',counts.slice(0,2).every(Number.isSafeInteger),20,()=>ratio>=1.15&&ratio<=2.5?20:ratio>2.5&&ratio<=4?8:0),
+  structure:component('structure',typeof e.higherLows==='boolean'&&finite(e.pullback30mPct)&&typeof e.greenCandleConfirmed==='boolean',20,()=>(e.higherLows?8:0)+(e.pullback30mPct>=10&&e.pullback30mPct<=30?8:0)+(e.greenCandleConfirmed?4:0)),
+  depth:component('depth',finite(depth),15,()=>15*clamp(depth/.1)),
+  holders:component('holders',pct(e.top10Pct)&&pct(e.largestHolderPct),10,()=>5*clamp((40-e.top10Pct)/20)+5*clamp((10-e.largestHolderPct)/5)),
+  age:component('age',finite(m.pairCreatedAt),5,()=>now-m.pairCreatedAt>=1800000&&now-m.pairCreatedAt<=21600000?5:2.5),
+  community:component('community',typeof m.hasProfile==='boolean',5,()=>m.hasProfile?5:0)
+ };
+ const trades=m.buys5m+m.sells5m;
+ const oddVolume=finite(m.volume5mUsd)&&trades>0&&trades<30&&m.volume5mUsd/trades>m.liquidityUsd*.25;
+ const washPenalty=(oddVolume?5:0)+(ratio>4?5:0),boostPenalty=m.boosted?5:0;
+ const score=Math.round(Math.max(0,Object.values(parts).reduce((a,b)=>a+b,0)-washPenalty-boostPenalty));
+ fail(score>=60,'LOW_SCORE','Điểm dưới 60/100');
+ return {roughEligible,score,eligible:!reasons.length,reasons,red_flags,scoreParts:parts,missingScoreData:missing,washPenalty,boostPenalty,volumeAcceleration:acceleration,buyShare:trades?m.buys5m/trades:0,orderSol:score>=75&&pct(e.devPct)?.03:.02,coarseRejected:!coarse.eligible};
 }
 export function decideMarket(m,s=T,now=Date.now()){
  const r=rankMarket(m,s,now);
- return {action:r.eligible?'BUY':'SKIP',token:typeof m?.mint==='string'?m.mint:'',sell_percent:0,score:r.score,reasons:r.eligible?['Đạt toàn bộ điều kiện bắt buộc','Điểm tín hiệu ≥70/100']:r.reasons.slice(0,3),red_flags:r.red_flags};
+ return {action:r.eligible?'BUY':'SKIP',token:typeof m?.mint==='string'?m.mint:'',sell_percent:0,score:r.score,reasons:r.eligible?[`Đạt an toàn; ${r.score}/100`,`Cỡ lệnh ${r.orderSol} SOL`]:r.reasons.slice(0,3),red_flags:r.red_flags};
 }

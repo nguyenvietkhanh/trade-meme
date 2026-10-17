@@ -27,16 +27,18 @@ Server dùng `https://api.mainnet-beta.solana.com` và `https://solana-rpc.publi
 
 ## Quy tắc và thuật toán
 
-Bộ quy tắc runtime dùng chung: [src/desk-rules.js](src/desk-rules.js); mô tả: [DESK_RULES.md](DESK_RULES.md). Pipeline: screener → xác nhận setup → giới hạn rủi ro → kiểm tra on-chain → thực thi có chữ ký → thoát/chuyển lãi → kiểm toán. Đây là các module mã, không phải sáu AI độc lập.
+Bản `solana-six-stage-desk-v4`; chi tiết và giới hạn: [DESK_RULES.md](DESK_RULES.md). Sáu tầng thực thi bằng code, không phải AI được tự bỏ qua hard limits.
 
-- Vốn ≤0,3 SOL; mỗi lệnh 0,03 SOL; tối đa **2 vị thế**, dự phòng 0,05 SOL. Stop −20%, +80% thu hồi 140% vốn; moonbag mỗi x2 bán 50%, trailing −30%; time-stop 45 phút nếu chưa đạt +20%.
-- Lỗ/ngày 0,03 SOL khóa BUY đến 00:00 UTC, vẫn quản lý thoát. Drawdown 15% dừng toàn bộ tự động, cần chủ xem lại; nút xác nhận xem lại không tự bật bot. Ba vị thế thua liên tiếp nghỉ BUY 2 giờ.
-- Pool 15 phút–24 giờ, cap thật $10k–$5m; liquidity ≥20 SOL và ≥5% cap, ≥100 giao dịch H1. Điểm 30/25/20/15/10 theo động lượng/holder/độ sâu/lực mua/không mua đuổi; boost −5 điểm; mọi điều kiện bắt buộc và điểm ≥70 mới được BUY.
-- Bắt buộc có kiểm chứng mint/freeze, LP ≥90%, top 10 trừ pool ≤30%, dev ≤5%, bundle/sniper, ví mua riêng biệt, nến/lịch sử holder, bán thử và phí khứ hồi ≤8%. Thiếu hoặc mâu thuẫn → SKIP. Xem [DESK_RULES.md](DESK_RULES.md) để biết ngưỡng và hợp nhất hai bộ trọng số.
+- Khám phá pool PumpSwap mới qua GeckoTerminal, DexScreener và profiles. Tầng nhanh lọc vốn hóa $10k–$5m, tuổi 15 phút–24 giờ, quote reserve ≥20 SOL, tổng liquidity/cap ≥3%, nhịp giao dịch và blacklist tên token lớn. FDV chỉ thay cap khi mint kết thúc `pump`; loại thô nghỉ 30 phút.
+- On-chain/RugCheck/Jupiter bắt buộc xác minh authority, Token-2022 extensions, LP ≥90%, top 10 trừ vault/curve ≤35%, mỗi ví ≤8%, rủi ro nghiêm trọng và quote vòng 0,03 SOL hao hụt ≤6%, impact mỗi chiều ≤2%. Không đủ kiểm chứng → SKIP. Creator không rõ → chỉ lệnh nhỏ, không tự đặt tỷ lệ bằng 0.
+- Điểm 25/20/20/15/10/5/5. Thiếu dữ liệu chấm điểm nhận nửa điểm thành phần; an toàn bắt buộc vẫn không được bỏ qua. Hai lần quét cách 10–15 giây. ≥75 điểm vào 0,03 SOL; 60–74 vào 0,02 SOL; creator chưa rõ tối đa 0,02 SOL. Vốn tối đa 0,3 SOL, hai vị thế, giữ dự phòng 0,05 SOL.
+- Stop −20% theo quote bán ròng; +80% bán 78%; moonbag bán nửa tại 2×/4×/8× giá vào. Trailing −30%, siết −25% từ 4×, −20% từ 8×. Time-stop 45 phút chưa từng đạt +20%; giữ tối đa sáu giờ; volume suy kiệt dưới 30% lúc vào và giá dưới entry thì thoát. Token đã stop-loss khóa 24 giờ.
+- Lỗ/ngày 0,03 SOL khóa BUY đến 00:00 UTC. Drawdown 15% đóng hết vị thế rồi dừng, cần bật lại thủ công. Thua ba vị thế sau phí nghỉ BUY hai giờ. Dữ liệu cũ >30 giây hoặc lỗi liên tiếp khóa BUY nhưng vẫn quản lý SELL. Có nút pause BUY riêng và dừng/khóa toàn bộ bộ ký.
+- Slippage mua/bán/khẩn ≤4/3/10%; priority+tip ≤0,002 SOL/chiều (thực tế dùng mức thấp hơn, không gửi Jito tip). Tối đa ba retry sau lần đầu, luôn đối soát giao dịch chưa rõ kết quả. Bán hết sẽ đóng ATA trống do vị thế ứng dụng quản lý để thu hồi rent khi an toàn.
 
-**Giới hạn hiện tại:** adapter DexScreener/RugCheck mới cung cấp một phần dữ liệu trên. Chưa có adapter kiểm chứng đầy đủ số ví mua riêng biệt, holder theo chủ, bundle, nến và bán thử trước mua. Vì vậy **BUY sẽ bị khóa khi thiếu dữ liệu**; không coi bản này là hệ thống quét mainnet đã hoàn thiện. Báo cáo RugCheck đẹp không thay thế các kiểm chứng còn thiếu. Không đưa lại Helius/Jupiter API key.
+Jupiter chỉ cung cấp báo giá và mức nhận tối thiểu; SDK PumpSwap dựng và mô phỏng giao dịch trên pool. Token cổ điển và Token-2022 với extension thụ động được hỗ trợ; fee/hook/permanentDelegate và extension chưa hiểu bị từ chối. Quote chưa phải giá khớp thật. Cấu trúc nến lấy OHLCV 1 phút; nếu không đủ nến hợp lệ thì chỉ nhận nửa điểm, không dựng nến từ snapshot.
 
-SDK PumpSwap 2.1.0 dựng swap trực tiếp từ pool/config/reserve on-chain, classic SPL/WSOL. Kiểm tra authority, mint/program/PDA, độ mới, simulation và phí. Slippage thường vẫn 1,5% (dưới trần mua 4%, bán 3%); stop/khẩn/trailing tối đa 10%. Không gọi API swap HTTP. Thuật toán chưa có bằng chứng sinh lợi thực tế.
+**Chưa xác nhận trực tiếp mainnet/Railway:** API/RPC có thể bị chặn hoặc rate-limit; truy vấn Jupiter từ cloud hiện trả HTTP 403. Khi dữ liệu an toàn không có, bot không mua. Nguồn HTTP không bảo đảm bắt đủ mọi pool migrate hoặc tốc độ mili giây. Chưa có bằng chứng sinh lợi thực tế.
 
 ## Chuyển lãi
 
@@ -74,8 +76,8 @@ npm test
 npm start
 ```
 
-Railway auto-deploy nhánh `codex/meme-pilot-railway` bằng Dockerfile/railway.json; một replica. Không dùng Docker secret mounts vì builder Railway hiện chỉ hỗ trợ cache mounts. Volume lưu sổ và két của bộ ký; thiếu volume được cảnh báo, không chặn thiết lập. `PUBLIC_ORIGIN` cần đúng HTTPS origin khi dùng domain riêng. Egress: api.dexscreener.com, api.rugcheck.xyz và hai RPC trên; không cần Helius/Jupiter. Install scripts tắt; SDK transitive TOML/BigInt dùng các bản override đã kiểm tra.
+Railway auto-deploy nhánh `codex/meme-pilot-railway` bằng Dockerfile/railway.json; một replica. Không dùng Docker secret mounts vì builder Railway hiện chỉ hỗ trợ cache mounts. Volume lưu sổ và két của bộ ký; thiếu volume được cảnh báo, không chặn thiết lập. `PUBLIC_ORIGIN` cần đúng HTTPS origin khi dùng domain riêng. Egress: api.dexscreener.com, api.geckoterminal.com, api.rugcheck.xyz, lite-api.jup.ag và hai RPC trên; không cần Helius/Jupiter. Install scripts tắt; SDK transitive TOML/BigInt dùng các bản override đã kiểm tra.
 
-`/api/health`: `mode=live`, `rpcMode=keyless`, `signingMode=owner-agent` và `unattendedSigningAvailable=true`, `strategyVersion=solana-verified-momentum-v3`. Đây là HTTP/feed readiness, không chứng minh giao dịch/lợi nhuận. `/api/direct/status` cần đăng nhập chủ.
+`/api/health`: `mode=live`, `rpcMode=keyless`, `signingMode=owner-agent` và `unattendedSigningAvailable=true`, `strategyVersion=solana-six-stage-desk-v4`. Đây là HTTP/feed readiness, không chứng minh giao dịch/lợi nhuận. `/api/direct/status` cần đăng nhập chủ.
 
 Kiểm thử dùng fixture, chữ ký ví thử và RPC giả lập. Chưa gửi giao dịch SOL thật, chưa kiểm chứng hiệu quả thị trường hoặc trạng thái Railway Online từ môi trường này.

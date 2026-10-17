@@ -41,3 +41,8 @@ test('emergency sell SDK instructions encode at most 10% slippage and cannot rel
  await assert.rejects(buildPumpSwap(f.rpc,{...requestSell,slippageBps:1001}),/Slippage/);
  await assert.rejects(buildPumpSwap(f.rpc,{...request(f),maxReserveFraction:.1}),/Slippage/);
 });
+test('a local pool cannot relax the owner entry price reference supplied by Jupiter',async()=>{
+ const f=await pumpFixture(),base=await buildPumpSwap(f.rpc,request(f));
+ await assert.rejects(buildPumpSwap(f.rpc,{...request(f),referenceMinOut:(BigInt(base.quote.outAmount)+1n).toString()}),/Jupiter/);
+ const reference=BigInt(base.quote.outAmount)*99n/100n,result=await buildPumpSwap(f.rpc,{...request(f),referenceMinOut:String(reference)});assert.ok(BigInt(result.quote.otherAmountThreshold)>=reference);
+});

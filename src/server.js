@@ -4,7 +4,7 @@ import {fileURLToPath} from 'node:url';
 import path from 'node:path';
 import {DEFAULTS,PROFILE,freshState,equity,event,buy,sell,tick} from './engine.js';
 import {loadMarkets} from './market.js';
-import {rankMarket,decideMarket} from './strategy.js';
+import {rankMarket,decideMarket,coarseMarket} from './strategy.js';
 import {diagnose} from './diagnostics.js';
 import {observeMarkets} from './signals.js';
 import {OwnerAuth,DEFAULT_OWNER} from './security.js';
@@ -44,7 +44,7 @@ const direct=new DirectWallet(execution);
 const ownerAgent=liveOnly&&process.env.SIGNER_MODE!=='disabled'?new OwnerAgent(dataDir,direct,execution):null;
 await ownerAgent?.load();
 let feed={markets:[],solUsd:null,updatedAt:null,error:null};
-const verification=new VerificationFeed();
+const verification=new VerificationFeed(globalThis.fetch,execution);
 let refreshing=false;
 async function save(){await writeFile(statePath+'.tmp',JSON.stringify(state,null,2),{mode:0o600});await rename(statePath+'.tmp',statePath);}
 // Serialize market ticks and commands to prevent double-spend and overlapping writes.
@@ -54,7 +54,9 @@ async function refresh(){
   if(refreshing)return;refreshing=true;
   try{
     const latest=await loadMarkets([...new Set([...state.positions.map(p=>p.mint),...direct.watched,...(ownerAgent?.trackedMints()??[]),...state.watchlist])],Object.fromEntries((ownerAgent?.state?.positions??state.positions).filter(p=>p.pairAddress).map(p=>[p.mint,p.pairAddress])));
-    latest.markets=await verification.enrich(latest.markets,ownerAgent?.trackedMints()??[]);
+    state.coarseCooldowns??={};state.blacklistedMints??={};for(const m of latest.markets){if(coarseMarket(m).red_flags.includes('MAJOR_TOKEN_OR_IMPERSONATOR'))state.blacklistedMints[m.mint]=true;m.blacklisted=state.blacklistedMints[m.mint]===true;if(!coarseMarket(m).eligible&&!(state.coarseCooldowns[m.mint]>Date.now()))state.coarseCooldowns[m.mint]=Date.now()+DEFAULTS.coarseCooldownMs;m.coarseCooldownUntil=state.coarseCooldowns[m.mint]??0;}
+    for(const [mint,until]of Object.entries(state.coarseCooldowns))if(until<=Date.now())delete state.coarseCooldowns[mint];
+    latest.markets=await verification.enrichCached(latest.markets,ownerAgent?.trackedMints()??[]);
     await serial(async()=>{latest.markets=observeMarkets(state,latest.markets);feed={...latest,error:null};
       if(liveOnly){
         state.lastEvaluationAt=Date.now();
@@ -95,6 +97,7 @@ const server=http.createServer(async(req,res)=>{
         else if(url.pathname==='/api/signer/unlock'){try{await ownerAgent.serial(()=>ownerAgent.vault.unlock(input.password));}finally{input.password='';}}
         else if(url.pathname==='/api/signer/enable'){if(input.confirm!=='ENABLE OWNER SIGNER')throw Error('Thiếu xác nhận bật bộ ký.');await ownerAgent.enable();}
         else if(url.pathname==='/api/signer/review-risk'){if(input.confirm!=='REVIEW DRAWDOWN')throw Error('Thiếu xác nhận xem lại drawdown.');await ownerAgent.reviewRisk(feed);}
+        else if(url.pathname==='/api/signer/pause-buys')await ownerAgent.pauseBuys(input.paused!==false);
         else if(url.pathname==='/api/signer/pause')await ownerAgent.pause();
         else if(url.pathname==='/api/signer/lock')await ownerAgent.pause(true);
         else if(url.pathname==='/api/signer/close')await ownerAgent.close(input.mint,feed);
@@ -134,7 +137,7 @@ const server=http.createServer(async(req,res)=>{
       return json(res,404,{error:'Không tìm thấy thao tác ví.'});
     }
     if(req.method==='GET'&&url.pathname==='/api/state')return json(res,200,snapshot(req));
-    if(req.method==='GET'&&url.pathname==='/api/health')return json(res,200,{status:'ok',mode:liveOnly?'live':'paper',rpcMode:'keyless',apiKeyRequired:false,unattendedSigningAvailable:!!ownerAgent,strategyVersion:STRATEGY_VERSION,swapProvider:liveOnly?'PumpSwap':null,signingMode:ownerAgent?'owner-agent':liveOnly?'owner-wallet':null,buildRevision:process.env.RAILWAY_GIT_COMMIT_SHA??'local',running:liveOnly?false:state.running,readOnly,marketReady:!!feed.updatedAt,marketFresh:!!feed.updatedAt&&!feed.error&&Date.now()-feed.updatedAt<90000});
+    if(req.method==='GET'&&url.pathname==='/api/health')return json(res,200,{status:'ok',mode:liveOnly?'live':'paper',rpcMode:'keyless',apiKeyRequired:false,unattendedSigningAvailable:!!ownerAgent,strategyVersion:STRATEGY_VERSION,swapProvider:liveOnly?'PumpSwap':null,signingMode:ownerAgent?'owner-agent':liveOnly?'owner-wallet':null,buildRevision:process.env.RAILWAY_GIT_COMMIT_SHA??'local',running:liveOnly?false:state.running,readOnly,marketReady:!!feed.updatedAt,marketFresh:!!feed.updatedAt&&!feed.error&&Date.now()-feed.updatedAt<DEFAULTS.maxPriceAgeMs});
     if(req.method==='GET'&&url.pathname==='/api/export'){
       if(liveOnly){if(!auth.authenticated(req))return json(res,401,{error:'Cần xác thực bằng ví chủ.'});return json(res,200,{mode:'live',walletMode:'owner',message:'Xuất lịch sử trong phần ví chủ trên trình duyệt đang giao dịch.'});}
       res.writeHead(200,{'Content-Type':'application/json','Content-Disposition':'attachment; filename="paper-trades.json"','Cache-Control':'no-store'});return res.end(JSON.stringify({mode:'paper',exportedAt:new Date().toISOString(),settings:state.settings,trades:state.trades},null,2));
