@@ -34,8 +34,9 @@ export async function loadMarkets(extraMints=[]) {
   const seen=new Map();
   for(const p of pairs) {
     if(p.chainId!=='solana'||!p.baseToken?.address||p.baseToken.address===SOL||['SOL','SOLANA','WSOL','USDC','USDT'].includes(String(p.baseToken.symbol).trim().toUpperCase())||!Number.isFinite(Number(p.priceUsd))||Number(p.priceUsd)<=0) continue;
-    const m={mint:p.baseToken.address,symbol:String(p.baseToken.symbol??'?'),name:String(p.baseToken.name??''),priceUsd:Number(p.priceUsd),liquidityUsd:Number(p.liquidity?.usd??0),volume24hUsd:Number(p.volume?.h24??0),change5mPct:Number(p.priceChange?.m5??0),buys5m:Number(p.txns?.m5?.buys??0),sells5m:Number(p.txns?.m5?.sells??0),pairAddress:p.pairAddress,pairCreatedAt:Number(p.pairCreatedAt??0),updatedAt:Date.now()};
-    if(!seen.has(m.mint)||seen.get(m.mint).liquidityUsd<m.liquidityUsd) seen.set(m.mint,m);
+    const m={mint:p.baseToken.address,symbol:String(p.baseToken.symbol??'?'),name:String(p.baseToken.name??''),priceUsd:Number(p.priceUsd),liquidityUsd:Number(p.liquidity?.usd??0),volume24hUsd:Number(p.volume?.h24??0),volume5mUsd:Number(p.volume?.m5??0),volume1hUsd:Number(p.volume?.h1??0),change1hPct:Number(p.priceChange?.h1??0),change6hPct:Number(p.priceChange?.h6??0),change24hPct:Number(p.priceChange?.h24??0),dexId:String(p.dexId??''),hasProfile:!!(p.info?.imageUrl||p.info?.websites?.length||p.info?.socials?.length||profileMints.includes(p.baseToken.address)),boosted:!!p.boosts?.active,change5mPct:Number(p.priceChange?.m5??0),buys5m:Number(p.txns?.m5?.buys??0),sells5m:Number(p.txns?.m5?.sells??0),valuationUsd:Number(p.marketCap??p.fdv??0),valuationSource:p.marketCap?'marketCap':p.fdv?'fdv':'unknown',pairAddress:p.pairAddress,pairCreatedAt:Number(p.pairCreatedAt??0),updatedAt:Date.now()};
+    const prior=seen.get(m.mint);
+    if(!prior||(m.dexId==='pumpswap'&&prior.dexId!=='pumpswap')||((m.dexId==='pumpswap')===(prior.dexId==='pumpswap')&&prior.liquidityUsd<m.liquidityUsd))seen.set(m.mint,m);
   }
   return {solUsd,markets:[...seen.values()].sort((a,b)=>b.liquidityUsd-a.liquidityUsd).filter((m,i)=>i<60||extraMints.includes(m.mint)),updatedAt:Date.now(),warnings,sources:{searches:good.length,newSolanaProfiles:profileMints.length}};
 }

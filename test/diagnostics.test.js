@@ -17,7 +17,7 @@ test('diagnostic distinguishes a stopped bot, feed errors and stale prices',()=>
  assert.equal(diagnose(running(),{updatedAt:now-90001,error:null},[ranked],now).phase,'waiting-data');
 });
 test('position limits, reserve, cooldown and risk halt are not misreported as missing signals',()=>{
- const full=running();full.positions=[{mint:'one'},{mint:'two'},{mint:'three'}];assert.equal(diagnose(full,feed,[ranked],now).phase,'position-limit');
+ const full=running();full.positions=Array.from({length:5},(_,i)=>({mint:String(i)}));assert.equal(diagnose(full,feed,[ranked],now).phase,'position-limit');
  const reserve=running();reserve.cashSol=.06;assert.equal(diagnose(reserve,feed,[ranked],now).phase,'reserve');
  const cooldown=running();cooldown.cooldowns.mint=now+1000;assert.equal(diagnose(cooldown,feed,[ranked],now).phase,'cooldown');
  const halt=running();halt.halted='daily loss';assert.equal(diagnose(halt,feed,[ranked],now).phase,'risk-halt');

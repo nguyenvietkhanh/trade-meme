@@ -1,6 +1,7 @@
 const $=id=>document.getElementById(id);
 let state=null,busy=false;
 let commandError='';
+let seenPaperTrades=null;
 const fmt=(n,d=4)=>Number.isFinite(n)?n.toLocaleString('en-US',{minimumFractionDigits:d,maximumFractionDigits:d}):'—';
 const money=n=>Number.isFinite(n)?new Intl.NumberFormat('en-US',{style:'currency',currency:'USD',maximumSignificantDigits:5}).format(n):'—';
 const time=n=>new Date(n).toLocaleTimeString('vi-VN');
@@ -11,18 +12,18 @@ function rowEmpty(cols,text){return `<tr><td colspan="${cols}" class="empty">${t
 function render(){
   if(!state)return;
   const s=state, f=s.feed, cfg=s.settings, fresh=f.updatedAt&&Date.now()-f.updatedAt<cfg.maxPriceAgeMs&&!f.error;
-  $('equity').textContent=fmt(s.equitySol)+' SOL';$('cash').textContent=`Tiền khả dụng ${fmt(s.cashSol)} SOL`;
+  $('equity').textContent=fmt(s.equitySol)+' SOL';$('cash').textContent=s.cashSol===null?'Đăng nhập ví chủ để xem số dư':`Tiền khả dụng ${fmt(s.cashSol)} SOL`;
   $('pnl').textContent=s.pnlSol===null?'—':signed(s.pnlSol)+' SOL';$('pnl').className=sign(s.pnlSol);
-  $('return').textContent=s.pnlSol===null?'Chờ giá SOL':`${signed(s.pnlSol/cfg.initialSol*100)}% so với vốn đầu`;
+  $('return').textContent=s.pnlSol===null?'Chưa có dữ liệu vốn mainnet':`${signed(s.pnlSol/cfg.initialSol*100)}% so với vốn đầu`;
   $('win').textContent=s.winRate===null?'Chưa có win rate':fmt(s.winRate*100,1)+'% win';
-  $('drawdown').textContent='−'+fmt(s.maxDrawdownObservedPct??0,1)+'%';$('peak').textContent=`Đỉnh vốn ${fmt(s.peakEquity,5)} SOL`;
+  $('drawdown').textContent=s.maxDrawdownObservedPct===null?'—':'−'+fmt(s.maxDrawdownObservedPct,1)+'%';$('peak').textContent=`Đỉnh vốn ${fmt(s.peakEquity,5)} SOL`;
   $('copied').innerHTML=`${s.decisionStats.bought} <span>lệnh mua</span>`;
   $('decision-summary').textContent=`${s.decisionStats.evaluated} lượt đánh giá · ${s.decisionStats.rejected} bỏ qua`;
   $('decision-log').innerHTML=s.decisions.map(l=>`<div class="decision-entry ${l.action.toLowerCase()}"><time>${time(l.at)}</time><span class="tag">[${escape(l.action)}]</span>${escape(l.symbol)}${l.score===null?'':' · '+l.score+'/100'} → ${escape(l.reason)}</div>`).join('')||'<p class="fine">Chưa có quyết định. Khi bật bot, mỗi vòng quét ghi lại token được chọn hoặc bị bỏ qua cùng lý do.</p>';
-  $('candidates').innerHTML=s.rankings.slice(0,8).map((m,i)=>`<article class="candidate-card ${m.eligible?'active':''}"><div class="candidate-card-head"><span class="avatar">${escape(m.symbol.slice(0,1))}</span><strong>${escape(m.symbol)}</strong><small>#${i+1}</small></div><span class="candidate-score ${m.eligible?'positive':''}">${m.score}<small> / 100</small></span><span class="mint" title="${escape(m.mint)}">${escape(m.mint.slice(0,8))}…${escape(m.mint.slice(-6))}</span><div class="candidate-foot"><small>${m.eligible?'Đạt bộ lọc':escape(m.reasons[0]??'Đang đánh giá')}</small></div></article>`).join('')||'<p class="fine">Đang chờ dữ liệu thật. Không tạo token hoặc lợi nhuận giả.</p>';
+  $('candidates').innerHTML=s.rankings.slice(0,8).map((m,i)=>`<article class="candidate-card ${m.eligible?'active':''}"><div class="candidate-card-head"><span class="avatar">${escape(m.symbol.slice(0,1))}</span><strong>${escape(m.symbol)}</strong><small>#${i+1}</small></div><span class="candidate-score ${m.eligible?'positive':''}">${m.score}<small> / 100</small></span><span class="mint">${m.valuationSource==='fdv'?'FDV':'Market cap'} ${money(m.valuationUsd)}</span><span class="mint" title="${escape(m.mint)}">${escape(m.mint.slice(0,8))}…${escape(m.mint.slice(-6))}</span><div class="candidate-foot"><small>${m.eligible?'Đạt bộ lọc':escape(m.reasons[0]??'Đang đánh giá')}</small></div></article>`).join('')||'<p class="fine">Đang chờ dữ liệu thật. Không tạo token hoặc lợi nhuận giả.</p>';
   $('watchlist').innerHTML=s.watchlist.map(m=>`<span class="watch-token">${escape(m.slice(0,8))}…${escape(m.slice(-5))} <button data-action="remove-token" data-mint="${escape(m)}" aria-label="Xóa token">×</button></span>`).join('');
   $('closed').textContent=`${s.closedCount} lệnh đã đóng`;
-  $('status').textContent=s.halted?'● KHÓA MUA':!fresh&&s.automationRequested?'● CHỜ GIÁ':s.running?'● AUTO · PAPER':'● TẠM DỪNG';
+  $('status').textContent=s.mode==='live'?(!s.ownerAuthenticated?'● ĐĂNG NHẬP VÍ':s.running?'● AUTO · MAINNET':'● CHƯA BẬT MAINNET'):(s.running?'● AUTO · PAPER':'● TẠM DỪNG');
   const d=s.diagnostics;
   $('activity-message').textContent=d.message;
   $('scan-counts').textContent=`${d.candidates} token trong tập quét · ${d.eligible} đạt bộ lọc · ${s.positions.length} vị thế đang theo dõi`;
@@ -32,9 +33,9 @@ function render(){
   $('build-revision').textContent='Bản chạy: '+s.buildRevision.slice(0,7);
   $('connection').textContent=fresh?'● Dữ liệu trực tuyến':'● Dữ liệu chưa sẵn sàng';
   $('feed-time').textContent=f.updatedAt?`Giá SOL ${money(f.solUsd)} · ${time(f.updatedAt)}`:'Đang lấy giá thật…';
-  $('start').disabled=busy||s.running||!fresh||!!s.halted;$('pause').disabled=busy||!s.running;
+  $('start').disabled=busy||s.running||!fresh;$('pause').disabled=busy||!s.running;
   $('error').textContent=commandError||s.halted||f.error||'';
-  $('risk-summary').innerHTML=[['Mỗi lệnh',`${cfg.orderSol} SOL`],['Dự phòng',`${cfg.reserveSol} SOL`],['Cắt lỗ / Chốt lời',`−${cfg.stopLossPct}% / +${cfg.takeProfitPct}%`],['Giới hạn lỗ/ngày',`${cfg.maxDailyLossSol} SOL (UTC)`],['Drawdown tối đa',`${cfg.maxDrawdownPct}%`],['Trượt giá mỗi chiều',`${cfg.slippageBps/100}%`],['Phí giả định mỗi lệnh',`${cfg.feeSol} SOL`]].map(([a,b])=>`<div><span>${a}</span><strong>${b}</strong></div>`).join('');
+  $('risk-summary').innerHTML=[['Mỗi lệnh',`${cfg.orderSol} SOL`],['Dự phòng',`${cfg.reserveSol} SOL`],['Cắt lỗ',`−${cfg.stopLossPct}%`],['Chốt lần đầu',`+${cfg.takeProfitTriggerPct}% → thu 140% vốn`],['Phần thả nổi','Mỗi x2 bán 50%'],['Giới hạn lỗ/ngày',`${cfg.maxDailyLossSol} SOL (UTC)`],['Drawdown tối đa',`${cfg.maxDrawdownPct}%`],['Trượt giá mỗi chiều',`${cfg.slippageBps/100}%`],['Phí đã khớp',s.mode==='live'?'Theo receipt Solana':`${cfg.feeSol} SOL`]].map(([a,b])=>`<div><span>${a}</span><strong>${b}</strong></div>`).join('');
   const curve=s.curve;
   $('chart-empty').hidden=curve.length>0;
   if(curve.length){
@@ -48,18 +49,21 @@ function render(){
   $('positions').innerHTML=s.positions.map(p=>{
     const m=f.markets.find(m=>m.mint===p.mint),price=m?.priceUsd??p.lastPriceUsd;
     const pnl=p.quantity*price*(1-cfg.slippageBps/10000)/f.solUsd-cfg.feeSol-p.costSol;
-    return `<tr><td><strong>${escape(p.symbol)}</strong><span class="mint">${escape(p.mint)}</span></td><td>${fmt(p.costSol,5)}</td><td>${money(price)}</td><td class="${sign(pnl)}">${signed(pnl)}</td><td><button data-action="sell" data-mint="${escape(p.mint)}" ${!fresh||!m||busy?'disabled':''}>Bán mô phỏng</button></td></tr>`;
-  }).join('')||rowEmpty(5,'Chưa có vị thế. Bật bot hoặc chọn mua mô phỏng bên dưới.');
+    return `<tr><td><strong>${escape(p.symbol)}</strong><span class="mint">${p.phase==='runner'?'Đã thu hồi vốn · x2 tiếp bán 50%':'Chờ +80% thu hồi vốn'}</span><span class="mint">${escape(p.mint)}</span></td><td>${fmt(p.costSol,5)}</td><td>${money(price)}</td><td class="${sign(pnl)}">${signed(pnl)}</td><td><button data-action="sell" data-mint="${escape(p.mint)}" ${!fresh||!m||busy?'disabled':''}>Bán</button></td></tr>`;
+  }).join('')||rowEmpty(5,'Chưa có vị thế đã xác nhận.');
   const q=$('search').value.toLowerCase();
   $('markets').innerHTML=f.markets.filter(m=>(m.symbol+m.name+m.mint).toLowerCase().includes(q)).map(m=>{
     const eligible=m.liquidityUsd>=cfg.minLiquidityUsd&&m.volume24hUsd>=cfg.minVolume24hUsd;
-    return `<tr><td><strong>${escape(m.symbol)}</strong><span class="mint" title="${escape(m.mint)}">${escape(m.mint.slice(0,8))}…${escape(m.mint.slice(-6))}</span></td><td>${money(m.priceUsd)}</td><td class="${sign(m.change5mPct)}">${m.change5mPct>0?'+':''}${fmt(m.change5mPct,2)}%</td><td>${money(m.liquidityUsd)}</td><td>${money(m.volume24hUsd)}</td><td>${m.buys5m} / ${m.sells5m}</td><td><button data-action="buy" data-mint="${escape(m.mint)}" ${busy||!fresh||!eligible||s.halted||s.positions.some(p=>p.mint===m.mint)?'disabled':''}>${eligible?'Mua mô phỏng':'Lọc thanh khoản'}</button></td></tr>`;
+    return `<tr><td><strong>${escape(m.symbol)}</strong><span class="mint" title="${escape(m.mint)}">${escape(m.mint.slice(0,8))}…${escape(m.mint.slice(-6))}</span></td><td>${money(m.priceUsd)}</td><td class="${sign(m.change5mPct)}">${m.change5mPct>0?'+':''}${fmt(m.change5mPct,2)}%</td><td>${money(m.liquidityUsd)}</td><td>${money(m.volume24hUsd)}</td><td>${m.buys5m} / ${m.sells5m}</td><td><button data-action="buy" data-mint="${escape(m.mint)}" ${busy||!fresh||!eligible||s.halted||s.positions.some(p=>p.mint===m.mint)?'disabled':''}>${eligible?'Mua':'Lọc thanh khoản'}</button></td></tr>`;
   }).join('')||rowEmpty(7,'Chưa có token phù hợp hoặc đang chờ dữ liệu.');
   $('events').innerHTML=s.events.map(e=>`<div class="event"><time>${time(e.at)}</time>${escape(e.message)}</div>`).join('')||'<p>Nhật ký sẽ xuất hiện khi bot hoạt động.</p>';
-  $('trades').innerHTML=s.trades.map(t=>`<div class="event"><time>${time(t.at)}</time><span class="${t.side==='BUY'?'positive':'negative'}">${t.side}</span> ${escape(t.symbol)} · ${fmt(t.sol,5)} SOL${t.pnlSol!==undefined?` · P/L <span class="${sign(t.pnlSol)}">${signed(t.pnlSol)}</span>`:''}<br><span class="subtle">PAPER · ${escape(t.reason)}</span></div>`).join('')||'<p>Chưa có giao dịch. Số liệu sẽ không được tạo giả.</p>';
-  $('public-notice').hidden=!s.readOnly;
+  $('trades').innerHTML=s.trades.map(t=>`<div class="event"><time>${time(t.at)}</time><span class="${t.side==='BUY'?'positive':'negative'}">${t.side}</span> ${escape(t.symbol)} · ${fmt(t.sol,5)} SOL${t.pnlSol!==undefined?` · P/L <span class="${sign(t.pnlSol)}">${signed(t.pnlSol)}</span>`:''}<br><span class="subtle">MAINNET · ${escape(t.reason)}</span></div>`).join('')||'<p>Chưa có giao dịch đã xác nhận trên Solana.</p>';
+  $('paper-controls').hidden=s.readOnly;$('reset').hidden=s.readOnly;
+  const ids=new Set(s.trades.map(t=>[t.at,t.mint,t.side,t.quantity,t.sol].join(':')));
+  if(seenPaperTrades)for(const t of [...s.trades].reverse())if(!seenPaperTrades.has([t.at,t.mint,t.side,t.quantity,t.sol].join(':')))window.dispatchEvent(new CustomEvent('meme-trade',{detail:{id:t.signature??[t.at,t.mint,t.side,t.quantity,t.sol].join(':'),side:t.side,symbol:t.symbol,mode:s.mode}}));
+  seenPaperTrades=ids;
   if(s.readOnly){
-    for(const button of document.querySelectorAll('button'))button.disabled=true;
+    for(const button of document.querySelectorAll('#start,#pause,#reset,button[data-action]'))button.disabled=true;
     $('token-form').hidden=true;
   }
 }

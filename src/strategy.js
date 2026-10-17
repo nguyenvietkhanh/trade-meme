@@ -1,20 +1,43 @@
-/** Transparent, untrained heuristic. Score is a filter, not a probability of profit. */
+/** Auditable screener/score, not a trained model or a probability of profit. */
+const clamp=(v,min,max)=>Math.min(max,Math.max(min,v));
 export function rankMarket(m,s,now=Date.now()){
  const reasons=[];
  const fresh=Number.isFinite(m.updatedAt)&&now-m.updatedAt<=s.maxPriceAgeMs&&now>=m.updatedAt;
  const liquid=Number.isFinite(m.liquidityUsd)&&m.liquidityUsd>=s.minLiquidityUsd;
  const volume=Number.isFinite(m.volume24hUsd)&&m.volume24hUsd>=s.minVolume24hUsd;
- const momentum=Number.isFinite(m.change5mPct)&&m.change5mPct>=1&&m.change5mPct<=8;
+ const momentum=Number.isFinite(m.change5mPct)&&m.change5mPct>=1&&m.change5mPct<=12;
  const activity=Number.isFinite(m.buys5m)&&m.buys5m>=10;
  const pressure=Number.isFinite(m.sells5m)&&m.sells5m>=0&&m.buys5m>m.sells5m*1.3;
  const aged=Number.isFinite(m.pairCreatedAt)&&m.pairCreatedAt>0&&now-m.pairCreatedAt>=s.minPairAgeMs;
+ const valuation=Number.isFinite(m.valuationUsd)&&m.valuationUsd>=s.minMarketCapUsd&&m.valuationUsd<=s.maxMarketCapUsd;
+ const sustainable=valuation&&m.liquidityUsd/m.valuationUsd>=.05;
+ const dex=String(m.dexId??'').toLowerCase()==='pumpswap';
+ const profile=m.hasProfile===true;
+ const v5=m.volume5mUsd,v1=m.volume1hUsd;
+ const acceleration=Number.isFinite(v5)&&Number.isFinite(v1)&&v1>v5?v5/((v1-v5)/11):0;
+ const activeVolume=v5>=1000&&acceleration>=1.2;
+ const trend=Number.isFinite(m.change1hPct)&&m.change1hPct>0&&m.change1hPct<=80;
+ const collapse=Number.isFinite(m.change6hPct)&&m.change6hPct< -30;
+ const extended=Number.isFinite(m.change24hPct)&&m.change24hPct>500;
  if(!fresh)reasons.push('Giá cũ hoặc thiếu');
- if(!liquid)reasons.push('Thanh khoản < $100k');
- if(!volume)reasons.push('Volume 24h < $100k');
- if(!momentum)reasons.push('Biến động 5m ngoài khoảng +1% đến +8%');
+ if(!dex)reasons.push('Không phải pool PumpSwap');
+ if(!profile)reasons.push('Thiếu profile token');
+ if(!liquid)reasons.push(`Thanh khoản < $${s.minLiquidityUsd.toLocaleString('en-US')}`);
+ if(!volume)reasons.push(`Volume 24h < $${s.minVolume24hUsd.toLocaleString('en-US')}`);
+ if(!momentum)reasons.push('Biến động 5m ngoài khoảng +1% đến +12%');
  if(!activity)reasons.push('Ít hơn 10 lượt mua/5m');
  if(!pressure)reasons.push('Lực mua chưa vượt 1,3× lực bán');
- if(!aged)reasons.push('Pool dưới 6 giờ hoặc không rõ tuổi');
- const score=(liquid?20:0)+(volume?15:0)+(momentum?25:0)+(activity?10:0)+(pressure?20:0)+(aged?10:0);
- return {score,eligible:reasons.length===0,reasons};
+ if(!aged)reasons.push('Pool dưới 10 giờ hoặc không rõ tuổi');
+ if(!valuation)reasons.push('Định giá ngoài $100k–$5m hoặc thiếu dữ liệu');
+ if(valuation&&!sustainable)reasons.push('Thanh khoản dưới 5% định giá');
+ if(!activeVolume)reasons.push('Volume 5m < $1k hoặc chưa tăng tốc 1,2×');
+ if(!trend)reasons.push('Xu hướng 1h chưa dương hoặc đã tăng quá 80%');
+ if(collapse)reasons.push('Giá 6h đang giảm hơn 30%');
+ if(extended)reasons.push('Giá 24h đã tăng quá 500%');
+ if(m.signalConfirmed!==true)reasons.push('Chờ xác nhận tín hiệu qua ít nhất 2 lần quét cách nhau 30 giây');
+ const buyShare=m.buys5m/Math.max(1,m.buys5m+m.sells5m);
+ const parts={depth:clamp((m.liquidityUsd||0)/50000,0,1)*15,activity:clamp((v5||0)/10000,0,1)*10,momentum:momentum?(m.change5mPct<=6?15:clamp(15-(m.change5mPct-6)*1.5,0,15)):0,buyPressure:clamp((buyShare-.5)/.3,0,1)*15,acceleration:clamp(acceleration/3,0,1)*15,trend:trend?(m.change1hPct<=40?10:5):0,confirmation:m.signalConfirmed?10:0,profile:profile?5:0,valuation:valuation?(m.valuationSource==='marketCap'?5:2):0};
+ const score=Math.round(Object.values(parts).reduce((a,b)=>a+b,0));
+ if(score<70)reasons.push('Điểm tổng dưới 70/100');
+ return {score,eligible:reasons.length===0,reasons,scoreParts:parts,volumeAcceleration:acceleration,buyShare};
 }

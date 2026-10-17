@@ -15,23 +15,23 @@ const scenarios=[
 for(const scenario of scenarios)test(scenario.name,async()=>{
  const dir=await mkdtemp(path.join(tmpdir(),'meme-public-'));
  if(scenario.halted){const saved=freshState();saved.halted='existing-risk-halt';await writeFile(path.join(dir,'paper-state.json'),JSON.stringify(saved));}
- const child=spawn(process.execPath,['--import','./test/fixtures/feed.js','src/'+scenario.entry],{cwd:new URL('../',import.meta.url),env:{...process.env,PORT:'0',DATA_DIR:dir,...scenario.env},stdio:['ignore','pipe','pipe']});
+ const child=spawn(process.execPath,['--import','./test/fixtures/feed.js','src/'+scenario.entry],{cwd:new URL('../',import.meta.url),env:{...process.env,PAPER_WORKSPACE:'true',PAPER_AUTOSTART:'true',PORT:'0',DATA_DIR:dir,...scenario.env},stdio:['ignore','pipe','pipe']});
  let output='';child.stdout.on('data',c=>{output+=c;});
  try{
   let base;
   for(let i=0;i<100;i++){const match=output.match(/0\.0\.0\.0:(\d+)/);if(match){base='http://127.0.0.1:'+match[1];break;}await delay(20);}
   assert.ok(base,'listening on public interface');
   let state;
-  for(let i=0;i<100;i++){state=await (await fetch(base+'/api/state')).json();if(state.feed.updatedAt)break;await delay(20);}
+  for(let i=0;i<100;i++){state=await (await fetch(base+'/api/state')).json();if(state.feed.updatedAt&&(scenario.halted||state.positions.length))break;await delay(20);}
   assert.ok(state.feed.updatedAt,'feed was actually loaded');
   assert.equal(state.readOnly,true);assert.equal(state.mode,'paper');
-  assert.equal(state.running,!scenario.halted);
+  assert.equal(state.running,true);
   if(scenario.halted){assert.equal(state.halted,'existing-risk-halt');assert.equal(state.positions.length,0);}
   else{assert.ok(state.positions.length>0,'autonomous entry was executed');assert.ok(state.decisionStats.evaluated>0);}
   for(const action of ['reset','pause','buy','sell','add-token']){
    const r=await fetch(base+'/api/command',{method:'POST',headers:{'Content-Type':'application/json','X-Requested-With':'meme-desk'},body:JSON.stringify({action,confirm:'RESET PAPER'})});assert.equal(r.status,403);
   }
-  const health=await (await fetch(base+'/api/health')).json();assert.equal(health.running,!scenario.halted);assert.equal(health.readOnly,true);
+  const health=await (await fetch(base+'/api/health')).json();assert.equal(health.running,true);assert.equal(health.readOnly,true);
   assert.equal((await fetch(base)).status,200);
  }finally{const exited=new Promise(r=>child.once('exit',r));child.kill('SIGTERM');await exited;await rm(dir,{recursive:true,force:true});}
 });

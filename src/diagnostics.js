@@ -14,6 +14,6 @@ export function diagnose(state,feed,rankings,now=Date.now()){
  else if(!rankings.length){phase='empty-market';message='Đã kết nối nhưng nguồn khám phá chưa trả về token Solana để xét lệnh.';}
  else if(!eligible.length){phase='waiting-signal';message=`Bot đang quét ${rankings.length} token; chưa có token đạt toàn bộ điều kiện mua.`;}
  else if(!actionable.length){phase='cooldown';message='Token đạt bộ lọc đã có vị thế hoặc đang nghỉ 30 phút sau lần bán trước.';}
- else{phase='ready';message=`Có ${actionable.length} token đạt bộ lọc; sẽ kiểm tra ngân sách và khớp mô phỏng trong vòng quét.`;}
+ else{phase='ready';message=`Có ${actionable.length} token đạt bộ lọc; sẽ kiểm tra ngân sách và an toàn thực thi trong vòng quét.`;}
  return {phase,message,candidates:rankings.length,eligible:eligible.length,actionable:actionable.length,lastEvaluationAt:state.lastEvaluationAt??null,topBlockers:[...reasons].sort((a,b)=>b[1]-a[1]).slice(0,4).map(([reason,count])=>({reason,count}))};
 }
