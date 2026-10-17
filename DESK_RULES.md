@@ -6,7 +6,7 @@ Runtime constants: `src/desk-rules.js`. Decision functions: `src/strategy.js`, `
 
 Only PumpSwap classic SPL/WSOL spot. Fresh positive price and SOL/USD; market cap (not FDV) $10k–$5m; pool age 15 minutes–24 hours inclusive. Liquidity >=20 SOL and >=5% cap. Consistent nonnegative interval volumes and integer transaction counts, positive H1 volume, >=100 H1 trades and >=10 M5 buys. Volume per trade >25% of pool liquidity with fewer than 20 M5 trades is rejected as suspicious. No duplicate mint or mixing existing wallet holdings.
 
-Evidence must bind to the same mint and pool, be no older than 90 seconds and never future-dated. Mint and freeze revoked; LP >=90% secured; actual sell simulation for a 0.03 SOL-sized position succeeds, tax <=5%, impact <=3%; owner-aggregated top ten excluding pool <=30%; creator <=5%. Bundle/sniper analysis completed and concentration <=10%. Complete M5 buyer window with unique buyers >=25% of M5 buys, no detected wash trading. Checked warnings with no critical alerts; known full round-trip cost <=8%. A roughly 1:1 aggregate alone is insufficient evidence of wash trading.
+Evidence must bind to the same mint and pool, be no older than 90 seconds and never future-dated. Mint and freeze revoked; LP >=90% secured; actual sell simulation for a 0.03 SOL-sized position succeeds, tax <=5%, impact <=3%; owner-aggregated top ten excluding pool <=30%; creator <=5%. Bundle/sniper analysis completed and concentration <=10%. Complete M5 buyer window with unique buyers >=25% of all M5 buy + sell transactions, no detected wash trading. Checked warnings with no critical alerts; known full round-trip cost <=8%. A roughly 1:1 aggregate alone is insufficient evidence of wash trading.
 
 A missing value is unknown, never zero/false/safe. An empty risk list or perfect provider score cannot substitute for holder analysis or sell simulation.
 
@@ -36,4 +36,4 @@ DexScreener adapter reads available M5/H1/H6 trade counts and volumes, cap sourc
 
 ## Decorative UI
 
-`public/spider.js` listens to confirmed trade and UI activity events only. Web shot, anchored swing and return use transform animations with bounded event queues, visibility cancellation and reduced-motion support. Clicking controls means “processing action”, not “trade filled”. No wallet/trading API is called by the animation.
+`public/spider.js` listens to confirmed trade and UI activity events only. The spider crawls to the actual active token card, position or decision region and remains at that destination until new activity. It uses transform animations, bounded queues, trade priority, viewport/scroll constraints, visibility cancellation and reduced-motion support. There is no web overlay or automatic return loop. Clicking controls means “processing action”, not “trade filled”. No wallet/trading API is called by the animation.

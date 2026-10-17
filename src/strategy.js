@@ -4,6 +4,7 @@ const pct=v=>finite(v)&&v>=0&&v<=100;
 const clamp=v=>Number.isFinite(v)?Math.max(0,Math.min(1,v)):0;
 /** Pure decision module: never signs or executes. Unknown is never treated as safe. */
 export function rankMarket(m,s=T,now=Date.now()){
+ m=m&&typeof m==='object'&&!Array.isArray(m)?m:{};
  const reasons=[],red_flags=[];
  const fail=(ok,code,text)=>{if(!ok){red_flags.push(code);reasons.push(text);}};
  const e=m.evidence??{},fresh=t=>finite(t)&&t<=now&&now-t<=s.maxPriceAgeMs;
@@ -29,7 +30,7 @@ export function rankMarket(m,s=T,now=Date.now()){
  fail(pct(e.devPct)&&e.devPct<=5,'DEV_CONCENTRATION','Tỷ lệ ví dev chưa được xác nhận ≤5%');
  fail(e.bundleChecked===true&&pct(e.bundleSniperPct)&&e.bundleSniperPct<=10,'BUNDLE_UNVERIFIED','Bundle/sniper chưa kiểm chứng hoặc nắm trên 10%');
  const trades=m.buys5m+m.sells5m,unique=e.uniqueBuyers5m;
- fail(e.buyersWindowComplete===true&&Number.isSafeInteger(unique)&&unique>=0&&unique<=m.buys5m&&unique/Math.max(1,m.buys5m)>=.25,'WASH_TRADING','Thiếu số ví mua riêng biệt hoặc tỷ lệ ví mua/lượt mua <25%');
+ fail(e.buyersWindowComplete===true&&Number.isSafeInteger(unique)&&unique>=0&&unique<=m.buys5m&&unique/Math.max(1,trades)>=.25,'WASH_TRADING','Thiếu số ví mua riêng biệt hoặc tỷ lệ ví mua/tổng giao dịch 5m <25%');
  // A 1:1 aggregate by itself cannot prove wash trading. Require corroborating wallet data.
  fail(!(trades<20&&m.volume5mUsd/Math.max(1,trades)>m.liquidityUsd*.25),'SUSPICIOUS_TICKET_VOLUME','Volume quá lớn so với số lệnh và thanh khoản');
  fail(e.washTradingDetected===false,'WASH_UNVERIFIED','Chưa kiểm chứng giao dịch giả');
@@ -52,5 +53,5 @@ export function rankMarket(m,s=T,now=Date.now()){
 }
 export function decideMarket(m,s=T,now=Date.now()){
  const r=rankMarket(m,s,now);
- return {action:r.eligible?'BUY':'SKIP',token:m.mint??'',sell_percent:0,score:r.score,reasons:r.eligible?['Đạt toàn bộ điều kiện bắt buộc','Điểm tín hiệu ≥70/100']:r.reasons.slice(0,3),red_flags:r.red_flags};
+ return {action:r.eligible?'BUY':'SKIP',token:typeof m?.mint==='string'?m.mint:'',sell_percent:0,score:r.score,reasons:r.eligible?['Đạt toàn bộ điều kiện bắt buộc','Điểm tín hiệu ≥70/100']:r.reasons.slice(0,3),red_flags:r.red_flags};
 }

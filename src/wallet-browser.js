@@ -52,8 +52,9 @@ function render(){
  $('sign-order').disabled=signing||!proposal||!!ledger?.pending||!ledger?.running;
  $('sign-order').textContent=proposal?`Ký ${proposal.side==='PROFIT'?'chuyển lãi':proposal.side==='BUY'?'mua':'bán'} ${proposal.symbol}`:'Chưa có lệnh cần ký';
  $('order-preview').textContent=ledger?.pending?'Signature: '+(ledger.pending.signature??'đang chờ ký'):proposal?`${proposal.side==='PROFIT'?'CHUYỂN LÃI '+(Number(proposal.amount)/1e9).toFixed(6)+' SOL':proposal.side==='BUY'?'MUA 0,03 SOL':'BÁN token đang quản lý'} · ${proposal.symbol} · ${proposal.reason}`:ledger?.running?(signerAvailable?'Bot đang tự chọn và ký lệnh trên server.':'Đang chờ tín hiệu đạt bộ lọc.'):'Bật theo dõi để bot chọn tín hiệu mua và thoát lệnh.';
+ if(ledger?.pending)window.dispatchEvent(new CustomEvent('meme-activity',{detail:{id:'pending:'+(ledger.pending.signature??ledger.pending.intent?.id),priority:true,anchor:'#order-preview',text:'Đang đối soát '+(ledger.pending.intent?.side==='BUY'?'lệnh mua':ledger.pending.intent?.side==='SELL'?'lệnh bán':'chuyển SOL')}}));
  $('live-position-list').replaceChildren();
- for(const p of ledger?.positions??[]){const row=document.createElement('div');row.textContent=`${p.symbol}: ${p.quantity} token · ${p.phase} `;const button=document.createElement('button');button.textContent=signerAvailable?'Bán toàn bộ vị thế':'Ký bán toàn bộ vị thế';button.disabled=signing||!!ledger.pending;button.onclick=()=>action(()=>signerAvailable?api('/api/signer/close',{mint:p.mint}):lockedSign(ownerExit(ledger,p.mint,1,'owner-exit',feed?.solUsd)));row.appendChild(button);$('live-position-list').appendChild(row);}
+ for(const p of ledger?.positions??[]){const row=document.createElement('div');row.dataset.spiderMint=p.mint;row.dataset.spiderRole='position';row.textContent=`${p.symbol}: ${p.quantity} token · ${p.phase} `;const button=document.createElement('button');button.textContent=signerAvailable?'Bán toàn bộ vị thế':'Ký bán toàn bộ vị thế';button.disabled=signing||!!ledger.pending;button.onclick=()=>action(()=>signerAvailable?api('/api/signer/close',{mint:p.mint}):lockedSign(ownerExit(ledger,p.mint,1,'owner-exit',feed?.solUsd)));row.appendChild(button);$('live-position-list').appendChild(row);}
  $('profit-recipient').textContent=PROFIT_RECIPIENT;
  $('profit-history').textContent=`Đã chuyển: ${(ledger?.withdrawnSol??0).toFixed(6)} SOL`+(ledger?.payouts?.map(p=>`\n${new Date(p.at).toLocaleString('vi-VN')} ${p.amountSol.toFixed(6)} SOL · ${p.signature}`).join('')??'');
  const audit=ledger?auditDesk(ledger):null;$('audit-report').textContent=audit?`7 ngày · ${audit.closedTrades}/40 lệnh đóng · Win rate ${audit.winRate===null?'chưa có':(audit.winRate*100).toFixed(1)+'%'} · Kỳ vọng ${audit.expectancyR===null?'chưa đủ dữ liệu':audit.expectancyR.toFixed(2)+'R'} · ${audit.status==='insufficient-data'?'Chưa đủ mẫu để kết luận':audit.status==='passed'?'Đạt ngưỡng tham chiếu':'Cần xem lại kết quả'}`:'Chưa có nhật ký để đánh giá.';
@@ -67,7 +68,7 @@ async function reconcile(){
  const pending=ledger.pending,result=await api('/api/direct/reconcile',{intent:pending.intent,transaction:pending.transaction});
  if(result.status==='pending')return;
  const confirmed=applyOwnerReceipt(ledger,pending,result);if(result.status!=='confirmed')ledger.running=false;save();
- if(confirmed&&pending.intent.side!=='PROFIT')window.dispatchEvent(new CustomEvent('meme-trade',{detail:{id:result.signature,side:pending.intent.side,symbol:pending.intent.symbol,mode:'live'}}));
+ if(confirmed&&pending.intent.side!=='PROFIT')window.dispatchEvent(new CustomEvent('meme-trade',{detail:{id:result.signature,side:pending.intent.side,mint:pending.intent.mint,symbol:pending.intent.symbol,mode:'live'}}));
  if(result.status!=='confirmed')message(result.status==='failed'?'Lệnh thất bại trên Solana; đã ghi nhận phí mạng.':'Lệnh hết hạn; không gửi lại tự động.');
  await watch();
 }

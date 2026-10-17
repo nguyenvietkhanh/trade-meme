@@ -63,3 +63,19 @@ test('stop loss includes SOL/USD opportunity cost and fees rather than testing t
  assert.equal(exitPlan(s.positions[0],m,150,s.settings,now)?.reason,'stop-loss');
  const d=freshState(now);d.cashSol=.254;riskCheck(d,[],150,now);assert.equal(d.haltKind,'drawdown');assert.equal(d.dailyLossBlocked,true);
 });
+test('unique buyer diversity uses all five-minute transactions, not just buy transactions',()=>{
+ const m=verifiedMarket({buys5m:40,sells5m:20,evidence:{uniqueBuyers5m:12}},now);
+ // 12/40=30% of buys but 12/60=20% of all trades: must be rejected.
+ assert.ok(rankMarket(m,R,now).red_flags.includes('WASH_TRADING'));
+ const boundary=verifiedMarket({buys5m:40,sells5m:20,evidence:{uniqueBuyers5m:15}},now);
+ assert.equal(rankMarket(boundary,R,now).red_flags.includes('WASH_TRADING'),false);
+});
+test('stop loss takes precedence over the time stop so emergency slippage remains available',()=>{
+ const {s,p,m}=account();const plan=exitPlan(p,{...m,priceUsd:.7},1,s.settings,now+2700000);
+ assert.equal(plan.reason,'stop-loss');assert.equal(executionSlippageBps('SELL',plan.reason),1000);
+});
+test('null decision inputs and incomplete runner targets fail closed without a runtime exception',()=>{
+ for(const input of [null,{}, {market:null},{market:[]}, {market:{mint:'t'}}]){const d=analyzeDecision(input);assert.equal(d.action,'SKIP');assert.ok(Number.isFinite(d.score));assert.ok(d.reasons.length<=3);}
+ const {p,m}=account();p.phase='runner';p.nextTakeProfitPriceUsd=null;
+ assert.equal(analyzeDecision({market:m,position:p,now}).action,'SKIP');
+});

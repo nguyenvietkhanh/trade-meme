@@ -56,8 +56,8 @@ export function exitPlan(p,m,solUsd,s,now=Date.now()){
  p.peakLiquidityUsd=Math.max(p.peakLiquidityUsd??p.entryLiquidityUsd??0,Number.isFinite(m.liquidityUsd)?m.liquidityUsd:0);
  if((Number.isFinite(p.entryLiquidityUsd)&&Number.isFinite(m.liquidityUsd)&&m.liquidityUsd<p.peakLiquidityUsd*.6)||m.evidence?.lpWithdrawn===true||m.evidence?.largeHolderDump===true||m.evidence?.sellSimulationOk===false)return {reason:'emergency-risk',fraction:1};
  if(p.phase==='runner'&&m.priceUsd/p.peakPriceUsd<=1-s.runnerTrailingPct/100+1e-12)return {reason:'runner-trailing',fraction:1};
- if(p.phase==='initial'&&now-p.openedAt>=s.timeStopMs&&p.maxGainPct<s.timeStopGainPct)return {reason:'time-stop',fraction:1};
  if(value/solUsd<=p.costSol*(1-s.stopLossPct/100))return {reason:'stop-loss',fraction:1};
+ if(p.phase==='initial'&&now-p.openedAt>=s.timeStopMs&&p.maxGainPct<s.timeStopGainPct)return {reason:'time-stop',fraction:1};
  if(p.phase==='initial'&&value>=p.initialCostUsd*(1+s.takeProfitTriggerPct/100)){
   const target=p.initialCostUsd*(1+s.takeProfitRecoveryPct/100);
   const quantity=(target+s.feeSol*solUsd)/(m.priceUsd*(1-s.slippageBps/10000));
