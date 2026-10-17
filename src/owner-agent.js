@@ -45,8 +45,8 @@ export class OwnerAgent{
  });}
  async pause(lock=false){this.commandEpoch++;if(this.state)this.state.running=false;return this.serial(async()=>{if(this.state)this.state.running=false;try{await this.save();}finally{if(lock)this.vault.lock();}});}
  async status(){
-  let balanceSol=null,rpcError=null;try{balanceSol=await this.execution.balance(this.owner);}catch{rpcError='RPC chưa phản hồi. Có thể mở khóa bộ ký; chưa gửi lệnh khi kết nối lỗi.';}
-  return {signerAvailable:true,vault:this.vault.status(),wallet:{...this.direct.configure(),balanceSol,tokenBalances:{},swapReady:balanceSol!==null,unattendedSigning:true},ledger:this.state?{...this.state,pending:this.state.pending?{intent:this.state.pending.intent,signature:this.state.pending.signature,transaction:!!this.state.pending.transaction}:null}:null,audit:this.state?auditDesk(this.state):null,error:this.error??rpcError};
+  let balanceSol=null,rpcError=null;try{balanceSol=await this.execution.balance(this.owner);}catch{const failures=this.execution.rpc?.rpcDiagnostics?.().failures??[];rpcError='Chưa đọc được số dư qua RPC. '+(failures.length?failures.map(r=>r.host+': '+r.reason).join(' · '):'RPC chưa trả số dư hợp lệ.');}
+  return {signerAvailable:true,vault:this.vault.status(),wallet:{...this.direct.configure(),balanceSol,tokenBalances:{},swapReady:balanceSol!==null,unattendedSigning:true},ledger:this.state?{...this.state,pending:this.state.pending?{intent:this.state.pending.intent,signature:this.state.pending.signature,transaction:!!this.state.pending.transaction}:null}:null,audit:this.state?auditDesk(this.state):null,error:rpcError??this.error};
  }
  async execute(order,feed){
   const s=this.state;if(!s||!this.vault.keypair||s.pending)throw Error('Bộ ký chưa sẵn sàng hoặc còn lệnh chờ.');

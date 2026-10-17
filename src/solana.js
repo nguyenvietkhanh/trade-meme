@@ -2,7 +2,7 @@ import {Connection,PublicKey,VersionedTransaction,TransactionMessage,SystemProgr
 import bs58 from 'bs58';
 import {buildPumpSwap,PUMP_PROGRAM} from './pump-swap.js';
 import {SOL} from './engine.js';
-import {keylessConnection,PUBLIC_RPC_ENDPOINTS} from './rpc.js';
+import {keylessConnection,PUBLIC_RPC_ENDPOINTS,MAINNET_GENESIS_HASH} from './rpc.js';
 import {PROFIT_RECIPIENT,PROFIT_RULES,TRADE_RULES} from './desk-rules.js';
 export const TOKEN=new PublicKey('TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA');
 export const TOKEN2022=new PublicKey('TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb');
@@ -43,7 +43,7 @@ function tokenData(info){
 }
 export class SolanaExecution{
  constructor(url){this.rpc=keylessConnection(url?[url]:PUBLIC_RPC_ENDPOINTS);this.provider='Solana RPC công khai';}
- async network(){if(await this.rpc.getGenesisHash()!=='5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp')throw new TradePolicyError('RPC không phải Solana mainnet.');}
+ async network(){if(await this.rpc.getGenesisHash()!==MAINNET_GENESIS_HASH)throw new TradePolicyError('RPC không phải Solana mainnet.');}
  async balance(address,minContextSlot){return (await this.rpc.getBalance(new PublicKey(address),minContextSlot?{commitment:'confirmed',minContextSlot}:'confirmed'))/1e9;}
  async mintCheck(mint){
   const key=new PublicKey(mint),info=await this.rpc.getParsedAccountInfo(key),data=info.value?.data;
