@@ -1,5 +1,6 @@
 import {VersionedTransaction} from '@solana/web3.js';
 import bs58 from 'bs58';
+import {connectedWalletAddress} from './wallet-provider.js';
 const $=id=>document.getElementById(id);
 let provider=null,live=null,seenLiveTrades=null;
 async function api(path,body){const r=await fetch(path,{method:body?'POST':'GET',headers:body?{'Content-Type':'application/json','X-Requested-With':'meme-desk'}:{},body:body?JSON.stringify(body):undefined});const data=await r.json();if(!r.ok)throw Error(data.error||'Yêu cầu thất bại.');return data;}
@@ -30,7 +31,8 @@ async function connect(){
  provider=window.phantom?.solana??window.solflare??window.solana;
  if(!provider?.connect||!provider.signMessage)throw Error('Cần Phantom hoặc Solflare. Trên điện thoại, mở trang trong trình duyệt của ứng dụng ví.');
  const ownerStatus=await api('/api/auth/status');
- const result=await provider.connect();const address=result.publicKey.toString();
+ const result=await provider.connect();let address;
+ try{address=connectedWalletAddress(provider,result);}catch(e){const wallet=provider;provider=null;try{await wallet.disconnect?.();}catch{}throw e;}
  if(address!==ownerStatus.owner){await provider.disconnect?.();provider=null;throw Error('Ví không được phép. Chỉ ví chủ '+ownerStatus.owner+' được kết nối.');}
  provider.on?.('accountChanged',async key=>{if(provider&&(!key||key.toString()!==ownerStatus.owner)){const previous=provider;provider=null;await api('/api/auth/logout',{}).catch(()=>{});await previous.disconnect?.();message('Đã ngắt phiên vì ví được chọn không phải ví chủ.');await refresh();}});
  const challenge=await api('/api/auth/challenge',{address});const signed=await provider.signMessage(new TextEncoder().encode(challenge.message),'utf8');
@@ -42,6 +44,9 @@ $('vault-form').onsubmit=e=>{e.preventDefault();action(async()=>{const password=
 $('vault-create').onclick=()=>{};
 $('fund-bot').onclick=()=>action(async()=>{
  if(!provider)await connect();
+ const auth=await api('/api/auth/status');
+ if(connectedWalletAddress(provider)!==auth.owner)throw Error('Ví hiện tại không phải ví chủ. Kết nối lại đúng ví trước khi nạp SOL.');
+ if(typeof provider.signAndSendTransaction!=='function')throw Error('Ứng dụng ví chưa hỗ trợ gửi giao dịch này. Hãy dùng Phantom hoặc Solflare phiên bản mới.');
  const prepared=await api('/api/live/fund',{});const bytes=Uint8Array.from(atob(prepared.transaction),c=>c.charCodeAt(0));
  await provider.signAndSendTransaction(VersionedTransaction.deserialize(bytes));message('Đã gửi yêu cầu nạp. Chờ mạng xác nhận trước khi bật bot.');
 });
