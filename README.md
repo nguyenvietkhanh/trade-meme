@@ -15,7 +15,7 @@ npm start
 
 Mở trình duyệt trên máy của bạn, nhập địa chỉ `http://127.0.0.1:3000`. Đợi báo dữ liệu trực tuyến, xem bộ giới hạn rồi bấm **Bật bot tự giao dịch**. Bot sẽ tự chọn lệnh mô phỏng mỗi vòng quét, không cần bạn xác nhận từng lệnh. Khi chưa bấm bật, chỉ đọc giá và hiển thị radar. Giao dịch thủ công nằm trong phần mở rộng dưới dashboard.
 
-Không bắt buộc tạo `.env`. Muốn đổi cổng, sao chép `.env.example` thành `.env` rồi chỉnh. Node dùng proxy hiện có của máy với `--use-env-proxy`; không tắt TLS verification. Dữ liệu discovery tìm BONK, WIF, POPCAT và “solana” trên DexScreener, lọc chain Solana và chọn pool có thanh khoản cao nhất cho từng mint. Đây là tập quét có giới hạn, không phải toàn bộ Solana hoặc danh sách meme đã xác minh. Có thể thêm tối đa 20 địa chỉ mint vào tập quét ngay trên dashboard. Vị thế mở luôn được yêu cầu cập nhật riêng, không phụ thuộc việc token còn xuất hiện trong kết quả discovery.
+Không bắt buộc tạo `.env`. Muốn đổi cổng, sao chép `.env.example` thành `.env` rồi chỉnh. Node dùng proxy hiện có của máy với `--use-env-proxy`; không tắt TLS verification. Dữ liệu discovery kết hợp tìm BONK, WIF, POPCAT và “solana” với tối đa 30 profile Solana mới nhất từ DexScreener; lọc chain Solana và chọn pool có thanh khoản cao nhất cho từng mint. Profile mới chỉ là nguồn khám phá, không phải token đã được xác minh hoặc khuyến nghị. Nguồn profile lỗi không làm mất toàn bộ kết quả tìm kiếm; dashboard báo rõ khi nguồn này thiếu. Yêu cầu dữ liệu token chia theo nhóm tối đa 30 mint. Đây là tập quét có giới hạn, không phải toàn bộ Solana hoặc danh sách meme đã xác minh. Có thể thêm tối đa 20 địa chỉ mint vào tập quét ngay trên dashboard. Vị thế mở luôn được yêu cầu cập nhật riêng, không phụ thuộc việc token còn xuất hiện trong kết quả discovery.
 
 ## Bot tự quyết định như thế nào?
 
@@ -68,6 +68,10 @@ journalctl --user -u meme-pilot -f
 
 Chỉ chạy **một tiến trình** với một thư mục dữ liệu. Dịch vụ local chưa có đăng nhập đa người dùng; không mở port trực tiếp ra Internet.
 
+## Khi bot chạy nhưng chưa có giao dịch
+
+Mục **BOT ACTIVITY** ở đầu dashboard hiển thị số token trong vòng quét, số đạt toàn bộ bộ lọc, thời điểm đánh giá và các lý do loại phổ biến. Tách riêng chờ tín hiệu, mất giá, tạm dừng, đủ vị thế, dự phòng vốn, cooldown và risk halt. AUTO/PAPER cùng số lượt đánh giá tăng chỉ chứng minh bot đang xét thị trường; không đảm bảo sẽ có lệnh. Không ép mua, không nới bộ lọc tự động khi thị trường chưa phù hợp. Dòng “Bản chạy” dùng commit SHA do Railway cung cấp để phân biệt deployment cũ.
+
 ## Lưu dữ liệu và kiểm tra
 
 Trạng thái nằm trong `.data/paper-state.json`, ghi file tạm rồi đổi tên; không commit vào Git. Có tối đa 500 fills gần nhất, 300 quyết định gần nhất, 200 log và 1.440 điểm đường vốn (khoảng 12 giờ ở chu kỳ 30 giây). Win rate và số lệnh đóng tính trên cửa sổ 500 fills, không phải toàn bộ đời bot. Xuất JSON trước khi dữ liệu vượt cửa sổ nếu cần phân tích lâu dài. Reset yêu cầu xác nhận, lưu bản archive trước khi tạo tài khoản mới. Dữ liệu chỉ là mô phỏng.
@@ -78,7 +82,7 @@ npm test
 curl -fsS http://127.0.0.1:3000/api/health
 ```
 
-Health `status: ok` chỉ chứng minh server chạy; `marketFresh: true` mới cho biết feed hiện tại mới và không báo lỗi. `/api/state` chứa kết quả đầy đủ. `/api/export` xuất fills đang lưu. Test dùng fixture tổng hợp trong tiến trình riêng, không thay nguồn dữ liệu của `npm start`.
+Health `status: ok` chỉ chứng minh server chạy; `marketFresh: true` mới cho biết feed hiện tại mới và không báo lỗi. `/api/state` chứa kết quả đầy đủ. `/api/export` xuất fills đang lưu. Test dùng fixture tổng hợp trong tiến trình riêng, không thay nguồn dữ liệu của `npm start`. Có kiểm thử end-to-end tiến trình Railway tự mua ở báo giá đầu và tự bán chốt lời ở báo giá sau; lợi nhuận trong test là từ chuỗi giá tổng hợp, không phải kết quả thị trường thật.
 
 ## Trạng thái xác minh trong cloud
 

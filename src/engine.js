@@ -68,6 +68,7 @@ export function tick(state,markets,solUsd,now=Date.now()) {
     if(state.running && (state.halted || pnl<=-state.settings.stopLossPct || pnl>=state.settings.takeProfitPct)) sell(state,m,solUsd,now,state.halted?'risk-limit':pnl<0?'stop-loss':'take-profit');
   }
   if(state.running&&!state.halted) {
+    state.lastEvaluationAt=now;
     const candidates=markets.map(m=>({market:m,rank:rankMarket(m,state.settings,now)})).sort((a,b)=>b.rank.score-a.rank.score);
     for(const {market:m,rank} of candidates) {
       let action='SKIP',reason=rank.reasons.join('; ');

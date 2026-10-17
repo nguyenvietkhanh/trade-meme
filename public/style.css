@@ -5,3 +5,5 @@
 .decision-entry.sell{background:#fff4eb;color:#a96f35}
 
 [hidden]{display:none!important}
+
+.activity-panel strong{font-size:14px;font-weight:600;line-height:1.7}.activity-panel p{font-size:12px}#scan-blockers{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0}.blocker{font-size:11px;line-height:1.5;padding:7px 10px;background:#f5f6ed;color:#8c7c48;border-radius:6px}

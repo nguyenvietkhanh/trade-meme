@@ -5,6 +5,7 @@ import path from 'node:path';
 import {DEFAULTS,freshState,equity,event,buy,sell,tick} from './engine.js';
 import {loadMarkets} from './market.js';
 import {rankMarket} from './strategy.js';
+import {diagnose} from './diagnostics.js';
 
 // Railway may use the Docker/npm entry point instead of the configured wrapper.
 // Apply the public paper-demo policy here so every entry point behaves the same.
@@ -41,7 +42,8 @@ async function refresh(){
 function snapshot(){
   const value=feed.solUsd?equity(state,feed.markets,feed.solUsd):state.cashSol;
   const closed=state.trades.filter(t=>t.side==='SELL');
-  return {...state,rankings:feed.markets.map(m=>({...m,...rankMarket(m,state.settings)})).sort((a,b)=>b.score-a.score),mode:'paper',readOnly,feed,equitySol:feed.solUsd?value:null,pnlSol:feed.solUsd?value-state.settings.initialSol:null,winRate:closed.length?closed.filter(t=>t.pnlSol>0).length/closed.length:null,closedCount:closed.length};
+  const rankings=feed.markets.map(m=>({...m,...rankMarket(m,state.settings)})).sort((a,b)=>b.score-a.score);
+  return {...state,rankings,diagnostics:diagnose(state,feed,rankings),buildRevision:process.env.RAILWAY_GIT_COMMIT_SHA??'local',mode:'paper',readOnly,feed,equitySol:feed.solUsd?value:null,pnlSol:feed.solUsd?value-state.settings.initialSol:null,winRate:closed.length?closed.filter(t=>t.pnlSol>0).length/closed.length:null,closedCount:closed.length};
 }
 function json(res,status,data){res.writeHead(status,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'});res.end(JSON.stringify(data));}
 async function body(req){let raw='';for await(const c of req){raw+=c;if(raw.length>4096)throw Error('Yêu cầu quá lớn.');}return JSON.parse(raw||'{}');}
@@ -88,7 +90,7 @@ const server=http.createServer(async(req,res)=>{
       });
     }
     if(req.method==='GET'&&assets[url.pathname]){
-      const [name,type]=assets[url.pathname];res.writeHead(200,{'Content-Type':type+'; charset=utf-8','X-Content-Type-Options':'nosniff','Content-Security-Policy':"default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"});return res.end(await readFile(path.join(root,'public',name)));
+      const [name,type]=assets[url.pathname];res.writeHead(200,{'Content-Type':type+'; charset=utf-8','Cache-Control':'no-store','X-Content-Type-Options':'nosniff','Content-Security-Policy':"default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"});return res.end(await readFile(path.join(root,'public',name)));
     }
     json(res,404,{error:'Không tìm thấy.'});
   }catch(e){json(res,400,{error:e.message});}

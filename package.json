@@ -7,6 +7,6 @@
   "scripts": {
     "start": "node --use-env-proxy --env-file-if-exists=.env src/server.js",
     "test": "node --test test/*.test.js",
-    "check": "node --check src/server.js && node --check src/engine.js && node --check src/strategy.js && node --check src/market.js && node --check public/app.js"
+    "check": "node --check src/server.js && node --check src/engine.js && node --check src/diagnostics.js && node --check src/strategy.js && node --check src/market.js && node --check public/app.js"
   }
 }

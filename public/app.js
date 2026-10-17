@@ -22,7 +22,14 @@ function render(){
   $('candidates').innerHTML=s.rankings.slice(0,8).map((m,i)=>`<article class="candidate-card ${m.eligible?'active':''}"><div class="candidate-card-head"><span class="avatar">${escape(m.symbol.slice(0,1))}</span><strong>${escape(m.symbol)}</strong><small>#${i+1}</small></div><span class="candidate-score ${m.eligible?'positive':''}">${m.score}<small> / 100</small></span><span class="mint" title="${escape(m.mint)}">${escape(m.mint.slice(0,8))}…${escape(m.mint.slice(-6))}</span><div class="candidate-foot"><small>${m.eligible?'Đạt bộ lọc':escape(m.reasons[0]??'Đang đánh giá')}</small></div></article>`).join('')||'<p class="fine">Đang chờ dữ liệu thật. Không tạo token hoặc lợi nhuận giả.</p>';
   $('watchlist').innerHTML=s.watchlist.map(m=>`<span class="watch-token">${escape(m.slice(0,8))}…${escape(m.slice(-5))} <button data-action="remove-token" data-mint="${escape(m)}" aria-label="Xóa token">×</button></span>`).join('');
   $('closed').textContent=`${s.closedCount} lệnh đã đóng`;
-  $('status').textContent=s.halted?'● KHÓA MUA':s.running?'● AUTO · PAPER':'● TẠM DỪNG';
+  $('status').textContent=s.halted?'● KHÓA MUA':!fresh&&s.automationRequested?'● CHỜ GIÁ':s.running?'● AUTO · PAPER':'● TẠM DỪNG';
+  const d=s.diagnostics;
+  $('activity-message').textContent=d.message;
+  $('scan-counts').textContent=`${d.candidates} token trong tập quét · ${d.eligible} đạt bộ lọc · ${s.positions.length} vị thế đang theo dõi`;
+  $('last-evaluation').textContent=d.lastEvaluationAt?'Đánh giá gần nhất '+time(d.lastEvaluationAt):'Chưa có vòng đánh giá tự động';
+  $('scan-blockers').innerHTML=d.topBlockers.map(b=>`<span class="blocker">${b.count} token: ${escape(b.reason)}</span>`).join('');
+  $('feed-warnings').textContent=(f.warnings??[]).join(' ');
+  $('build-revision').textContent='Bản chạy: '+s.buildRevision.slice(0,7);
   $('connection').textContent=fresh?'● Dữ liệu trực tuyến':'● Dữ liệu chưa sẵn sàng';
   $('feed-time').textContent=f.updatedAt?`Giá SOL ${money(f.solUsd)} · ${time(f.updatedAt)}`:'Đang lấy giá thật…';
   $('start').disabled=busy||s.running||!fresh||!!s.halted;$('pause').disabled=busy||!s.running;
