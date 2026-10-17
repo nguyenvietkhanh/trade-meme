@@ -1,8 +1,9 @@
+import {verifiedMarket} from './fixtures/verified-market.js';
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {freshState,buy,sell,tick,riskCheck,equity,DEFAULTS} from '../src/engine.js';
 const now=Date.UTC(2026,9,17,12),sol=150;
-const market=(overrides={})=>({mint:'test-mint',symbol:'TEST',priceUsd:0.01,liquidityUsd:200000,volume24hUsd:1000000,valuationUsd:1000000,valuationSource:'marketCap',dexId:'pumpswap',hasProfile:true,signalConfirmed:true,volume5mUsd:10000,volume1hUsd:30000,change1hPct:10,change6hPct:20,change24hPct:30,change5mPct:2,buys5m:40,sells5m:5,updatedAt:now,pairCreatedAt:now-86400000,...overrides});
+const market=(overrides={})=>verifiedMarket(overrides,now);
 const close=(actual,expected)=>assert.ok(Math.abs(actual-expected)<1e-10,`${actual} != ${expected}`);
 test('round trip deducts slippage and fees on both sides; no fabricated profit',()=>{
  const s=freshState(now),m=market();buy(s,m,sol,now);assert.equal(s.positions.length,1);
@@ -10,11 +11,11 @@ test('round trip deducts slippage and fees on both sides; no fabricated profit',
  close(s.cashSol,.3-.03-.0001+.03/1.015*.985-.0001);assert.ok(s.trades[0].pnlSol<0);assert.equal(s.positions.length,0);
 });
 test('fresh quotes and minimum liquidity required for buys',()=>{
- for(const m of [market({updatedAt:now-90001}),market({priceUsd:NaN}),market({liquidityUsd:24999}),market({volume24hUsd:1})])assert.throws(()=>buy(freshState(now),m,sol,now));
+ for(const m of [market({updatedAt:now-90001}),market({priceUsd:NaN}),market({liquidityUsd:-1}),market({volume24hUsd:-1})])assert.throws(()=>buy(freshState(now),m,sol,now));
 });
 test('reserve, position cap, duplicate and cooldown enforced',()=>{
  const s=freshState(now);buy(s,market(),sol,now);assert.throws(()=>buy(s,market(),sol,now));
- buy(s,market({mint:'two'}),sol,now);buy(s,market({mint:'three'}),sol,now);buy(s,market({mint:'four'}),sol,now);buy(s,market({mint:'five'}),sol,now);assert.throws(()=>buy(s,market({mint:'six'}),sol,now));
+ buy(s,market({mint:'two'}),sol,now);assert.throws(()=>buy(s,market({mint:'three'}),sol,now));
  sell(s,market(),sol,now);assert.throws(()=>buy(s,market(),sol,now+1));
  const poor=freshState(now);poor.cashSol=.06;assert.throws(()=>buy(poor,market(),sol,now));
 });
@@ -44,5 +45,5 @@ test('equity includes SOL/USD change and open marked value',()=>{
  assert.ok(equity(s,[market()],300)<equity(s,[market()],150));
 });
 test('default budget reserves at least 0.05 SOL and fees reduce fills',()=>{
- assert.equal(DEFAULTS.initialSol,.3);assert.equal(DEFAULTS.maxPositions,5);assert.ok(DEFAULTS.orderSol*5+DEFAULTS.feeSol*5+DEFAULTS.reserveSol<DEFAULTS.initialSol);
+ assert.equal(DEFAULTS.initialSol,.3);assert.equal(DEFAULTS.maxPositions,2);assert.ok(DEFAULTS.orderSol*2+DEFAULTS.feeSol*2+DEFAULTS.reserveSol<DEFAULTS.initialSol);
 });

@@ -1,3 +1,4 @@
+import {verifiedMarket} from './fixtures/verified-market.js';
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {auditDesk} from '../src/auditor.js';
@@ -13,6 +14,6 @@ test('the auditor requires forty measured closes and does not invent expectancy 
 });
 test('stale positions are flagged rather than sold and inconsistent volume or missing prices cannot pass the scanner',()=>{
  const s=freshState(now);s.positions=[{mint:'held',openedAt:now-73*3600000}];assert.deepEqual(auditDesk(s,now).stalePositions,['held']);assert.equal(s.positions.length,1);
- const m={mint:'t',priceUsd:1,updatedAt:now,dexId:'pumpswap',hasProfile:true,pairCreatedAt:now-86400000,liquidityUsd:250000,volume24hUsd:1000000,volume5mUsd:10000,volume1hUsd:30000,valuationUsd:1000000,valuationSource:'marketCap',change5mPct:3,change1hPct:10,change6hPct:20,change24hPct:30,buys5m:40,sells5m:5,signalConfirmed:true};
+ const m=verifiedMarket({},now);
  assert.equal(rankMarket(m,s.settings,now).eligible,true);for(const change of [{priceUsd:NaN},{volume24hUsd:60000,volume1hUsd:100000},{volume5mUsd:50000}])assert.equal(rankMarket({...m,...change},s.settings,now).eligible,false);
 });

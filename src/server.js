@@ -4,12 +4,13 @@ import {fileURLToPath} from 'node:url';
 import path from 'node:path';
 import {DEFAULTS,PROFILE,freshState,equity,event,buy,sell,tick} from './engine.js';
 import {loadMarkets} from './market.js';
-import {rankMarket} from './strategy.js';
+import {rankMarket,decideMarket} from './strategy.js';
 import {diagnose} from './diagnostics.js';
 import {observeMarkets} from './signals.js';
 import {OwnerAuth,DEFAULT_OWNER} from './security.js';
 import {SolanaExecution} from './solana.js';
 import {DirectWallet} from './direct-wallet.js';
+import {VerificationFeed} from './verification.js';
 import {STRATEGY_VERSION} from './desk-rules.js';
 import {OwnerAgent,signerRequestAllowed} from './owner-agent.js';
 import {initializeStorage} from './storage.js';
@@ -33,7 +34,7 @@ catch(e) {if(e.code!=='ENOENT') throw e;state=freshState();}
 state.running=false;
 state.automationRequested??=false;
 if(onRailway||process.env.PAPER_AUTOSTART==='true')state.automationRequested=true;
-state.settings={...DEFAULTS,...state.settings};
+state.settings={...state.settings,...DEFAULTS};
 state.strategy='autonomous';state.watchlist??=[];state.decisions??=[];
 state.decisionStats??={evaluated:0,bought:0,rejected:0};
 const expectedOrigin=process.env.PUBLIC_ORIGIN??(onRailway?'https://'+(process.env.RAILWAY_PUBLIC_DOMAIN??'trade-meme-production.up.railway.app'):null);
@@ -43,6 +44,7 @@ const direct=new DirectWallet(execution);
 const ownerAgent=liveOnly&&process.env.SIGNER_MODE!=='disabled'?new OwnerAgent(dataDir,direct,execution):null;
 await ownerAgent?.load();
 let feed={markets:[],solUsd:null,updatedAt:null,error:null};
+const verification=new VerificationFeed();
 let refreshing=false;
 async function save(){await writeFile(statePath+'.tmp',JSON.stringify(state,null,2),{mode:0o600});await rename(statePath+'.tmp',statePath);}
 // Serialize market ticks and commands to prevent double-spend and overlapping writes.
@@ -51,13 +53,14 @@ function serial(fn){const task=pending.then(fn);pending=task.catch(()=>{});retur
 async function refresh(){
   if(refreshing)return;refreshing=true;
   try{
-    const latest=await loadMarkets([...new Set([...state.positions.map(p=>p.mint),...direct.watched,...(ownerAgent?.trackedMints()??[]),...state.watchlist])]);
+    const latest=await loadMarkets([...new Set([...state.positions.map(p=>p.mint),...direct.watched,...(ownerAgent?.trackedMints()??[]),...state.watchlist])],Object.fromEntries((ownerAgent?.state?.positions??state.positions).filter(p=>p.pairAddress).map(p=>[p.mint,p.pairAddress])));
+    latest.markets=await verification.enrich(latest.markets,ownerAgent?.trackedMints()??[]);
     await serial(async()=>{latest.markets=observeMarkets(state,latest.markets);feed={...latest,error:null};
       if(liveOnly){
         state.lastEvaluationAt=Date.now();
-        for(const market of feed.markets){const rank=rankMarket(market,state.settings);state.decisionStats.evaluated++;if(!rank.eligible)state.decisionStats.rejected++;state.decisions.unshift({at:Date.now(),mint:market.mint,symbol:market.symbol,score:rank.score,action:rank.eligible?'WATCH':'SKIP',reason:rank.eligible?'Đạt bộ lọc thị trường; còn kiểm tra on-chain, ví và giới hạn thực thi.':rank.reasons.join('; ')});}
+        for(const market of feed.markets){const rank=rankMarket(market,state.settings);state.decisionStats.evaluated++;if(!rank.eligible)state.decisionStats.rejected++;state.decisions.unshift({at:Date.now(),mint:market.mint,symbol:market.symbol,score:rank.score,decision:decideMarket(market,state.settings),action:rank.eligible?'WATCH':'SKIP',reason:rank.eligible?'Đạt bộ lọc thị trường; còn kiểm tra on-chain, ví và giới hạn thực thi.':rank.reasons.join('; ')});}
         state.decisions=state.decisions.slice(0,300);
-      }else{if(state.automationRequested)state.running=true;tick(state,feed.markets,feed.solUsd);}
+      }else{if(state.automationRequested&&state.haltKind!=='drawdown')state.running=true;tick(state,feed.markets,feed.solUsd);}
       await save();});
   }catch(e){feed.error=e.message;console.error('Market feed:',e.message);}
   finally{refreshing=false;}
@@ -91,6 +94,7 @@ const server=http.createServer(async(req,res)=>{
         if(url.pathname==='/api/signer/import'){try{await ownerAgent.serial(()=>ownerAgent.vault.importKey(input.secret,input.password));}finally{input.secret='';input.password='';}}
         else if(url.pathname==='/api/signer/unlock'){try{await ownerAgent.serial(()=>ownerAgent.vault.unlock(input.password));}finally{input.password='';}}
         else if(url.pathname==='/api/signer/enable'){if(input.confirm!=='ENABLE OWNER SIGNER')throw Error('Thiếu xác nhận bật bộ ký.');await ownerAgent.enable();}
+        else if(url.pathname==='/api/signer/review-risk'){if(input.confirm!=='REVIEW DRAWDOWN')throw Error('Thiếu xác nhận xem lại drawdown.');await ownerAgent.reviewRisk(feed);}
         else if(url.pathname==='/api/signer/pause')await ownerAgent.pause();
         else if(url.pathname==='/api/signer/lock')await ownerAgent.pause(true);
         else if(url.pathname==='/api/signer/close')await ownerAgent.close(input.mint,feed);

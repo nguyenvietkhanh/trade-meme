@@ -40,8 +40,14 @@ export class OwnerAgent{
   await this.execution.network();const balance=await this.execution.balance(this.owner);
   if(!this.state)this.state=createOwnerLedger(this.owner,balance);
   if(this.state.pending)throw Error('Đợi đối soát giao dịch đang chờ trước khi bật lại.');
-  if(this.state.halted)throw Error(this.state.halted);
+  if(this.state.halted&&this.state.haltKind!=='daily')throw Error(this.state.halted);
   this.state.running=true;this.state.consecutiveFailures=0;this.lastDecisionFeed=null;this.error=null;event(this.state,'Bộ ký tự động đã bật: ký lệnh bằng ví chủ, không chờ trình duyệt.');try{await this.save();}catch(e){this.state.running=false;this.vault.lock();throw e;}
+ });}
+ async reviewRisk(feed){return this.serial(async()=>{
+  const s=this.state;if(!s||s.running||s.pending||s.haltKind!=='drawdown')throw Error('Chỉ xem lại khi đã dừng vì drawdown và không còn lệnh chờ.');
+  if(feed.error||!Number.isFinite(feed.solUsd)||feed.solUsd<=0||!feed.updatedAt||Date.now()-feed.updatedAt>90000||feed.updatedAt>Date.now()||s.positions.some(p=>!feed.markets.some(m=>m.mint===p.mint&&Number.isFinite(m.priceUsd)&&m.priceUsd>0&&m.updatedAt<=Date.now()&&Date.now()-m.updatedAt<=90000)))throw Error('Cần giá mới cho toàn bộ vị thế trước khi xem lại.');
+  s.peakEquity=equity(s,feed.markets,feed.solUsd);s.haltKind=s.dailyLossBlocked?'daily':null;s.halted=s.dailyLossBlocked?'Đang khóa BUY do giới hạn lỗ/ngày đến 00:00 UTC.':null;
+  event(s,'Chủ ví đã xem lại drawdown và đặt mốc đỉnh vốn mới; chưa tự bật lại.');await this.save();
  });}
  async pause(lock=false){this.commandEpoch++;if(this.state)this.state.running=false;return this.serial(async()=>{if(this.state)this.state.running=false;try{await this.save();}finally{if(lock)this.vault.lock();}});}
  async status(){
@@ -95,7 +101,7 @@ export class OwnerAgent{
    for(const p of s.positions)if((balances[p.mint]??0n)<BigInt(p.rawQuantity))throw Error('Token thực tế thấp hơn nhật ký. Kiểm tra giao dịch ngoài ứng dụng.');
    const order=nextOwnerOrder(s,feed,balance);s.curve.push({at:Date.now(),equitySol:equity(s,feed.markets,feed.solUsd)});s.curve=s.curve.slice(-1440);await this.save();
    if(!order)return;
-   try{await this.execute(order,feed);this.error=null;this.commandEpoch=0;}
+   try{await this.execute(order,feed);this.error=null;}
    catch(e){if(s.pending)throw e;this.error=e.message;if(order.side==='BUY')s.cooldowns[order.mint]=Date.now()+1800000;event(s,'Chưa thực hiện '+order.side+' '+order.symbol+': '+e.message);await this.save();}
 
   });}

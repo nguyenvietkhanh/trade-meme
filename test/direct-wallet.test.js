@@ -1,3 +1,4 @@
+import {verifiedMarket} from './fixtures/verified-market.js';
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {Keypair,PublicKey,VersionedTransaction,TransactionMessage,SystemProgram,TransactionInstruction} from '@solana/web3.js';
@@ -8,7 +9,7 @@ import {SolanaExecution,TOKEN} from '../src/solana.js';
 import {SOL} from '../src/engine.js';
 import {pumpFixture} from './fixtures/pump-rpc.js';
 const kp=Keypair.generate(),owner=kp.publicKey.toBase58(),mint=Keypair.generate().publicKey.toBase58();
-const market=()=>({mint,symbol:'TEST',priceUsd:1,updatedAt:Date.now(),dexId:'pumpswap',hasProfile:true,pairCreatedAt:Date.now()-86400000,valuationUsd:1000000,valuationSource:'marketCap',liquidityUsd:250000,volume24hUsd:1000000,volume5mUsd:10000,volume1hUsd:30000,change5mPct:3,change1hPct:10,change6hPct:20,change24hPct:30,buys5m:40,sells5m:5,signalConfirmed:true});
+const market=()=>verifiedMarket({mint,priceUsd:1,pairAddress:'11111111111111111111111111111112'});
 const unsigned=()=>new VersionedTransaction(new TransactionMessage({payerKey:kp.publicKey,recentBlockhash:Keypair.generate().publicKey.toBase58(),instructions:[SystemProgram.transfer({fromPubkey:kp.publicKey,toPubkey:Keypair.generate().publicKey,lamports:30000000})]}).compileToV0Message());
 const encode=tx=>Buffer.from(tx.serialize()).toString('base64');
 function setup(){let sends=0,request;const execution={provider:'Helius',configureHelius(){},network:async()=>{},balance:async()=>10,holdings:async()=>[],mintCheck:async()=>{},height:async()=>100,prepare:async r=>{request=r;return {bytes:unsigned().serialize(),lastValidBlockHeight:200};},send:async bytes=>{sends++;return bs58.encode(VersionedTransaction.deserialize(bytes).signatures[0]);},status:async()=>({confirmationStatus:'confirmed'}),receipt:async()=>({slot:90,solDelta:-.0301,tokenDelta:3000000n,rawBalance:'999000000',decimals:6})};const desk=new DirectWallet(execution);desk.owner=owner;return {desk,execution,get sends(){return sends;},get request(){return request;}};}

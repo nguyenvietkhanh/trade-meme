@@ -3,7 +3,7 @@ import bs58 from 'bs58';
 import {buildPumpSwap,PUMP_PROGRAM} from './pump-swap.js';
 import {SOL} from './engine.js';
 import {keylessConnection,PUBLIC_RPC_ENDPOINTS,MAINNET_GENESIS_HASH} from './rpc.js';
-import {PROFIT_RECIPIENT,PROFIT_RULES,TRADE_RULES} from './desk-rules.js';
+import {PROFIT_RECIPIENT,PROFIT_RULES,TRADE_RULES,executionSlippageBps} from './desk-rules.js';
 export const TOKEN=new PublicKey('TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA');
 export const TOKEN2022=new PublicKey('TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb');
 const ATA=new PublicKey('ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL');
@@ -11,11 +11,11 @@ const PROGRAMS=new Set(['11111111111111111111111111111111','ComputeBudget1111111
 export class TradePolicyError extends Error{}
 export const LIVE_LIMITS=Object.freeze({budgetSol:TRADE_RULES.initialSol,orderSol:TRADE_RULES.orderSol,reserveSol:TRADE_RULES.reserveSol,maxPositions:TRADE_RULES.maxPositions,maxDailyLossSol:TRADE_RULES.maxDailyLossSol,maxOverheadLamports:5000000,maxPriorityLamports:20000,maxPriceImpact:.02,slippageBps:TRADE_RULES.slippageBps});
 const atomic=s=>{if(!/^\d+$/.test(String(s)))throw new TradePolicyError('Số lượng token không hợp lệ.');return BigInt(s);};
-export function validateQuote(q,input,output,amount){
+export function validateQuote(q,input,output,amount,maxSlippageBps=LIVE_LIMITS.slippageBps,maxImpact=LIVE_LIMITS.maxPriceImpact){
  if(q.inputMint!==input||q.outputMint!==output||q.swapMode!=='ExactIn'||atomic(q.inAmount)!==atomic(amount)||atomic(q.outAmount)<=0n||atomic(q.otherAmountThreshold)<=0n||atomic(q.otherAmountThreshold)>atomic(q.outAmount))throw new TradePolicyError('Báo giá không khớp lệnh đã cho phép.');
- if(!Number.isFinite(Number(q.priceImpactPct))||Number(q.priceImpactPct)<0||Number(q.priceImpactPct)>LIVE_LIMITS.maxPriceImpact)throw new TradePolicyError('Price impact vượt 2%.');
+ if(!Number.isFinite(Number(q.priceImpactPct))||Number(q.priceImpactPct)<0||Number(q.priceImpactPct)>maxImpact)throw new TradePolicyError('Price impact vượt giới hạn lệnh.');
  if(!Number.isInteger(q.slippageBps)||q.slippageBps<1)throw new TradePolicyError('Thiếu slippage được xác minh.');
- if(!Array.isArray(q.routePlan)||!q.routePlan.length||q.slippageBps>LIVE_LIMITS.slippageBps)throw new TradePolicyError('Route hoặc slippage không hợp lệ.');
+ if(!Array.isArray(q.routePlan)||!q.routePlan.length||q.slippageBps>maxSlippageBps)throw new TradePolicyError('Route hoặc slippage không hợp lệ.');
 }
 export function validateSimulation({beforeSol,afterSol,before,after,input,output,amount,minOut}){
  if(!Number.isSafeInteger(beforeSol)||!Number.isSafeInteger(afterSol))throw new TradePolicyError('Không xác minh được thay đổi SOL.');
@@ -51,8 +51,6 @@ export class SolanaExecution{
   const m=data.parsed.info;
   if(m.mintAuthority||m.freezeAuthority)throw new TradePolicyError('Token còn quyền mint hoặc freeze.');
   if(!Number.isInteger(m.decimals)||m.decimals<0||m.decimals>9||atomic(m.supply)<=0n)throw new TradePolicyError('Thông tin mint không hợp lệ.');
-  const largest=await this.rpc.getTokenLargestAccounts(key);
-  if(largest.value.some(a=>atomic(a.amount)*100n>atomic(m.supply)*20n))throw new TradePolicyError('Một tài khoản token nắm quá 20% cung; cần kiểm tra phân bổ.');
   return {decimals:m.decimals};
  }
  async holdings(owner){
@@ -60,10 +58,11 @@ export class SolanaExecution{
   for(const programId of [TOKEN,TOKEN2022]){const result=await this.rpc.getTokenAccountsByOwner(key,{programId});all.push(...result.value);}
   if(all.length>64)throw new TradePolicyError('Ví có quá nhiều tài khoản token để kiểm tra an toàn.');return all;
  }
- async prepare({keypair,ownerAddress,input,output,amount,poolAddress}){
+ async prepare({keypair,ownerAddress,input,output,amount,poolAddress,reason=''}){
   await this.network();const owner=keypair?.publicKey??new PublicKey(ownerAddress);
-  const {tx,quote:q,lastValidBlockHeight}=await buildPumpSwap(this.rpc,{owner,input,output,amount,poolAddress});
-  validateQuote(q,input,output,amount);
+  const cap=executionSlippageBps(input===SOL?'BUY':'SELL',reason),emergency=cap===TRADE_RULES.emergencySlippageCapBps;
+  const {tx,quote:q,lastValidBlockHeight}=await buildPumpSwap(this.rpc,{owner,input,output,amount,poolAddress,slippageBps:emergency?cap:TRADE_RULES.slippageBps,maxReserveFraction:emergency?.1:.02});
+  validateQuote(q,input,output,amount,cap,emergency?.1:LIVE_LIMITS.maxPriceImpact);
   const bytes=tx.serialize();if(bytes.length>1232)throw new TradePolicyError('Giao dịch vượt kích thước hỗ trợ.');
   if(tx.message.header.numRequiredSignatures!==1||!tx.message.staticAccountKeys[0].equals(owner))throw new TradePolicyError('Người ký không khớp ví bot.');
   const tables=[];for(const lookup of tx.message.addressTableLookups){const r=await this.rpc.getAddressLookupTable(lookup.accountKey);if(!r.value)throw new TradePolicyError('Không đọc được lookup table.');tables.push(r.value);}

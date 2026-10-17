@@ -34,3 +34,10 @@ test('simulation rejects insufficient output and excess SOL even for locally bui
  f.rpc.simulateTransaction=async(...args)=>{const sim=await original(...args);sim.value.accounts[0].lamports=260000000;return sim;};await assert.rejects(execution.prepare(r),/quá giới hạn/);
  f.rpc.simulateTransaction=async(...args)=>{const sim=await original(...args),data=Buffer.from(sim.value.accounts[1].data[0],'base64');data.writeBigUInt64LE(1n,64);sim.value.accounts[1].data[0]=data.toString('base64');return sim;};await assert.rejects(execution.prepare(r),/không nhận đủ/);
 });
+test('emergency sell SDK instructions encode at most 10% slippage and cannot relax a buy reserve limit',async()=>{
+ const f=await pumpFixture({buy:false}),requestSell={owner:f.user,input:f.mint.toBase58(),output:SOL,amount:'10000000',poolAddress:f.poolKey.toBase58(),slippageBps:1000,maxReserveFraction:.1};
+ const result=await buildPumpSwap(f.rpc,requestSell),ix=instruction(result.tx);
+ assert.equal(result.quote.slippageBps,1000);assert.equal(ix.data.minQuoteAmountOut.toString(),(BigInt(result.quote.outAmount)*90n/100n).toString());
+ await assert.rejects(buildPumpSwap(f.rpc,{...requestSell,slippageBps:1001}),/Slippage/);
+ await assert.rejects(buildPumpSwap(f.rpc,{...request(f),maxReserveFraction:.1}),/Slippage/);
+});

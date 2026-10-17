@@ -1,3 +1,4 @@
+import {verifiedMarket} from './fixtures/verified-market.js';
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {observeMarkets} from '../src/signals.js';
@@ -12,10 +13,9 @@ test('requires separated observations, rejects abrupt liquidity removal and does
  assert.equal(observeMarkets(s,[{...market,liquidityUsd:50000}],now+60000)[0].signalConfirmed,false);
  assert.equal(observeMarkets(s,[{...market,pairAddress:'new-pool'}],now+90000)[0].signalConfirmed,false);
 });
-test('PumpSwap, ten-hour age, profile, acceleration and timeframe guards are mandatory; boosts do not add score',()=>{
- const s=freshState(now).settings,m={...market,updatedAt:now,pairCreatedAt:now-86400000,dexId:'pumpswap',hasProfile:true,signalConfirmed:true,volume24hUsd:200000,volume5mUsd:10000,volume1hUsd:30000,valuationUsd:1000000,valuationSource:'marketCap',change1hPct:10,change6hPct:20,change24hPct:30};
+test('strict age range, momentum and evidence remain mandatory, and paid boosts reduce score',()=>{
+ const s=freshState(now).settings,m=verifiedMarket({},now);
  assert.equal(rankMarket(m,s,now).eligible,true);
- for(const override of [{dexId:'raydium'},{hasProfile:false},{pairCreatedAt:now-9*3600000},{volume5mUsd:10},{change1hPct:-1},{change6hPct:-40},{change24hPct:600},{signalConfirmed:false}])assert.equal(rankMarket({...m,...override},s,now).eligible,false);
- assert.equal(rankMarket({...m,boosted:true},s,now).score,rankMarket({...m,boosted:false},s,now).score);
- const weaker=rankMarket({...m,volume5mUsd:2000,volume1hUsd:18000,buys5m:20,sells5m:10},s,now);assert.ok(weaker.score<rankMarket(m,s,now).score);
+ for(const override of [{dexId:'raydium'},{pairCreatedAt:now-25*3600000},{pairCreatedAt:now-60000},{volume5mUsd:10},{change1hPct:-1},{change1hPct:151},{signalConfirmed:false}])assert.equal(rankMarket({...m,...override},s,now).eligible,false);
+ assert.equal(rankMarket({...m,boosted:true},s,now).score,rankMarket({...m,boosted:false},s,now).score-5);
 });

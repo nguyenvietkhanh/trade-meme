@@ -1,3 +1,4 @@
+import {verifiedMarket} from './fixtures/verified-market.js';
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtemp,readFile,rm,writeFile} from 'node:fs/promises';
@@ -12,7 +13,7 @@ import {PROFIT_RECIPIENT} from '../src/profit.js';
 const password='unit-fixture-password-123456';
 async function fixture(){
  const dir=await mkdtemp('/tmp/meme-owner-agent-'),kp=Keypair.generate(),owner=kp.publicKey.toBase58(),mint=Keypair.generate().publicKey.toBase58();let sends=0;
- const market=()=>({mint,symbol:'TEST',priceUsd:1,updatedAt:Date.now(),dexId:'pumpswap',hasProfile:true,pairAddress:Keypair.generate().publicKey.toBase58(),pairCreatedAt:Date.now()-86400000,valuationUsd:1000000,valuationSource:'marketCap',liquidityUsd:250000,volume24hUsd:1000000,volume5mUsd:10000,volume1hUsd:30000,change5mPct:3,change1hPct:10,change6hPct:20,change24hPct:30,buys5m:40,sells5m:5,signalConfirmed:true});
+ const market=()=>verifiedMarket({mint,priceUsd:1,pairAddress:'11111111111111111111111111111112'});
  const feed=()=>({markets:[market()],solUsd:100,updatedAt:Date.now()});
  const transaction=(to,lamports)=>new VersionedTransaction(new TransactionMessage({payerKey:kp.publicKey,recentBlockhash:Keypair.generate().publicKey.toBase58(),instructions:[SystemProgram.transfer({fromPubkey:kp.publicKey,toPubkey:to,lamports})]}).compileToV0Message());
  const execution={provider:'Fixture RPC',network:async()=>{},balance:async()=>.3,holdings:async()=>[],mintCheck:async()=>{},height:async()=>100,prepare:async r=>{assert.equal(r.amount,'30000000');return {bytes:transaction(Keypair.generate().publicKey,30000000).serialize(),lastValidBlockHeight:200};},prepareProfit:async(_owner,amount)=>({bytes:transaction(new PublicKey(PROFIT_RECIPIENT),amount).serialize(),lastValidBlockHeight:200}),send:async bytes=>{const signed=verifyOwnerTransaction(Buffer.from(bytes).toString('base64'),owner),stored=JSON.parse(await readFile(path.join(dir,'owner-agent-state.json'),'utf8'));assert.equal(stored.pending.signature,signed.signature);assert.equal(stored.pending.transaction,Buffer.from(bytes).toString('base64'));sends++;return signed.signature;},status:async()=>({confirmationStatus:'confirmed'}),receipt:async()=>({slot:100,solDelta:-.0301,tokenDelta:3000000n,decimals:6,feeSol:.00002}),profitReceipt:async(_sig,_owner,amount)=>({slot:100,amountLamports:amount,recipient:PROFIT_RECIPIENT,solDelta:-Number(amount)/1e9-.000005,feeSol:.000005})};
@@ -59,4 +60,12 @@ test('pause interrupts preparation before signing; locking still clears the key 
 });
 test('private-key entry is restricted to configured Railway HTTPS or real loopback requests',()=>{
  const request={socket:{remoteAddress:'127.0.0.1'},headers:{host:'127.0.0.1:3000'}};assert.equal(signerRequestAllowed(request,null,false),true);assert.equal(signerRequestAllowed({...request,headers:{host:'evil.example:3000'}},null,false),false);assert.equal(signerRequestAllowed({...request,socket:{remoteAddress:'192.168.1.20'}},null,false),false);assert.equal(signerRequestAllowed(request,'http://example.com',true),false);assert.equal(signerRequestAllowed(request,'https://trade-meme-production.up.railway.app',true),true);
+});
+test('pausing and resuming keeps a valid command epoch, and drawdown review never enables the signer',async()=>{
+ const f=await fixture();try{
+  await f.agent.enable();await f.agent.pause();assert.ok(Number.isSafeInteger(f.agent.commandEpoch));await f.agent.enable();await f.agent.tick(f.feed());assert.equal(f.sends,1);await f.agent.tick(f.feed());
+  await f.agent.pause();Object.assign(f.agent.state,{haltKind:'drawdown',halted:'review-required',dailyLossBlocked:true});
+  await assert.rejects(f.agent.enable(),/review-required/);
+  const market=f.feed().markets[0];await f.agent.reviewRisk({markets:[market],solUsd:100,updatedAt:Date.now()});assert.equal(f.agent.state.running,false);assert.equal(f.agent.state.haltKind,'daily');assert.equal(f.agent.state.pending,null);
+ }finally{await f.cleanup();}
 });

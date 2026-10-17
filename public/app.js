@@ -1,7 +1,7 @@
 const $=id=>document.getElementById(id);
 let state=null,busy=false,ownerState=null;
 let commandError='';
-let seenPaperTrades=null;
+let seenPaperTrades=null,lastActivityKey=null;
 const fmt=(n,d=4)=>Number.isFinite(n)?n.toLocaleString('en-US',{minimumFractionDigits:d,maximumFractionDigits:d}):'—';
 const money=n=>Number.isFinite(n)?new Intl.NumberFormat('en-US',{style:'currency',currency:'USD',maximumSignificantDigits:5}).format(n):'—';
 const time=n=>new Date(n).toLocaleTimeString('vi-VN');
@@ -35,7 +35,7 @@ function render(){
   $('feed-time').textContent=f.updatedAt?`Giá SOL ${money(f.solUsd)} · ${time(f.updatedAt)}`:'Đang lấy giá thật…';
   $('start').disabled=busy||s.running||!fresh;$('pause').disabled=busy||!s.running;
   $('error').textContent=commandError||s.halted||f.error||'';
-  $('risk-summary').innerHTML=[['Mỗi lệnh',`${cfg.orderSol} SOL`],['Dự phòng',`${cfg.reserveSol} SOL`],['Cắt lỗ',`−${cfg.stopLossPct}%`],['Chốt lần đầu',`+${cfg.takeProfitTriggerPct}% → thu 140% vốn`],['Phần thả nổi','Mỗi x2 bán 50%'],['Giới hạn lỗ/ngày',`${cfg.maxDailyLossSol} SOL (UTC)`],['Drawdown tối đa',`${cfg.maxDrawdownPct}%`],['Trượt giá mỗi chiều',`${cfg.slippageBps/100}%`],['Phí đã khớp',s.mode==='live'?'Theo receipt Solana':`${cfg.feeSol} SOL`]].map(([a,b])=>`<div><span>${a}</span><strong>${b}</strong></div>`).join('');
+  $('risk-summary').innerHTML=[['Mỗi lệnh',`${cfg.orderSol} SOL`],['Dự phòng',`${cfg.reserveSol} SOL`],['Cắt lỗ',`−${cfg.stopLossPct}%`],['Chốt lần đầu',`+${cfg.takeProfitTriggerPct}% → thu 140% vốn`],['Phần thả nổi','Mỗi x2 bán 50% · trailing −30%'],['Time-stop','45 phút chưa vượt +20%'],['Thua liên tiếp','3 lệnh → nghỉ BUY 2 giờ'],['Giới hạn lỗ/ngày',`${cfg.maxDailyLossSol} SOL (UTC)`],['Drawdown tối đa',`${cfg.maxDrawdownPct}%`],['Slippage tối đa','Mua 4% · bán 3% · khẩn 10%'],['Phí đã khớp',s.mode==='live'?'Theo receipt Solana':`${cfg.feeSol} SOL`]].map(([a,b])=>`<div><span>${a}</span><strong>${b}</strong></div>`).join('');
   const curve=s.curve;
   $('chart-empty').hidden=curve.length>0;
   if(curve.length){
@@ -62,6 +62,9 @@ function render(){
   const ids=new Set(s.trades.map(t=>[t.at,t.mint,t.side,t.quantity,t.sol].join(':')));
   if(seenPaperTrades)for(const t of [...s.trades].reverse())if(!seenPaperTrades.has([t.at,t.mint,t.side,t.quantity,t.sol].join(':')))window.dispatchEvent(new CustomEvent('meme-trade',{detail:{id:t.signature??[t.at,t.mint,t.side,t.quantity,t.sol].join(':'),side:t.side,symbol:t.symbol,mode:s.mode}}));
   seenPaperTrades=ids;
+  const activityKey=[s.running,s.halted,s.ownerAuthenticated,s.decisions?.[0]?.at].join(':');
+  if(lastActivityKey!==null&&lastActivityKey!==activityKey)window.dispatchEvent(new CustomEvent('meme-activity',{detail:{id:'activity:'+activityKey,text:s.halted?'Đã chạm giới hạn rủi ro':s.running?'Đang phân tích tín hiệu':'Đang theo dõi thị trường',anchor:s.halted?'#risk-summary':'#decision-log'}}));
+  lastActivityKey=activityKey;
   if(s.readOnly){
     for(const button of document.querySelectorAll('#start,#pause,#reset,button[data-action]'))button.disabled=true;
     $('token-form').hidden=true;

@@ -44,3 +44,7 @@ test('combined discovered and watched tokens respect the provider 30-address lim
  });
  const feed=await loadMarkets(holdings);assert.equal(requests.length,2);assert.ok(requests.every(b=>b.length<=30));assert.ok(holdings.every(m=>feed.markets.some(p=>p.mint===m)));
 });
+test('held positions retain their original pool even when another pool advertises more liquidity',async t=>{
+ t.mock.method(globalThis,'fetch',async url=>new Response(JSON.stringify({pairs:String(url).endsWith(SOL)?[{...pair(SOL,'SOL',999999),priceUsd:'150'}]:[pair('held','MEME',2000),pair('held','MEME',999999)]}),{status:200}));
+ const feed=await loadMarkets(['held'],{held:'pair-2000'});assert.equal(feed.markets[0].pairAddress,'pair-2000');assert.equal(feed.markets[0].liquidityUsd,2000);
+});

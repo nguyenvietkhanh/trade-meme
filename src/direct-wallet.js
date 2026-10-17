@@ -44,7 +44,7 @@ export class DirectWallet{
   let held=0n;for(const a of holdings){const d=a.account.data;if(d.length>=165&&new PublicKey(d.subarray(0,32)).toBase58()===market.mint)held+=d.readBigUInt64LE(64);}
   let amount;
   if(side==='BUY'){
-   if(!rankMarket(market,DEFAULTS).eligible)throw Error('Token chưa đạt toàn bộ bộ lọc.');
+   if(!rankMarket({...market,solUsd:feed.solUsd},DEFAULTS).eligible)throw Error('Token chưa đạt toàn bộ bộ lọc.');
    if(held>0n)throw Error('Ví đã giữ token này; không trộn với tài sản có sẵn.');
    const balance=await this.execution.balance(this.owner);if(balance-.03-.005<.05)throw Error('Chưa đủ SOL ngoài khoản dự phòng 0,05 SOL.');
    await this.execution.mintCheck(market.mint);amount='30000000';
@@ -52,7 +52,7 @@ export class DirectWallet{
    if(typeof input.amount!=='string'||!/^\d{1,20}$/.test(input.amount)||BigInt(input.amount)<=0n||BigInt(input.amount)>held)throw Error('Lượng bán vượt số token đang có.');
    amount=input.amount;
   }
-  const request={ownerAddress:this.owner,poolAddress:market.pairAddress,input:side==='BUY'?SOL:market.mint,output:side==='BUY'?market.mint:SOL,amount};
+  const request={ownerAddress:this.owner,poolAddress:market.pairAddress,input:side==='BUY'?SOL:market.mint,output:side==='BUY'?market.mint:SOL,amount,reason:String(input.reason??'')};
   let prepared=await this.execution.prepare(request);
   if(side==='SELL'&&input.reason==='recover-capital'&&Number.isFinite(input.targetSol)&&input.targetSol>0){
    const target=BigInt(Math.ceil(input.targetSol*1e9));
@@ -60,7 +60,7 @@ export class DirectWallet{
    if(prepared.minNativeOutLamports<target)throw Error('Báo giá ròng chưa đạt mục tiêu thu hồi vốn.');
   }
   const tx=VersionedTransaction.deserialize(prepared.bytes);
-  this.intent={id:randomBytes(16).toString('hex'),owner:this.owner,side,mint:market.mint,symbol:market.symbol,priceUsd:market.priceUsd,solUsd:feed.solUsd,amount,reason:side==='BUY'?'autonomous-low-cap':String(input.reason??'owner-exit').slice(0,50),lastValidBlockHeight:prepared.lastValidBlockHeight,messageHash:hash(tx),at:Date.now()};
+  this.intent={id:randomBytes(16).toString('hex'),owner:this.owner,side,mint:market.mint,symbol:market.symbol,priceUsd:market.priceUsd,solUsd:feed.solUsd,entryLiquidityUsd:market.liquidityUsd,pairAddress:market.pairAddress,amount,reason:side==='BUY'?'autonomous-low-cap':String(input.reason??'owner-exit').slice(0,50),lastValidBlockHeight:prepared.lastValidBlockHeight,messageHash:hash(tx),at:Date.now()};
   return {intent:this.intent,transaction:Buffer.from(prepared.bytes).toString('base64')};
  }
  async submit({id,transaction}){

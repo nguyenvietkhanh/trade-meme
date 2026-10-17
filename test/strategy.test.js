@@ -1,12 +1,13 @@
+import {verifiedMarket} from './fixtures/verified-market.js';
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {rankMarket} from '../src/strategy.js';
 import {DEFAULTS,freshState,tick} from '../src/engine.js';
 const now=Date.UTC(2026,9,17,12);
-const m={mint:'mint',symbol:'TEST',valuationUsd:1000000,valuationSource:'marketCap',dexId:'pumpswap',hasProfile:true,signalConfirmed:true,volume5mUsd:10000,volume1hUsd:30000,change1hPct:10,change6hPct:20,change24hPct:30,priceUsd:.01,updatedAt:now,liquidityUsd:200000,volume24hUsd:1000000,change5mPct:3,buys5m:40,sells5m:5,pairCreatedAt:now-86400000};
+const m=verifiedMarket({mint:'mint'},now);
 test('score is transparent and all conditions are required for an automatic entry',()=>{
  const rank=rankMarket(m,DEFAULTS,now);assert.equal(rank.score,100);assert.equal(rank.eligible,true);assert.deepEqual(rank.reasons,[]);
- for(const override of [{valuationUsd:100000000},{valuationUsd:0},{liquidityUsd:24999},{volume24hUsd:49999},{change5mPct:30},{buys5m:9},{sells5m:100},{pairCreatedAt:0},{pairCreatedAt:now-1000},{updatedAt:now-90001}]){
+ for(const override of [{valuationUsd:100000000},{valuationUsd:0},{liquidityUsd:2999},{volume24hUsd:1},{change5mPct:30},{buys5m:9},{sells5m:100},{pairCreatedAt:0},{pairCreatedAt:now-1000},{updatedAt:now-90001}]){
   const rank=rankMarket({...m,...override},DEFAULTS,now);assert.equal(rank.eligible,false);assert.ok(rank.reasons.length);
  }
 });

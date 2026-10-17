@@ -18,17 +18,20 @@ export function assertMarket(m,now,s,exit=false){
 export function riskCheck(state,markets,solUsd,now=Date.now()){
  if(!Number.isFinite(solUsd)||solUsd<=0)throw Error('Thiếu giá SOL.');
  const value=equity(state,markets,solUsd),day=new Date(now).toISOString().slice(0,10);
- if(day!==state.day){state.day=day;state.dayStartEquity=value;}
+ if(day!==state.day){state.day=day;state.dayStartEquity=value;state.dailyLossBlocked=false;if(state.haltKind==='daily'){state.halted=null;state.haltKind=null;}}
  state.peakEquity=Math.max(state.peakEquity,value);
  state.maxDrawdownObservedPct=Math.max(state.maxDrawdownObservedPct??0,(1-value/state.peakEquity)*100);
- if(state.dayStartEquity-value>=state.settings.maxDailyLossSol||value<=state.peakEquity*(1-state.settings.maxDrawdownPct/100)){
-  if(!state.halted)event(state,'Chạm giới hạn lỗ: khóa mua mới; tiếp tục quản lý cắt lỗ và chốt lời vị thế đang mở.',now);
-  state.halted='Khóa mua mới do giới hạn lỗ/ngày hoặc drawdown; vẫn quản lý thoát lệnh.';
+ const dailyHit=state.dayStartEquity-value>=state.settings.maxDailyLossSol-1e-12;if(dailyHit)state.dailyLossBlocked=true;
+ if(value<=state.peakEquity*(1-state.settings.maxDrawdownPct/100)){
+  state.halted='Drawdown ≥15%: dừng toàn bộ tự động; cần chủ ví xem lại.';state.haltKind='drawdown';state.running=false;
+ }else if(dailyHit){
+  state.dailyLossBlocked=true;if(!state.halted){state.halted='Chạm giới hạn lỗ/ngày: khóa BUY đến 00:00 UTC; vẫn quản lý thoát lệnh.';state.haltKind='daily';}
  }
+
  return value;
 }
 export function buy(state,m,solUsd,now=Date.now(),source='manual'){
- riskCheck(state,[m],solUsd,now);if(state.halted)throw Error(state.halted);assertMarket(m,now,state.settings);
+ riskCheck(state,[m],solUsd,now);if(state.halted)throw Error(state.halted);if(state.lossPauseUntil>now)throw Error('Nghỉ 2 giờ sau 3 lệnh thua.');assertMarket(m,now,state.settings);
  const s=state.settings,cost=s.orderSol+s.feeSol;
  if(state.positions.length>=s.maxPositions)throw Error('Đã đủ số vị thế cho phép.');
  if(state.positions.some(p=>p.mint===m.mint))throw Error('Đã có vị thế token này.');
@@ -41,14 +44,20 @@ export function recordBuy(state,m,solUsd,fill,now=Date.now(),reason='manual',mod
  const {quantity,costSol:cost,priceUsd}=fill;
  if(!(quantity>0&&cost>0&&priceUsd>0))throw Error('Fill mua không hợp lệ.');
  state.cashSol-=cost;
- state.positions.push({mint:m.mint,symbol:m.symbol,quantity,initialQuantity:quantity,costSol:cost,initialCostSol:cost,costUsd:cost*solUsd,initialCostUsd:cost*solUsd,entrySolUsd:solUsd,entryPriceUsd:priceUsd,lastPriceUsd:m.priceUsd,openedAt:now,phase:'initial',realizedPnlSol:0,recoveredUsd:0,runnerSteps:0,nextTakeProfitPriceUsd:null,rawQuantity:fill.rawQuantity,decimals:fill.decimals});
+ state.positions.push({mint:m.mint,pairAddress:m.pairAddress,symbol:m.symbol,quantity,initialQuantity:quantity,costSol:cost,initialCostSol:cost,costUsd:cost*solUsd,initialCostUsd:cost*solUsd,entrySolUsd:solUsd,entryPriceUsd:priceUsd,lastPriceUsd:m.priceUsd,entryLiquidityUsd:m.liquidityUsd,peakPriceUsd:priceUsd,maxGainPct:0,openedAt:now,phase:'initial',realizedPnlSol:0,recoveredUsd:0,runnerSteps:0,nextTakeProfitPriceUsd:null,rawQuantity:fill.rawQuantity,decimals:fill.decimals});
  state.trades.unshift({side:'BUY',mode,mint:m.mint,symbol:m.symbol,quantity,priceUsd,sol:cost,at:now,reason,signature:fill.signature,networkFeeSol:fill.networkFeeSol??null});state.trades=state.trades.slice(0,500);
  event(state,`${mode==='live'?'MAINNET':'MÔ PHỎNG'} • Mua ${m.symbol}: ${cost.toFixed(5)} SOL`,now);
 }
 export function netPositionUsd(p,m,solUsd,s){return Math.max(0,p.quantity*m.priceUsd*(1-s.slippageBps/10000)-s.feeSol*solUsd);}
-export function exitPlan(p,m,solUsd,s){
+export function exitPlan(p,m,solUsd,s,now=Date.now()){
  const value=netPositionUsd(p,m,solUsd,s);
- if(value<=p.costUsd*(1-s.stopLossPct/100))return {reason:'stop-loss',fraction:1};
+ p.peakPriceUsd=Math.max(p.peakPriceUsd??p.entryPriceUsd,m.priceUsd);
+ p.maxGainPct=Math.max(p.maxGainPct??0,(m.priceUsd/p.entryPriceUsd-1)*100);
+ p.peakLiquidityUsd=Math.max(p.peakLiquidityUsd??p.entryLiquidityUsd??0,Number.isFinite(m.liquidityUsd)?m.liquidityUsd:0);
+ if((Number.isFinite(p.entryLiquidityUsd)&&Number.isFinite(m.liquidityUsd)&&m.liquidityUsd<p.peakLiquidityUsd*.6)||m.evidence?.lpWithdrawn===true||m.evidence?.largeHolderDump===true||m.evidence?.sellSimulationOk===false)return {reason:'emergency-risk',fraction:1};
+ if(p.phase==='runner'&&m.priceUsd/p.peakPriceUsd<=1-s.runnerTrailingPct/100+1e-12)return {reason:'runner-trailing',fraction:1};
+ if(p.phase==='initial'&&now-p.openedAt>=s.timeStopMs&&p.maxGainPct<s.timeStopGainPct)return {reason:'time-stop',fraction:1};
+ if(value/solUsd<=p.costSol*(1-s.stopLossPct/100))return {reason:'stop-loss',fraction:1};
  if(p.phase==='initial'&&value>=p.initialCostUsd*(1+s.takeProfitTriggerPct/100)){
   const target=p.initialCostUsd*(1+s.takeProfitRecoveryPct/100);
   const quantity=(target+s.feeSol*solUsd)/(m.priceUsd*(1-s.slippageBps/10000));
@@ -77,8 +86,8 @@ export function recordSell(state,m,solUsd,fill,now=Date.now(),reason='manual',mo
  const pnlSol=proceeds-allocatedCost;
  state.realizedNetSol=(state.realizedNetSol??0)+pnlSol;state.cashSol+=proceeds;p.quantity-=quantity;p.costSol-=allocatedCost;p.costUsd-=allocatedUsd;p.realizedPnlSol+=pnlSol;p.recoveredUsd+=proceeds*solUsd;
  if(fill.rawBalance!==undefined){p.rawQuantity=fill.rawBalance;p.quantity=Number(fill.rawBalance)/10**p.decimals;}
- if(fraction===1){state.positions=state.positions.filter(x=>x!==p);state.cooldowns[p.mint]=now+1800000;}
- else if(reason==='recover-capital'){p.phase='runner';p.nextTakeProfitPriceUsd=m.priceUsd*state.settings.runnerMultiple;}
+ if(fraction===1){state.lossStreak=p.realizedPnlSol<0?(state.lossStreak??0)+1:0;if(state.lossStreak>=state.settings.lossStreakLimit){state.lossPauseUntil=now+state.settings.lossPauseMs;state.lossStreak=0;event(state,'Nghỉ BUY 2 giờ sau 3 vị thế thua liên tiếp; vẫn quản lý thoát lệnh.',now);}state.positions=state.positions.filter(x=>x!==p);state.cooldowns[p.mint]=now+1800000;}
+ else if(reason==='recover-capital'){p.phase='runner';p.peakPriceUsd=m.priceUsd;p.nextTakeProfitPriceUsd=m.priceUsd*state.settings.runnerMultiple;}
  else if(reason==='runner-double'){p.runnerSteps++;p.nextTakeProfitPriceUsd=m.priceUsd*state.settings.runnerMultiple;}
  state.trades.unshift({side:'SELL',mode,mint:p.mint,symbol:p.symbol,quantity,priceUsd:fill.priceUsd,sol:proceeds,pnlSol,at:now,reason,fraction,closed:fraction===1,positionPnlSol:fraction===1?p.realizedPnlSol:null,initialRiskSol:p.initialCostSol*state.settings.stopLossPct/100,networkFeeSol:fill.networkFeeSol??null,remainingQuantity:p.quantity,signature:fill.signature});state.trades=state.trades.slice(0,500);
  state.decisions.unshift({at:now,mint:p.mint,symbol:p.symbol,score:null,action:'SELL',reason});state.decisions=state.decisions.slice(0,300);
@@ -90,9 +99,9 @@ export function tick(state,markets,solUsd,now=Date.now()){
  for(const p of [...state.positions]){
   const m=markets.find(m=>m.mint===p.mint);if(!m||now-m.updatedAt>state.settings.maxPriceAgeMs||now<m.updatedAt)continue;
   p.lastPriceUsd=m.priceUsd;
-  if(state.running){const plan=exitPlan(p,m,solUsd,state.settings);if(plan)sell(state,m,solUsd,now,plan.reason,plan.fraction);}
+  if(state.running){const plan=exitPlan(p,m,solUsd,state.settings,now);if(plan)sell(state,m,solUsd,now,plan.reason,plan.fraction);}
  }
- if(state.running&&!state.halted){
+ if(state.running&&!state.halted&&!(state.lossPauseUntil>now)){
   state.lastEvaluationAt=now;
   const candidates=markets.map(m=>({market:m,rank:rankMarket(m,state.settings,now)})).sort((a,b)=>b.rank.score-a.rank.score);
   for(const {market:m,rank} of candidates){

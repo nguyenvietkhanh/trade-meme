@@ -22,12 +22,12 @@ for(const scenario of scenarios)test(scenario.name,async()=>{
   for(let i=0;i<100;i++){const match=output.match(/0\.0\.0\.0:(\d+)/);if(match){base='http://127.0.0.1:'+match[1];break;}await delay(20);}
   assert.ok(base,'listening on public interface');
   let state;
-  for(let i=0;i<100;i++){state=await (await fetch(base+'/api/state')).json();if(state.feed.updatedAt&&(scenario.halted||state.positions.length))break;await delay(20);}
+  for(let i=0;i<100;i++){state=await (await fetch(base+'/api/state')).json();if(state.feed.updatedAt&&state.decisionStats.evaluated>0)break;await delay(20);}
   assert.ok(state.feed.updatedAt,'feed was actually loaded');
   assert.equal(state.readOnly,true);assert.equal(state.mode,'paper');
   assert.equal(state.running,true);
   if(scenario.halted){assert.equal(state.halted,'existing-risk-halt');assert.equal(state.positions.length,0);}
-  else{assert.ok(state.positions.length>0,'autonomous entry was executed');assert.ok(state.decisionStats.evaluated>0);}
+  else{assert.equal(state.positions.length,0,'incomplete external data must never create an entry');assert.ok(state.decisionStats.evaluated>0);assert.ok(state.decisions.some(d=>d.reason.includes('kiểm chứng')||d.reason.includes('xác nhận')));}
   for(const action of ['reset','pause','buy','sell','add-token']){
    const r=await fetch(base+'/api/command',{method:'POST',headers:{'Content-Type':'application/json','X-Requested-With':'meme-desk'},body:JSON.stringify({action,confirm:'RESET PAPER'})});assert.equal(r.status,403);
   }

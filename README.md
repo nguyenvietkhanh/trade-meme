@@ -29,13 +29,14 @@ Server dùng `https://api.mainnet-beta.solana.com` và `https://solana-rpc.publi
 
 Bộ quy tắc runtime dùng chung: [src/desk-rules.js](src/desk-rules.js); mô tả: [DESK_RULES.md](DESK_RULES.md). Pipeline: screener → xác nhận setup → giới hạn rủi ro → kiểm tra on-chain → thực thi có chữ ký → thoát/chuyển lãi → kiểm toán. Đây là các module mã, không phải sáu AI độc lập.
 
-- Vốn ≤0,3 SOL; mua 0,03 SOL/lệnh; tối đa 5 vị thế; dự phòng 0,05 SOL. Cắt lỗ -20%; ngừng mua mới khi lỗ/ngày 0,03 SOL hoặc drawdown 15%, vẫn xét thoát lệnh.
-- +80% giá trị ròng: bán lượng đủ thu 140% vốn USD ban đầu. Phần còn lại bán nửa ở mỗi lần giá thực tế x2, cuối cùng đóng phần lẻ. Không tạo fill ở giá quá khứ nếu giá nhảy qua nhiều mốc.
-- Pool PumpSwap ≥10h, profile, định giá $100k–$5m; liquidity ≥$25k và ≥5% định giá; volume 24h ≥$50k, 5m ≥$1k. H5 +1–12%, ≥10 lượt mua, mua/bán >1,3, volume tăng tốc ≥1,2; H1 dương/≤80%, không sụp H6 hoặc tăng quá mức H24. Volume giữa các khoảng phải nhất quán; giá phải hợp lệ.
-- Hai quan sát cách 30s–3m phải giữ giá/thanh khoản. Có anchor, biến động giá và tỷ lệ giữ thanh khoản từ quan sát thực. Đây không phải dữ liệu nến OHLC; không suy diễn FVG hoặc tín hiệu 1D/4H từ số liệu 5m.
-- Điểm ≥70 và mọi điều kiện đạt. Boost không cộng điểm. FDV có nhãn khi thiếu market cap; điểm không phải xác suất thắng.
+- Vốn ≤0,3 SOL; mỗi lệnh 0,03 SOL; tối đa **2 vị thế**, dự phòng 0,05 SOL. Stop −20%, +80% thu hồi 140% vốn; moonbag mỗi x2 bán 50%, trailing −30%; time-stop 45 phút nếu chưa đạt +20%.
+- Lỗ/ngày 0,03 SOL khóa BUY đến 00:00 UTC, vẫn quản lý thoát. Drawdown 15% dừng toàn bộ tự động, cần chủ xem lại; nút xác nhận xem lại không tự bật bot. Ba vị thế thua liên tiếp nghỉ BUY 2 giờ.
+- Pool 15 phút–24 giờ, cap thật $10k–$5m; liquidity ≥20 SOL và ≥5% cap, ≥100 giao dịch H1. Điểm 30/25/20/15/10 theo động lượng/holder/độ sâu/lực mua/không mua đuổi; boost −5 điểm; mọi điều kiện bắt buộc và điểm ≥70 mới được BUY.
+- Bắt buộc có kiểm chứng mint/freeze, LP ≥90%, top 10 trừ pool ≤30%, dev ≤5%, bundle/sniper, ví mua riêng biệt, nến/lịch sử holder, bán thử và phí khứ hồi ≤8%. Thiếu hoặc mâu thuẫn → SKIP. Xem [DESK_RULES.md](DESK_RULES.md) để biết ngưỡng và hợp nhất hai bộ trọng số.
 
-SDK PumpSwap 2.1.0 dựng exact-input swap trực tiếp từ pool/config/reserve on-chain. Chỉ classic SPL/WSOL, không mayhem/cashback/Token-2022 hooks. Kiểm tra mint/freeze authority, phân bổ tài khoản lớn, pool đúng mint/program/PDA, slot, impact dự trữ ≤2%, slippage ≤1,5%, quote mua/bán vòng ≤8%; simulation toàn bộ tài khoản token đang sở hữu trước yêu cầu ký. Phí mạng ≤0,000025 SOL, swap/rent cộng thêm ≤0,005 SOL. Kiểm tra phân bổ không gộp theo chủ hưởng lợi, không chứng minh LP lock/insider/wash trading và có thể loại pool LP lớn. Chưa có bằng chứng thuật toán sinh lợi thực tế.
+**Giới hạn hiện tại:** adapter DexScreener/RugCheck mới cung cấp một phần dữ liệu trên. Chưa có adapter kiểm chứng đầy đủ số ví mua riêng biệt, holder theo chủ, bundle, nến và bán thử trước mua. Vì vậy **BUY sẽ bị khóa khi thiếu dữ liệu**; không coi bản này là hệ thống quét mainnet đã hoàn thiện. Báo cáo RugCheck đẹp không thay thế các kiểm chứng còn thiếu. Không đưa lại Helius/Jupiter API key.
+
+SDK PumpSwap 2.1.0 dựng swap trực tiếp từ pool/config/reserve on-chain, classic SPL/WSOL. Kiểm tra authority, mint/program/PDA, độ mới, simulation và phí. Slippage thường vẫn 1,5% (dưới trần mua 4%, bán 3%); stop/khẩn/trailing tối đa 10%. Không gọi API swap HTTP. Thuật toán chưa có bằng chứng sinh lợi thực tế.
 
 ## Chuyển lãi
 
@@ -73,8 +74,8 @@ npm test
 npm start
 ```
 
-Railway auto-deploy nhánh `codex/meme-pilot-railway` bằng Dockerfile/railway.json; một replica. Không dùng Docker secret mounts vì builder Railway hiện chỉ hỗ trợ cache mounts. Volume lưu sổ và két của bộ ký; thiếu volume được cảnh báo, không chặn thiết lập. `PUBLIC_ORIGIN` cần đúng HTTPS origin khi dùng domain riêng. Egress: DexScreener và hai RPC trên; không cần Helius/Jupiter. Install scripts tắt; SDK transitive TOML/BigInt dùng các bản override đã kiểm tra.
+Railway auto-deploy nhánh `codex/meme-pilot-railway` bằng Dockerfile/railway.json; một replica. Không dùng Docker secret mounts vì builder Railway hiện chỉ hỗ trợ cache mounts. Volume lưu sổ và két của bộ ký; thiếu volume được cảnh báo, không chặn thiết lập. `PUBLIC_ORIGIN` cần đúng HTTPS origin khi dùng domain riêng. Egress: api.dexscreener.com, api.rugcheck.xyz và hai RPC trên; không cần Helius/Jupiter. Install scripts tắt; SDK transitive TOML/BigInt dùng các bản override đã kiểm tra.
 
-`/api/health`: `mode=live`, `rpcMode=keyless`, `signingMode=owner-agent` và `unattendedSigningAvailable=true`, `strategyVersion=solana-momentum-desk-v2`. Đây là HTTP/feed readiness, không chứng minh giao dịch/lợi nhuận. `/api/direct/status` cần đăng nhập chủ.
+`/api/health`: `mode=live`, `rpcMode=keyless`, `signingMode=owner-agent` và `unattendedSigningAvailable=true`, `strategyVersion=solana-verified-momentum-v3`. Đây là HTTP/feed readiness, không chứng minh giao dịch/lợi nhuận. `/api/direct/status` cần đăng nhập chủ.
 
 Kiểm thử dùng fixture, chữ ký ví thử và RPC giả lập. Chưa gửi giao dịch SOL thật, chưa kiểm chứng hiệu quả thị trường hoặc trạng thái Railway Online từ môi trường này.
