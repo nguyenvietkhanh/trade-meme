@@ -9,17 +9,21 @@
   "scripts": {
     "start": "node --use-env-proxy --env-file-if-exists=.env src/server.js",
     "test": "node --test test/*.test.js",
-    "check": "node --check src/server.js && node --check src/engine.js && node --check src/diagnostics.js && node --check src/strategy.js && node --check src/market.js && node --check public/app.js && node --check src/security.js && node --check src/live.js && node --check src/solana.js && node --check src/vault.js && node --check src/storage.js && node --check src/signals.js && node --check src/wallet-browser.js && node --check src/direct-wallet.js && node --check src/owner-ledger.js && node --check src/wallet-provider.js",
+    "check": "node --check src/server.js && node --check src/engine.js && node --check src/diagnostics.js && node --check src/strategy.js && node --check src/market.js && node --check public/app.js && node --check src/security.js && node --check src/live.js && node --check src/solana.js && node --check src/vault.js && node --check src/storage.js && node --check src/signals.js && node --check src/wallet-browser.js && node --check src/direct-wallet.js && node --check src/owner-ledger.js && node --check src/wallet-provider.js && node --check src/pump-swap.js",
     "build": "esbuild src/wallet-browser.js --bundle --platform=browser --format=esm --outfile=public/wallet.js"
   },
   "dependencies": {
+    "@pump-fun/pump-swap-sdk": "2.1.0",
     "@solana/web3.js": "1.98.4",
+    "bn.js": "5.2.4",
     "bs58": "6.0.0"
   },
   "devDependencies": {
     "esbuild": "0.25.12"
   },
   "overrides": {
-    "jayson": "5.0.0"
+    "jayson": "5.0.0",
+    "toml": "4.2.0",
+    "bigint-buffer": "npm:@exodus/bigint-buffer@1.1.5-exodus.1"
   }
 }

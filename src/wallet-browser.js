@@ -27,8 +27,8 @@ function publish(){
 function render(){
  $('live-address').textContent=owner??'';
  $('live-balance').textContent=wallet?`${wallet.balanceSol.toFixed(6)} SOL khả dụng trong ví chủ`:'Đang đọc số dư ví chủ…';
- $('live-detail').textContent=ledger?.pending?(ledger.pending.transaction?'Đang đối soát giao dịch đã ký. Không ký lệnh mới.':'Còn yêu cầu chưa gửi. Nếu phiên ký bị gián đoạn, bấm Hủy yêu cầu chưa gửi.'):`RPC: ${wallet?.rpcProvider??'chưa kết nối'} · Jupiter ${wallet?.apiKeyConfigured?'đã cấu hình':'chưa có API key'}. Mỗi lệnh cần bạn xác nhận trong ứng dụng ví.`;
- $('live-enable').disabled=!!ledger?.running||!wallet?.apiKeyConfigured||!!ledger?.pending;
+ $('live-detail').textContent=ledger?.pending?(ledger.pending.transaction?'Đang đối soát giao dịch đã ký. Không ký lệnh mới.':'Còn yêu cầu chưa gửi. Nếu phiên ký bị gián đoạn, bấm Hủy yêu cầu chưa gửi.'):`RPC: ${wallet?.rpcProvider??'chưa kết nối'} · Swap: PumpSwap trực tiếp (không cần key riêng). Mỗi lệnh cần bạn xác nhận trong ứng dụng ví.`;
+ $('live-enable').disabled=!!ledger?.running||!wallet?.swapReady||!!ledger?.pending;
  $('live-pause').disabled=!ledger?.running;
  $('cancel-order').disabled=!ledger?.pending||!!ledger?.pending?.transaction||signing;
  $('sign-order').disabled=signing||!proposal||!!ledger?.pending||!ledger?.running;
@@ -44,7 +44,7 @@ async function reconcile(){
  if(!ledger?.pending?.transaction||signing)return;
  const pending=ledger.pending,result=await api('/api/direct/reconcile',{intent:pending.intent,transaction:pending.transaction});
  if(result.status==='pending')return;
- const confirmed=applyOwnerReceipt(ledger,pending,result);save();
+ const confirmed=applyOwnerReceipt(ledger,pending,result);if(result.status!=='confirmed')ledger.running=false;save();
  if(confirmed)window.dispatchEvent(new CustomEvent('meme-trade',{detail:{id:result.signature,side:pending.intent.side,symbol:pending.intent.symbol,mode:'live'}}));
  if(result.status!=='confirmed')message(result.status==='failed'?'Lệnh thất bại trên Solana; đã ghi nhận phí mạng.':'Lệnh hết hạn; không gửi lại tự động.');
  await watch();
@@ -63,6 +63,7 @@ async function refresh(){
    save();
   }else proposal=null;
   render();
+  if(ledger?.running&&proposal&&!ledger.pending&&provider&&$('auto-request-sign').checked&&document.visibilityState==='visible')await lockedSign(proposal);
  }catch(e){if(ledger)ledger.running=false;proposal=null;message(e.message);render();}
  finally{refreshing=false;}
 }
@@ -111,8 +112,8 @@ async function signOrder(order){
 async function lockedSign(order){if(navigator.locks)return navigator.locks.request('meme-pilot-owner-sign',{ifAvailable:true},async lock=>{if(!lock)throw Error('Tab khác đang ký lệnh.');return signOrder(order);});return signOrder(order);}
 async function action(fn){message('');try{await fn();}catch(e){message(e.message);}finally{await refresh();}}
 $('wallet-connect').onclick=()=>action(connect);
-$('rpc-form').onsubmit=e=>{e.preventDefault();action(async()=>{await api('/api/direct/config',{apiKey:$('jupiter-key').value,heliusKey:$('helius-key').value});$('jupiter-key').value='';$('helius-key').value='';});};
-$('live-enable').onclick=()=>action(async()=>{if(!wallet)throw Error('Chờ đọc số dư ví chủ.');if(!ledger){ledger=createOwnerLedger(owner,wallet.balanceSol);save();}ledger.running=true;save();});
+$('rpc-form').onsubmit=e=>{e.preventDefault();action(async()=>{await api('/api/direct/config',{heliusKey:$('helius-key').value});$('helius-key').value='';});};
+$('live-enable').onclick=()=>action(async()=>{if(!provider)await connect();if(!wallet)throw Error('Chờ đọc số dư ví chủ.');if(!ledger){ledger=createOwnerLedger(owner,wallet.balanceSol);save();}ledger.running=true;save();});
 $('live-pause').onclick=()=>action(async()=>{if(ledger){ledger.running=false;proposal=null;save();render();}});
 $('cancel-order').onclick=()=>action(async()=>{if(signing)throw Error('Ví đang ký. Hủy trong ứng dụng ví trước.');const current=JSON.parse(localStorage.getItem(storageKey())??'null');if(!current?.pending||current.pending.transaction)throw Error('Chỉ hủy được yêu cầu chưa gửi.');await api('/api/direct/cancel',{id:current.pending.intent.id});ledger=validateLedger(current);ledger.pending=null;save();});
 $('sign-order').onclick=()=>action(()=>lockedSign(proposal));

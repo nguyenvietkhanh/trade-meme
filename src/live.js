@@ -13,10 +13,9 @@ export class LiveTrader{
  async save(){await writeDurable(this.file,this.state);}
  status(){const s=this.state;return {mode:'live',...this.vault.status(),enabled:s.enabled,funded:s.funded,balanceSol:s.observedBalanceSol??s.cashSol,positions:s.positions,trades:s.trades.slice(0,50),pending:s.pending?{signature:s.pending.signature,status:s.pending.status}:null,halted:s.halted,error:s.lastError,entryBlockedReason:s.entryBlockedReason??null,lastSyncAt:s.lastSyncAt,settings:s.settings,events:s.events.slice(0,30),needsUnlock:!!(this.vault.exists&&!this.vault.keypair)};}
  key(){const kp=this.vault.keypair;if(!kp)throw Error('Két ví đang khóa. Mở khóa trước khi ký.');return kp;}
- apiKey(){const key=this.vault.apiKey||process.env.JUPITER_API_KEY;if(!key)throw Error('Thiếu Jupiter API key. Chưa bật giao dịch thật.');return key;}
  async enable(confirm){return this.serial(async()=>{
   if(confirm!=='ENABLE MAINNET 0.3 SOL')throw Error('Thiếu xác nhận bật mainnet.');
-  this.key();this.apiKey();await this.execution.network();const balance=await this.execution.balance(this.vault.publicKey);
+  this.key();await this.execution.network();const balance=await this.execution.balance(this.vault.publicKey);
   if(!this.state.funded){if(balance>LIVE_LIMITS.budgetSol+.00000001)throw Error('Ví bot khởi đầu chỉ được giữ tối đa 0,3 SOL.');if(balance<LIVE_LIMITS.reserveSol+LIVE_LIMITS.orderSol+.005)throw Error('Chưa đủ SOL để giữ dự phòng và vào lệnh.');this.state.settings.initialSol=balance;this.state.cashSol=balance;this.state.dayStartEquity=balance;this.state.peakEquity=balance;this.state.funded=true;}
   if(balance<.055&&!this.state.positions.length)throw Error('Chưa đủ SOL để giữ dự phòng.');
   if(this.state.halted)throw Error(this.state.halted);
@@ -46,7 +45,7 @@ export class LiveTrader{
  }
  async submit(m,side,fraction,reason,solUsd){
   const s=this.state;if(s.pending)throw Error('Đang chờ giao dịch trước được đối soát.');
-  const kp=this.key(),apiKey=this.apiKey();let amount;
+  const kp=this.key();let amount;
   if(side==='BUY'){
    if(s.halted||s.positions.length>=5||s.cashSol-.03-.005<.05)throw Error('Giới hạn vốn/vị thế không cho phép mua.');
    if(s.positions.some(p=>p.mint===m.mint)||s.cooldowns[m.mint]>Date.now())throw Error('Token đã giữ hoặc đang cooldown.');
@@ -55,7 +54,7 @@ export class LiveTrader{
    const p=s.positions.find(p=>p.mint===m.mint);if(!p?.rawQuantity)throw Error('Không có số dư token đã đối soát.');
    const raw=BigInt(p.rawQuantity);amount=(fraction>=1?raw:raw*BigInt(Math.floor(fraction*1e9))/1000000000n).toString();if(BigInt(amount)<=0n)throw Error('Lượng token quá nhỏ.');
   }
-  const request={keypair:kp,apiKey,input:side==='BUY'?SOL:m.mint,output:side==='BUY'?m.mint:SOL,amount};
+  const request={keypair:kp,poolAddress:m.pairAddress,input:side==='BUY'?SOL:m.mint,output:side==='BUY'?m.mint:SOL,amount};
   let prepared=await this.execution.prepare(request);
   if(side==='SELL'&&reason==='recover-capital'){
    const p=s.positions.find(p=>p.mint===m.mint);

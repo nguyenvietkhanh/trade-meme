@@ -19,11 +19,11 @@ export function verifyOwnerTransaction(encoded,owner=DEFAULT_OWNER){
 
 // This service never possesses a wallet key or signs. The owner's wallet signs in the browser.
 export class DirectWallet{
- constructor(execution){this.execution=execution;this.owner=DEFAULT_OWNER;this.apiKey=process.env.JUPITER_API_KEY??'';this.intent=null;this.watched=[];}
- configure({apiKey,heliusKey}){
-  for(const value of [apiKey,heliusKey])if(value&&(typeof value!=='string'||!/^[\x21-\x7e]{8,256}$/.test(value)))throw Error('API key không hợp lệ.');
-  if(heliusKey)this.execution.configureHelius(heliusKey);if(apiKey)this.apiKey=apiKey;
-  return {walletMode:'owner',rpcProvider:this.execution.provider,apiKeyConfigured:!!this.apiKey};
+ constructor(execution){this.execution=execution;this.owner=DEFAULT_OWNER;this.intent=null;this.watched=[];}
+ configure({heliusKey}){
+  if(heliusKey&&(typeof heliusKey!=='string'||!/^[\x21-\x7e]{8,256}$/.test(heliusKey)))throw Error('Helius API key không hợp lệ.');
+  if(heliusKey)this.execution.configureHelius(heliusKey);
+  return {walletMode:'owner',rpcProvider:this.execution.provider,swapProvider:'PumpSwap',swapReady:true,signingMode:'owner-wallet'};
  }
  async status(){
   try{await this.execution.network();const balanceSol=await this.execution.balance(this.owner),tokenBalances={};
@@ -32,7 +32,6 @@ export class DirectWallet{
   catch{throw Error('Chưa đọc được số dư ví chủ. Kiểm tra Helius/RPC rồi thử lại.');}
  }
  async prepare(input,feed){
-  if(!this.apiKey)throw Error('Nhập Jupiter API key trước khi lấy giao dịch swap.');
   if(this.intent){if(this.intent.signature||await this.execution.height()<=this.intent.lastValidBlockHeight)throw Error('Còn giao dịch trước cần ký hoặc đối soát.');this.intent=null;}
   if(feed.error||!feed.updatedAt||Date.now()-feed.updatedAt>90000||!Number.isFinite(feed.solUsd)||feed.solUsd<=0)throw Error('Chờ dữ liệu thị trường mới.');
   const side=input.side;if(!['BUY','SELL'].includes(side))throw Error('Loại lệnh không hợp lệ.');
@@ -49,7 +48,7 @@ export class DirectWallet{
    if(typeof input.amount!=='string'||!/^\d{1,20}$/.test(input.amount)||BigInt(input.amount)<=0n||BigInt(input.amount)>held)throw Error('Lượng bán vượt số token đang có.');
    amount=input.amount;
   }
-  const request={ownerAddress:this.owner,apiKey:this.apiKey,input:side==='BUY'?SOL:market.mint,output:side==='BUY'?market.mint:SOL,amount};
+  const request={ownerAddress:this.owner,poolAddress:market.pairAddress,input:side==='BUY'?SOL:market.mint,output:side==='BUY'?market.mint:SOL,amount};
   let prepared=await this.execution.prepare(request);
   if(side==='SELL'&&input.reason==='recover-capital'&&Number.isFinite(input.targetSol)&&input.targetSol>0){
    const target=BigInt(Math.ceil(input.targetSol*1e9));

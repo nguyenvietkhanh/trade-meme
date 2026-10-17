@@ -1,12 +1,11 @@
 import {Connection,PublicKey,VersionedTransaction,TransactionMessage,SystemProgram} from '@solana/web3.js';
 import bs58 from 'bs58';
-import {fetchJson} from './market.js';
+import {buildPumpSwap,PUMP_PROGRAM} from './pump-swap.js';
 import {SOL} from './engine.js';
 export const TOKEN=new PublicKey('TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA');
 export const TOKEN2022=new PublicKey('TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb');
 const ATA=new PublicKey('ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL');
-const JUP='https://api.jup.ag/swap/v1';
-const PROGRAMS=new Set(['11111111111111111111111111111111','ComputeBudget111111111111111111111111111111',TOKEN.toBase58(),ATA.toBase58(),'JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4']);
+const PROGRAMS=new Set(['11111111111111111111111111111111','ComputeBudget111111111111111111111111111111',TOKEN.toBase58(),ATA.toBase58(),PUMP_PROGRAM.toBase58()]);
 export class TradePolicyError extends Error{}
 export const LIVE_LIMITS=Object.freeze({budgetSol:.3,orderSol:.03,reserveSol:.05,maxPositions:5,maxDailyLossSol:.03,maxOverheadLamports:5000000,maxPriorityLamports:20000,maxPriceImpact:.02,slippageBps:150});
 const atomic=s=>{if(!/^\d+$/.test(String(s)))throw new TradePolicyError('Số lượng token không hợp lệ.');return BigInt(s);};
@@ -67,17 +66,11 @@ export class SolanaExecution{
   for(const programId of [TOKEN,TOKEN2022]){const result=await this.rpc.getTokenAccountsByOwner(key,{programId});all.push(...result.value);}
   if(all.length>64)throw new TradePolicyError('Ví có quá nhiều tài khoản token để kiểm tra an toàn.');return all;
  }
- async prepare({keypair,ownerAddress,apiKey,input,output,amount}){
+ async prepare({keypair,ownerAddress,input,output,amount,poolAddress}){
   await this.network();const owner=keypair?.publicKey??new PublicKey(ownerAddress);
-  const query=new URLSearchParams({inputMint:input,outputMint:output,amount:String(amount),slippageBps:String(LIVE_LIMITS.slippageBps),restrictIntermediateTokens:'true'});
-  const headers={'x-api-key':apiKey};
-  const q=await fetchJson(`${JUP}/quote?${query}`,{headers});validateQuote(q,input,output,amount);
-  if(input===SOL){const reverseQuery=new URLSearchParams({inputMint:output,outputMint:SOL,amount:q.outAmount,slippageBps:String(LIVE_LIMITS.slippageBps),restrictIntermediateTokens:'true'});const reverse=await fetchJson(`${JUP}/quote?${reverseQuery}`,{headers});validateQuote(reverse,output,SOL,q.outAmount);if(BigInt(reverse.otherAmountThreshold)*100n<BigInt(amount)*92n)throw new TradePolicyError('Chi phí vòng mua/bán vượt 8%; bỏ qua token.');}
-  const slot=await this.rpc.getSlot();if(!Number.isInteger(q.contextSlot)||slot-q.contextSlot>150||q.contextSlot>slot+10)throw new TradePolicyError('Báo giá đã cũ.');
-  const data=await fetchJson(`${JUP}/swap`,{method:'POST',headers:{...headers,'Content-Type':'application/json'},body:JSON.stringify({quoteResponse:q,userPublicKey:owner.toBase58(),wrapAndUnwrapSol:true,dynamicComputeUnitLimit:true,prioritizationFeeLamports:{priorityLevelWithMaxLamports:{maxLamports:LIVE_LIMITS.maxPriorityLamports,priorityLevel:'medium'}}})});
-  if(!data.swapTransaction||!Number.isSafeInteger(data.lastValidBlockHeight)||Number(data.prioritizationFeeLamports??0)>LIVE_LIMITS.maxPriorityLamports)throw new TradePolicyError('Giao dịch hoặc phí ưu tiên không hợp lệ.');
-  const bytes=Buffer.from(data.swapTransaction,'base64');if(bytes.length>1232)throw new TradePolicyError('Giao dịch vượt kích thước hỗ trợ.');
-  const tx=VersionedTransaction.deserialize(bytes);
+  const {tx,quote:q,lastValidBlockHeight}=await buildPumpSwap(this.rpc,{owner,input,output,amount,poolAddress});
+  validateQuote(q,input,output,amount);
+  const bytes=tx.serialize();if(bytes.length>1232)throw new TradePolicyError('Giao dịch vượt kích thước hỗ trợ.');
   if(tx.message.header.numRequiredSignatures!==1||!tx.message.staticAccountKeys[0].equals(owner))throw new TradePolicyError('Người ký không khớp ví bot.');
   const tables=[];for(const lookup of tx.message.addressTableLookups){const r=await this.rpc.getAddressLookupTable(lookup.accountKey);if(!r.value)throw new TradePolicyError('Không đọc được lookup table.');tables.push(r.value);}
   const keys=tx.message.getAccountKeys({addressLookupTableAccounts:tables});
@@ -91,8 +84,10 @@ export class SolanaExecution{
   const before=beforeInfo.slice(1).map(tokenData),after=sim.value.accounts.slice(1).map(tokenData);
   if(after.some(a=>a&&a.owner!==owner.toBase58()))throw new TradePolicyError('Tài khoản nhận token không thuộc ví bot.');
   validateSimulation({beforeSol:beforeInfo[0]?.lamports,afterSol:sim.value.accounts[0]?.lamports,before,after,input,output,amount:String(amount),minOut:q.otherAmountThreshold});
+  const minNativeOutLamports=output===SOL?BigInt(Math.min(Number(q.otherAmountThreshold)-fee.value,sim.value.accounts[0].lamports-beforeInfo[0].lamports-(Number(q.outAmount)-Number(q.otherAmountThreshold)))):null;
+  if(output===SOL&&minNativeOutLamports<=0n)throw new TradePolicyError('SOL nhận sau phí không dương; không yêu cầu ví ký.');
   if(keypair)tx.sign([keypair]);
-  return {bytes:tx.serialize(),signature:keypair?bs58.encode(tx.signatures[0]):null,lastValidBlockHeight:data.lastValidBlockHeight,quote:q,minNativeOutLamports:output===SOL?BigInt(q.otherAmountThreshold)-BigInt(fee.value):null};
+  return {bytes:tx.serialize(),signature:keypair?bs58.encode(tx.signatures[0]):null,lastValidBlockHeight,quote:q,minNativeOutLamports};
  }
  async fundingTransaction(owner,recipient,lamports){
   if(!Number.isSafeInteger(lamports)||lamports<=0||lamports>300000000)throw new TradePolicyError('Số SOL nạp vượt giới hạn.');

@@ -30,6 +30,6 @@ export class WalletVault{
   finally{key.fill(0);plain?.fill(0);}
  }
  lock(){this.keypair=null;this.apiKey=null;this.heliusKey=null;}
- status(){return {exists:this.exists,publicKey:this.publicKey,unlocked:!!this.keypair,apiKeyConfigured:!!(this.apiKey||process.env.JUPITER_API_KEY)};}
+ status(){return {exists:this.exists,publicKey:this.publicKey,unlocked:!!this.keypair,apiKeyConfigured:!!this.apiKey};}
  async backup(){return readFile(this.file,'utf8');}
 }
