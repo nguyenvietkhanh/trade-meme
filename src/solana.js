@@ -67,8 +67,8 @@ export class SolanaExecution{
   for(const programId of [TOKEN,TOKEN2022]){const result=await this.rpc.getTokenAccountsByOwner(key,{programId});all.push(...result.value);}
   if(all.length>64)throw new TradePolicyError('Ví có quá nhiều tài khoản token để kiểm tra an toàn.');return all;
  }
- async prepare({keypair,apiKey,input,output,amount}){
-  await this.network();const owner=keypair.publicKey;
+ async prepare({keypair,ownerAddress,apiKey,input,output,amount}){
+  await this.network();const owner=keypair?.publicKey??new PublicKey(ownerAddress);
   const query=new URLSearchParams({inputMint:input,outputMint:output,amount:String(amount),slippageBps:String(LIVE_LIMITS.slippageBps),restrictIntermediateTokens:'true'});
   const headers={'x-api-key':apiKey};
   const q=await fetchJson(`${JUP}/quote?${query}`,{headers});validateQuote(q,input,output,amount);
@@ -91,7 +91,8 @@ export class SolanaExecution{
   const before=beforeInfo.slice(1).map(tokenData),after=sim.value.accounts.slice(1).map(tokenData);
   if(after.some(a=>a&&a.owner!==owner.toBase58()))throw new TradePolicyError('Tài khoản nhận token không thuộc ví bot.');
   validateSimulation({beforeSol:beforeInfo[0]?.lamports,afterSol:sim.value.accounts[0]?.lamports,before,after,input,output,amount:String(amount),minOut:q.otherAmountThreshold});
-  tx.sign([keypair]);return {bytes:tx.serialize(),signature:bs58.encode(tx.signatures[0]),lastValidBlockHeight:data.lastValidBlockHeight,quote:q,minNativeOutLamports:output===SOL?BigInt(q.otherAmountThreshold)-BigInt(fee.value):null};
+  if(keypair)tx.sign([keypair]);
+  return {bytes:tx.serialize(),signature:keypair?bs58.encode(tx.signatures[0]):null,lastValidBlockHeight:data.lastValidBlockHeight,quote:q,minNativeOutLamports:output===SOL?BigInt(q.otherAmountThreshold)-BigInt(fee.value):null};
  }
  async fundingTransaction(owner,recipient,lamports){
   if(!Number.isSafeInteger(lamports)||lamports<=0||lamports>300000000)throw new TradePolicyError('Số SOL nạp vượt giới hạn.');

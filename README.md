@@ -1,88 +1,78 @@
-# Meme Pilot — Solana mainnet
+# Meme Pilot — giao dịch trực tiếp bằng ví chủ
 
-Bot tự lọc token, ký giao dịch mainnet từ ví bot riêng và ghi nhận kết quả sau xác nhận Solana. Giao diện tiếng Việt có radar, nhật ký quyết định, đường vốn và nhện nhảy khi có lệnh mua/bán đã xác nhận. Mặc định không chạy mô phỏng, không tạo số dư hoặc fills giả.
+Ứng dụng quét token Solana/PumpSwap, đề xuất mua/bán và đưa giao dịch mainnet sang **Phantom hoặc Solflare của chủ ví để ký**. Chỉ địa chỉ **7JePGU7MFtRo9z5jMh2486UniD4EB4PpRd8tv2Jhqpsy** được đăng nhập. Không tạo ví phụ, không chuyển vốn sang ví khác, không giữ khóa riêng của ví chủ trên server và không cần volume Railway để giao dịch.
 
-Chỉ địa chỉ **7JePGU7MFtRo9z5jMh2486UniD4EB4PpRd8tv2Jhqpsy** được xác thực và điều khiển. Khách chưa đăng nhập chỉ xem thị trường; số dư và nhật ký tài chính bị ẩn. Địa chỉ chủ được cố định trong server, không thể đổi bằng biến môi trường hoặc API. Chữ ký đăng nhập không chuyển tiền.
+**Kết nối ví không cấp quyền tự ký 24/24.** Chữ ký đăng nhập chỉ xác thực. Mỗi giao dịch mua/bán cần chủ ví xác nhận trong ứng dụng ví. Phiên bản này tự chọn tín hiệu và tỷ lệ thoát; chưa có cơ chế ủy quyền ký không giám sát. Không yêu cầu seed phrase/private key trong chat hoặc giao diện.
 
-## Bắt đầu trên Railway
+## Dùng website
 
-Railway dùng Dockerfile và `railway.json`, tự deploy khi nhánh GitHub được kết nối có commit mới. Chạy **một replica** với một volume; không chia sẻ sổ ví giữa nhiều tiến trình.
+1. Mở trang HTTPS trong Phantom/Solflare hoặc trình duyệt đã cài extension. Bấm **Kết nối ví chủ**, chọn đúng địa chỉ và ký thông điệp đăng nhập.
+2. Nhập **Helius API key** cho RPC và **Jupiter API key** cho route swap, bấm **Lưu kết nối phiên này**. Có thể cấu hình hai key trong Railway Variables thay cho nhập trên trang. Key nhập ở giao diện chỉ lưu trong bộ nhớ server đến restart, không lưu vào localStorage hoặc nhật ký.
+3. Kiểm tra số dư SOL đọc từ ví chủ rồi bấm **Bật theo dõi tín hiệu**. Ngân sách ứng dụng giới hạn tối đa 0,3 SOL trong số SOL đang có; không cần giao dịch nạp riêng.
+4. Khi có tín hiệu, bấm **Ký mua/bán** và xem giao dịch trong ví. Ứng dụng ghi giao dịch đã ký vào nhật ký trình duyệt trước khi gửi lên mạng. Chỉ ghi nhận vị thế/fill sau xác nhận Solana.
+5. Giữ tab mở để tiếp tục theo dõi. Đóng tab, ví chưa ký hoặc mất dữ liệu sẽ không thực hiện cắt lỗ/chốt lời. **Dừng theo dõi** không đóng vị thế. Có thể ký bán toàn bộ phần token do ứng dụng quản lý từ danh sách vị thế.
 
-1. Trong service `trade-meme`, gắn **Volume** (ví dụ mount `/app/.data`). Server tự dùng `RAILWAY_VOLUME_MOUNT_PATH/meme-pilot`, tạo thư mục riêng và chạy HTTP/signer bằng UID 1000. Không có volume thì không cho tạo két, nạp hoặc bật tiền thật.
-2. Mở website qua HTTPS. Bấm **Kết nối ví chủ** bằng Phantom/Solflare. Trên điện thoại dùng trình duyệt trong ví. Ví khác bị ngắt kết nối và server từ chối chữ ký.
-3. Tạo két với mật khẩu ít nhất 12 ký tự. Nhập **Helius API key** để dùng RPC Helius mainnet và **Jupiter API key** để lấy route swap. Các key được mã hóa trong két. Helius cung cấp RPC; Jupiter cung cấp báo giá và giao dịch swap. Helius không thay thế Jupiter API key.
-4. Tải bản sao ví mã hóa và cất mật khẩu riêng. Sau đó bấm **Nạp đến 0,3 SOL từ ví chủ**, kiểm tra giao dịch trên ví trước khi ký. Đây là giao dịch chuyển SOL thật từ ví chủ sang địa chỉ ví bot hiển thị trên trang. Không gửi seed phrase hoặc private key cho ứng dụng/chat.
-5. Đợi số dư RPC cập nhật rồi bấm **Bật giao dịch thật**. Bot chỉ mua token đạt toàn bộ điều kiện, có thể không có lệnh trong nhiều giờ.
+Bảng số dư hiển thị SOL native khả dụng của ví chủ, không phải tổng giá trị mọi tài sản trong ví. P&L/đường vốn chỉ tính ngân sách và các giao dịch được ứng dụng ghi nhận, gồm đánh dấu giá vị thế chưa chốt. Token đã có sẵn trong ví không được tự động đưa vào danh mục bán. Trước mua, nếu ví đã giữ cùng mint, ứng dụng từ chối để tránh trộn tài sản.
 
-Có thể cấu hình `HELIUS_API_KEY`, `JUPITER_API_KEY` qua Railway Variables thay cho nhập trong giao diện. `SOLANA_RPC_URL` cho phép RPC HTTPS khác; nếu không cấu hình RPC/key thì dùng public Solana mainnet RPC, dễ bị giới hạn tốc độ. Key Helius nhập trong két được ưu tiên hơn RPC từ môi trường. Không đưa URL chứa key vào Git hoặc chat.
+## Vốn và chiến lược
 
-`PUBLIC_ORIGIN` mặc định lấy Railway public domain. Nếu dùng tên miền riêng, đặt đúng origin HTTPS. Không dùng wildcard. Két tự khóa sau restart. Muốn tự mở khóa sau restart, lưu `BOT_VAULT_PASSWORD` trong Railway Variables; đây là quyền truy cập khóa ví, chỉ quản trị viên hạ tầng được đọc. Không có biến này thì đăng nhập và mở két lại sau mỗi deploy. Khi đã bật trước đó, bot chỉ tiếp tục sau mở khóa, giá mới và đối soát.
-
-Tôi chưa thực hiện giao dịch mainnet hoặc xác minh có lãi. Test dùng dữ liệu tổng hợp và RPC giả lập. Triển khai code không đồng nghĩa ví đã được nạp hoặc bot đang ký lệnh.
-
-## Vốn và thoát lệnh
-
-| Giới hạn | Mặc định |
+| Giới hạn | Giá trị |
 | --- | --- |
-| Vốn ban đầu tối đa | 0,3 SOL trong ví bot |
-| Mỗi lần mua | 0,03 SOL, cộng phí mạng/rent được kiểm tra |
+| Ngân sách ban đầu trong ví chủ | Tối đa 0,3 SOL, theo số dư thực tế khi khởi tạo nhật ký |
+| Mỗi lần mua | 0,03 SOL + phí/rent được kiểm tra |
 | Vị thế đồng thời | 5 |
-| SOL dự phòng | Ít nhất 0,05 SOL khi mua mới |
-| Ngưỡng cắt lỗ | −20% giá trị ròng so với giá vốn USD của phần còn lại |
-| Chốt lần đầu | Khi đạt +80%, bán lượng đủ thu khoảng 140% vốn USD ban đầu |
-| Phần thả nổi | Mỗi lần giá tăng gấp đôi từ lần chốt trước, bán 50% phần còn lại |
+| Dự phòng | 0,05 SOL trong ngân sách và trong ví |
+| Cắt lỗ đề xuất | −20% giá trị ròng so với giá vốn USD của phần còn lại |
+| Chốt lần đầu | Đạt +80%: bán lượng đủ thu khoảng 140% vốn USD ban đầu |
+| Phần còn lại | Mỗi lần giá x2 từ lần chốt trước, đề xuất bán 50% |
 | Đóng phần lẻ | Giá trị ròng ≤0,25 USD hoặc ≤0,0001% lượng token ban đầu |
 | Khóa mua mới | Lỗ/ngày 0,03 SOL hoặc drawdown 15% |
-| Cooldown token | 30 phút sau đóng vị thế hoặc từ chối kiểm tra chính sách |
+| Cooldown | 30 phút sau khi đóng vị thế |
 
-Ví dụ mua $100: khi giá trị ròng đạt $180, mục tiêu thu $140, phần còn lại tiếp tục chạy. Khi giá nhảy qua nhiều mốc, bot chốt một lần theo báo giá đang có; không tạo lệnh tại giá quá khứ. Mainnet kiểm tra lại lượng bán bằng báo giá Jupiter ròng sau phí. Giá tham chiếu, giá quote, thời điểm xác nhận và SOL/USD có thể lệch nhau; không bảo đảm thu đúng số USD hoặc bán đúng ngưỡng cắt lỗ.
+Ví dụ mua $100: khi giá trị ròng đạt $180, mục tiêu thu $140; phần còn lại chạy theo các mốc x2. Lệnh vẫn cần ví ký. Giá quote, phí, thời điểm xác nhận và SOL/USD có thể thay đổi; không bảo đảm chốt đúng số USD hay cắt lỗ đúng −20%. Không tạo lệnh giả tại giá quá khứ nếu giá nhảy qua nhiều mốc.
 
-Lỗ/ngày tính theo tổng equity cả vị thế mở, mốc UTC. Khóa rủi ro giữ qua restart và không tự xóa khi sang ngày; vẫn quản lý thoát lệnh nếu bot đang bật. **Dừng ký lệnh/Khóa két** dừng cả tự mua và tự bán, không đóng vị thế. Muốn rút SOL, đóng hết vị thế, đợi đối soát rồi rút; người nhận cố định là ví chủ. Không nạp/rút trực tiếp ngoài luồng sau khi đã bật: số dư thay đổi ngoài sổ sẽ làm bot dừng để đối soát.
+Giới hạn ngân sách và lỗ áp dụng trong nhật ký trình duyệt. Chỉ dùng **một hồ sơ trình duyệt hoạt động** cho ví; không khởi tạo các ngân sách độc lập trên nhiều thiết bị. Những giới hạn này không phải quyền hạn của smart contract và không chặn chủ ví tự giao dịch ngoài ứng dụng. Khi token thực tế thấp hơn số lượng ứng dụng quản lý, ứng dụng dừng theo dõi để chủ ví kiểm tra giao dịch ngoài luồng.
 
-## Lọc token và chấm điểm
+## Quét và kiểm tra token
 
-Nguồn DexScreener gồm các tìm kiếm giới hạn và tối đa 30 profile Solana mới nhất. Đây không phải toàn bộ token trên Solana. Giữ cập nhật riêng cho token đang nắm. Ưu tiên pool PumpSwap theo mint; profile hay boost không chứng minh token an toàn.
+DexScreener cung cấp tập tìm kiếm giới hạn và tối đa 30 profile Solana mới nhất, không phải toàn bộ thị trường. Các mint vị thế đang quản lý được cập nhật riêng.
 
-Điều kiện bắt buộc: PumpSwap; có profile; pool từ 10 giờ; market cap 100.000–5.000.000 USD (dùng FDV có ghi nhãn khi thiếu market cap); thanh khoản ≥25.000 USD và ≥5% định giá; volume 24h ≥50.000 USD; volume 5m ≥1.000 USD; tăng 5m +1–12%; ≥10 lượt mua và mua/bán >1,3; volume 5m tăng ≥1,2 lần so với trung bình các đoạn 5m còn lại trong giờ. H1 phải dương và ≤80%; loại H6 dưới −30% hoặc H24 trên +500%. Cần hai quan sát cách nhau 30 giây–3 phút, giữ lực mua/giá và không rút thanh khoản quá 15%. Feed quá 90 giây không dùng để vào/thoát lệnh.
+Điều kiện bắt buộc: PumpSwap, có profile, pool từ 10 giờ; market cap $100k–$5m (FDV được ghi nhãn khi thiếu market cap); thanh khoản ≥$25k và ≥5% định giá; volume 24h ≥$50k; volume 5m ≥$1k; tăng giá 5m +1–12%; ≥10 lượt mua và mua/bán >1,3; volume 5m tăng tốc ≥1,2 lần so với phần giờ còn lại. H1 dương và ≤80%; loại H6 dưới −30% hoặc H24 trên +500%. Hai quan sát cách nhau 30 giây–3 phút phải giữ lực mua/giá và không mất thanh khoản quá 15%. Dữ liệu quá 90 giây không dùng để đề xuất lệnh.
 
-Điểm liên tục theo độ sâu (15), hoạt động (10), momentum (15), áp lực mua (15), tăng volume (15), xu hướng (10), xác nhận (10), profile (5), độ tin cậy market cap (5; FDV 2). Cần ≥70/100 và toàn bộ điều kiện. Boost trả phí không cộng điểm. Điểm không phải xác suất thắng; thuật toán chưa có bằng chứng lợi nhuận ngoài thị trường.
+Điểm liên tục theo độ sâu, hoạt động, momentum, áp lực mua, tăng volume, xu hướng, xác nhận, profile và độ tin cậy định giá. Cần ≥70/100 và toàn bộ điều kiện. Boost trả phí không cộng điểm. Điểm không phải xác suất thắng.
 
-Trước mua: kiểm tra mint classic SPL, quyền mint/freeze đã tắt, không tài khoản token nào giữ quá 20% supply, có route mua và bán lại, quote mới, price impact tối đa 2%, slippage tối đa 1,5%, ngưỡng chi phí quote vòng mua/bán 8%. Kiểm tra tài khoản lớn không gộp theo chủ hưởng lợi, không xác minh LP lock, insider/bundle, giao dịch wash hoặc loại trừ LP. Có thể bỏ sót rủi ro hoặc loại nhầm token có pool giữ cung lớn. Không hỗ trợ Token-2022/transfer hooks. Vẫn có rủi ro rug, MEV, thanh khoản biến mất và mất vốn.
+Trước ký: kiểm tra classic SPL, quyền mint/freeze đã tắt, không tài khoản token nào giữ quá 20% supply; có quote mua và bán lại; kiểm tra slot, price impact ≤2%, slippage ≤1,5%, quote chi phí vòng mua/bán ≤8%. Kiểm tra tài khoản lớn không gộp theo chủ hưởng lợi, không xác minh LP lock, insider/bundle hoặc wash trading và có thể loại cả LP pool lớn. Không hỗ trợ Token-2022/transfer hooks. Thuật toán chưa có bằng chứng sinh lợi ngoài thị trường.
 
-## Bảo mật và đối soát
+## Ký, lưu lịch sử và đối soát
 
-Két AES-256-GCM với scrypt; file 0600, thư mục 0700. Khóa riêng chỉ dùng trên server khi mở két; không trả lại cho trình duyệt. Bản sao mã hóa cần mật khẩu để khôi phục. Chạy server và người quản trị Railway có quyền truy cập bộ nhớ có thể tiếp cận khóa khi két đang mở; mã hóa trên đĩa không ngăn được máy chủ đã bị chiếm quyền.
+Server chỉ chuẩn bị giao dịch **chưa ký** cho đúng fee payer là ví chủ. Ví extension ký trên trình duyệt. Trước gửi, server xác minh chữ ký Ed25519 của chủ ví và hash thông điệp phải khớp giao dịch đã chuẩn bị; server không có phương thức tự ký từ khóa ví chủ. Kiểm tra RPC simulation trước ký là bước kỹ thuật, không phải giao dịch giấy.
 
-Nonce đăng nhập dùng một lần, hạn 3 phút; session ngẫu nhiên hạn 15 phút, cookie HttpOnly/SameSite=Strict/Secure trên HTTPS. POST yêu cầu đúng origin, JSON và header riêng; giới hạn số lần thử. Dữ liệu ví, export và backup yêu cầu đăng nhập chủ. Không lưu key hoặc mật khẩu trong localStorage, log hay Git.
+Nhật ký localStorage gắn theo địa chỉ chủ, chứa vị thế, fills và giao dịch chờ; không chứa khóa riêng/API key. Signature và bytes đã ký được lưu **trước broadcast**. Nếu mất phản hồi hoặc server restart, chỉ đối soát signature đang có; không tạo signature thay thế. Yêu cầu chưa gửi bị gián đoạn có thể hủy riêng. Giao dịch đã gửi phải chờ xác nhận/hết hạn. Phí thực tế của giao dịch thất bại vẫn được ghi vào ngân sách.
 
-Mainnet kiểm tra genesis hash, fee payer, chương trình, phí và trạng thái sau mô phỏng transaction trước khi ký. Mô phỏng transaction là kiểm tra kỹ thuật RPC, không phải giao dịch giấy. Một giao dịch chưa xác định kết quả khóa lệnh mới; signature được fsync trước broadcast và đối soát theo receipt sau restart, không tự gửi lại với signature mới. Phí mạng tối đa 0,000025 SOL, ưu tiên tối đa 0,00002 SOL; thay đổi SOL do swap/rent chịu giới hạn cộng thêm 0,005 SOL. Lệnh lỗi có thể vẫn tốn phí và khiến kiểm tra số dư dừng bot; không giả ghi nhận thành công.
+**Xuất nhật ký giao dịch** trước khi xóa dữ liệu trình duyệt/đổi thiết bị; dùng **Khôi phục nhật ký** trên thiết bị mới và đợi kiểm tra số token. Không xóa nhật ký để xử lý giao dịch chưa rõ kết quả. Server không giữ bản sao đầy đủ của nhật ký cá nhân và không tự khôi phục giá vốn của giao dịch ngoài ứng dụng. Các bản sao cũ cần đối chiếu lịch sử ví trước khi tiếp tục dùng.
 
-Mất RPC/feed, sai số dư hoặc kiểm tra không đạt có thể dừng ký. Cần xem nhật ký trước bật lại. Mất quyền đọc volume, mất password hoặc mất bản sao có thể cản trở khôi phục tài sản. Sao lưu volume (két và live-state) cùng bản sao mã hóa. Đây chưa phải audit bảo mật độc lập.
+Nonce đăng nhập một lần, hạn 3 phút; session hạn 15 phút, cookie HttpOnly/SameSite=Strict/Secure trên HTTPS. POST yêu cầu đúng origin/JSON/header riêng. Hết phiên cần kết nối lại; giao dịch chờ vẫn giữ trong nhật ký. Ngăn trùng yêu cầu trong tab, dùng Web Locks nếu trình duyệt hỗ trợ và một intent chưa giải quyết trên server. Kiểm tra ví lại trước ký. Không bán quá số raw token được ứng dụng quản lý, kể cả khi ví có thêm cùng token.
 
-## Chạy local và kiểm tra
+Giao dịch được kiểm tra genesis mainnet, chương trình, phí, đầu vào/đầu ra và thay đổi tài khoản token sau simulation. Phí mạng ≤0,000025 SOL, ưu tiên ≤0,00002 SOL; giới hạn cộng thêm cho swap/rent 0,005 SOL. Mất mạng, thanh khoản hoặc thiếu chữ ký vẫn có thể gây lỗ; đây chưa phải audit độc lập và không có cam kết lợi nhuận.
+
+## Railway và local
+
+Railway tự deploy nhánh `codex/meme-pilot-railway` bằng Dockerfile/railway.json. Volume chỉ còn là lựa chọn lưu lịch sử scanner, không phải điều kiện kết nối/ký lệnh. Không dùng `RUN --mount=type=secret` vì builder Railway hiện chỉ hỗ trợ cache mount. Một service/replica được khuyến nghị cho bộ điều phối intent. Domain riêng cần `PUBLIC_ORIGIN` khớp đúng origin HTTPS.
+
+Biến môi trường tùy chọn: `HELIUS_API_KEY`, `JUPITER_API_KEY`, hoặc `SOLANA_RPC_URL` HTTPS khác. Địa chỉ ví chủ cố định, không đổi qua biến môi trường. Chỉ cấu hình key qua giao diện đã đăng nhập hoặc Railway Variables, không qua chat/Git. Mainnet cần HTTPS tới `api.dexscreener.com`, `api.jup.ag`, `mainnet.helius-rpc.com` hoặc RPC đã chọn.
+
+Dữ liệu ví phụ cũ không bị xóa hoặc tự chuyển tiền; bản mã hóa cũ, nếu có, vẫn có thể tải qua `/api/live/backup` sau đăng nhập chủ để khôi phục riêng. Các API tạo/nạp/điều khiển ví phụ đã ngừng hoạt động. `BOT_VAULT_PASSWORD` không được dùng trong luồng ví chủ.
 
 Cần Node.js 24+:
 
 ```bash
-npm ci --ignore-scripts
+npm ci --ignore-scripts --include=dev
 npm run build
 npm run check
 npm test
 npm start
 ```
 
-Mở `http://127.0.0.1:3000`. Sao chép `.env.example` nếu cần đổi cấu hình. Chỉ chạy một tiến trình. Docker Compose có volume và restart:
+`/api/health` xác nhận HTTP và feed, không xác nhận ví đã ký hay có lãi. `/api/state` cung cấp scanner và ẩn tài chính; bảng tài chính chủ ví được dựng từ RPC và nhật ký của trình duyệt đã đăng nhập. API `/api/direct/*` cần phiên chủ. Khóa/seed ví không được nhập vào ứng dụng.
 
-```bash
-docker compose up -d --build
-```
-
-Đóng tab không dừng bot; máy/server phải còn chạy và có mạng. Các domain cần: `api.dexscreener.com`, `api.jup.ag`, `mainnet.helius-rpc.com` hoặc RPC đã cấu hình.
-
-`/api/health`: `status:ok` chỉ kiểm tra HTTP, `marketFresh` kiểm tra feed; không chứng minh signer sẵn sàng hoặc giao dịch đã khớp. `/api/state` mặc định mainnet, ẩn tài chính khi chưa xác thực. `/api/live/status` và `/api/export` cần phiên chủ. Dữ liệu nằm trong scanner-state.json, live-state.json và wallet-vault.json trên volume. Cửa sổ fills 500, quyết định 300, log 200, đường vốn 1.440 điểm; xuất lịch sử trước khi vượt cửa sổ nếu cần lưu lâu dài.
-
-Engine paper chỉ phục vụ test nội bộ khi đặt rõ `PAPER_WORKSPACE=true`; không bật cờ này trên service tiền thật. Test tổng hợp không chứng minh kết quả mainnet. Bộ test bao gồm xác thực/replay/origin, mã hóa/tamper, giới hạn giao dịch, quote/simulation, WAL/đối soát, bộ lọc và chốt lời từng phần.
-
-## Dependency audit
-
-Pin `@solana/web3.js` 1.98.4 và override jayson 5.0.0 (giữ API browser client đang dùng, loại bỏ uuid/stream-json cũ có advisory). Kiểm thử transport JSON-RPC qua cấu hình Helius xác nhận client tương thích. `npm audit --omit=dev` hiện báo 0 advisory; kết quả này không thay thế audit độc lập của ứng dụng hoặc hợp đồng token.
+Kiểm thử dùng fixture tổng hợp: chuẩn bị unsigned swap, xác minh chữ ký và nội dung, từ chối ví sai, ngân sách, tài sản có sẵn, đối soát sau restart và fills không lặp. Trình duyệt kiểm tra ghi nhật ký trước ký/trước gửi, không tạo fill trước xác nhận, reload không ký lại và giao diện mobile. Chưa gửi giao dịch mainnet thật. Engine paper/legacy signer chỉ còn dùng trong test nội bộ; không bật `PAPER_WORKSPACE=true` trên sản phẩm.

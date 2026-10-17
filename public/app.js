@@ -1,5 +1,5 @@
 const $=id=>document.getElementById(id);
-let state=null,busy=false;
+let state=null,busy=false,ownerState=null;
 let commandError='';
 let seenPaperTrades=null;
 const fmt=(n,d=4)=>Number.isFinite(n)?n.toLocaleString('en-US',{minimumFractionDigits:d,maximumFractionDigits:d}):'—';
@@ -11,21 +11,21 @@ const signed=n=>(n>=0?'+':'')+fmt(n,5);
 function rowEmpty(cols,text){return `<tr><td colspan="${cols}" class="empty">${text}</td></tr>`;}
 function render(){
   if(!state)return;
-  const s=state, f=s.feed, cfg=s.settings, fresh=f.updatedAt&&Date.now()-f.updatedAt<cfg.maxPriceAgeMs&&!f.error;
-  $('equity').textContent=fmt(s.equitySol)+' SOL';$('cash').textContent=s.cashSol===null?'Đăng nhập ví chủ để xem số dư':`Tiền khả dụng ${fmt(s.cashSol)} SOL`;
+  const s=state.mode==='live'&&state.ownerAuthenticated&&ownerState?{...state,...ownerState}:state, f=s.feed, cfg=s.settings, fresh=f.updatedAt&&Date.now()-f.updatedAt<cfg.maxPriceAgeMs&&!f.error;
+  $('equity').textContent=fmt(s.equitySol)+' SOL';$('cash').textContent=s.cashSol===null?'Đăng nhập ví chủ để xem số dư':s.walletMode==='owner'&&Number.isFinite(s.budgetCashSol)?`Ngân sách ứng dụng còn ${fmt(s.budgetCashSol)} SOL`:`Tiền khả dụng ${fmt(s.cashSol)} SOL`;
   $('pnl').textContent=s.pnlSol===null?'—':signed(s.pnlSol)+' SOL';$('pnl').className=sign(s.pnlSol);
   $('return').textContent=s.pnlSol===null?'Chưa có dữ liệu vốn mainnet':`${signed(s.pnlSol/cfg.initialSol*100)}% so với vốn đầu`;
   $('win').textContent=s.winRate===null?'Chưa có win rate':fmt(s.winRate*100,1)+'% win';
   $('drawdown').textContent=s.maxDrawdownObservedPct===null?'—':'−'+fmt(s.maxDrawdownObservedPct,1)+'%';$('peak').textContent=`Đỉnh vốn ${fmt(s.peakEquity,5)} SOL`;
-  $('copied').innerHTML=`${s.decisionStats.bought} <span>lệnh mua</span>`;
+  $('copied').innerHTML=`${s.bought??s.decisionStats.bought} <span>lệnh mua</span>`;
   $('decision-summary').textContent=`${s.decisionStats.evaluated} lượt đánh giá · ${s.decisionStats.rejected} bỏ qua`;
   $('decision-log').innerHTML=s.decisions.map(l=>`<div class="decision-entry ${l.action.toLowerCase()}"><time>${time(l.at)}</time><span class="tag">[${escape(l.action)}]</span>${escape(l.symbol)}${l.score===null?'':' · '+l.score+'/100'} → ${escape(l.reason)}</div>`).join('')||'<p class="fine">Chưa có quyết định. Khi bật bot, mỗi vòng quét ghi lại token được chọn hoặc bị bỏ qua cùng lý do.</p>';
   $('candidates').innerHTML=s.rankings.slice(0,8).map((m,i)=>`<article class="candidate-card ${m.eligible?'active':''}"><div class="candidate-card-head"><span class="avatar">${escape(m.symbol.slice(0,1))}</span><strong>${escape(m.symbol)}</strong><small>#${i+1}</small></div><span class="candidate-score ${m.eligible?'positive':''}">${m.score}<small> / 100</small></span><span class="mint">${m.valuationSource==='fdv'?'FDV':'Market cap'} ${money(m.valuationUsd)}</span><span class="mint" title="${escape(m.mint)}">${escape(m.mint.slice(0,8))}…${escape(m.mint.slice(-6))}</span><div class="candidate-foot"><small>${m.eligible?'Đạt bộ lọc':escape(m.reasons[0]??'Đang đánh giá')}</small></div></article>`).join('')||'<p class="fine">Đang chờ dữ liệu thật. Không tạo token hoặc lợi nhuận giả.</p>';
   $('watchlist').innerHTML=s.watchlist.map(m=>`<span class="watch-token">${escape(m.slice(0,8))}…${escape(m.slice(-5))} <button data-action="remove-token" data-mint="${escape(m)}" aria-label="Xóa token">×</button></span>`).join('');
   $('closed').textContent=`${s.closedCount} lệnh đã đóng`;
-  $('status').textContent=s.mode==='live'?(!s.ownerAuthenticated?'● ĐĂNG NHẬP VÍ':s.running?'● AUTO · MAINNET':'● CHƯA BẬT MAINNET'):(s.running?'● AUTO · PAPER':'● TẠM DỪNG');
+  $('status').textContent=s.mode==='live'?(!s.ownerAuthenticated?'● ĐĂNG NHẬP VÍ':s.running?'● THEO DÕI · KÝ BẰNG VÍ':'● VÍ CHỦ · CHỜ BẬT'):(s.running?'● AUTO · PAPER':'● TẠM DỪNG');
   const d=s.diagnostics;
-  $('activity-message').textContent=d.message;
+  $('activity-message').textContent=s.walletMode==='owner'&&ownerState?(s.halted|| (s.running?'Đang theo dõi. Bot đề xuất lệnh; bạn xác nhận bằng ví chủ.':'Đã kết nối ví chủ. Bật theo dõi để chọn tín hiệu.')):d.message;
   $('scan-counts').textContent=`${d.candidates} token trong tập quét · ${d.eligible} đạt bộ lọc · ${s.positions.length} vị thế đang theo dõi`;
   $('last-evaluation').textContent=d.lastEvaluationAt?'Đánh giá gần nhất '+time(d.lastEvaluationAt):'Chưa có vòng đánh giá tự động';
   $('scan-blockers').innerHTML=d.topBlockers.map(b=>`<span class="blocker">${b.count} token: ${escape(b.reason)}</span>`).join('');
@@ -81,4 +81,5 @@ for(const action of ['start','pause','reset'])$(action).addEventListener('click'
 document.addEventListener('click',e=>{const button=e.target.closest('button[data-action]');if(button)command(button.dataset.action,button.dataset.mint);});
 $('search').addEventListener('input',render);
 $('token-form').addEventListener('submit',async e=>{e.preventDefault();await command('add-token',undefined,{address:$('token-address').value.trim()});if(!commandError)e.target.reset();});
+window.addEventListener('meme-owner-state',e=>{ownerState=e.detail;render();});
 update();setInterval(update,5000);

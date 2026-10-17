@@ -8,9 +8,8 @@ import {rankMarket} from './strategy.js';
 import {diagnose} from './diagnostics.js';
 import {observeMarkets} from './signals.js';
 import {OwnerAuth,DEFAULT_OWNER} from './security.js';
-import {WalletVault} from './vault.js';
 import {SolanaExecution} from './solana.js';
-import {LiveTrader} from './live.js';
+import {DirectWallet} from './direct-wallet.js';
 import {initializeStorage} from './storage.js';
 
 // Railway may use the Docker/npm entry point instead of the configured wrapper.
@@ -37,13 +36,8 @@ state.strategy='autonomous';state.watchlist??=[];state.decisions??=[];
 state.decisionStats??={evaluated:0,bought:0,rejected:0};
 const expectedOrigin=process.env.PUBLIC_ORIGIN??(onRailway?'https://'+(process.env.RAILWAY_PUBLIC_DOMAIN??'trade-meme-production.up.railway.app'):null);
 const auth=new OwnerAuth({owner:DEFAULT_OWNER,origin:expectedOrigin});
-const vault=new WalletVault(path.join(dataDir,'wallet-vault.json'));await vault.load();
 const execution=new SolanaExecution();
-const live=new LiveTrader(dataDir,vault,execution);await live.load();
-if(process.env.BOT_VAULT_PASSWORD&&vault.exists){try{await vault.unlock(process.env.BOT_VAULT_PASSWORD);}catch{console.error('Bot vault remains locked.');}}
-if(vault.heliusKey)execution.configureHelius(vault.heliusKey);
-const volume=process.env.RAILWAY_VOLUME_MOUNT_PATH;
-const persistentStorage=!onRailway||!!(volume&&(path.resolve(dataDir)===path.resolve(volume)||path.resolve(dataDir).startsWith(path.resolve(volume)+path.sep)));
+const direct=new DirectWallet(execution);
 let feed={markets:[],solUsd:null,updatedAt:null,error:null};
 let refreshing=false;
 async function save(){await writeFile(statePath+'.tmp',JSON.stringify(state,null,2),{mode:0o600});await rename(statePath+'.tmp',statePath);}
@@ -53,7 +47,7 @@ function serial(fn){const task=pending.then(fn);pending=task.catch(()=>{});retur
 async function refresh(){
   if(refreshing)return;refreshing=true;
   try{
-    const latest=await loadMarkets([...new Set([...state.positions.map(p=>p.mint),...live.state.positions.map(p=>p.mint),...(live.state.pending?[live.state.pending.mint]:[]),...state.watchlist])]);
+    const latest=await loadMarkets([...new Set([...state.positions.map(p=>p.mint),...direct.watched,...state.watchlist])]);
     await serial(async()=>{latest.markets=observeMarkets(state,latest.markets);feed={...latest,error:null};
       if(liveOnly){
         state.lastEvaluationAt=Date.now();
@@ -61,7 +55,6 @@ async function refresh(){
         state.decisions=state.decisions.slice(0,300);
       }else{if(state.automationRequested)state.running=true;tick(state,feed.markets,feed.solUsd);}
       await save();});
-    if(persistentStorage)void live.tick(feed).catch(()=>console.error('Live controller paused.'));
   }catch(e){feed.error=e.message;console.error('Market feed:',e.message);}
   finally{refreshing=false;}
 }
@@ -70,16 +63,9 @@ function snapshot(req){
   const closed=state.trades.filter(t=>t.side==='SELL'&&t.closed);
   const rankings=feed.markets.map(m=>({...m,...rankMarket(m,state.settings)})).sort((a,b)=>b.score-a.score);
   if(liveOnly){
-    const authenticated=auth.authenticated(req),s=live.state,visible=authenticated&&vault.exists,haveBalance=visible&&!!s.lastSyncAt;
-    const value=haveBalance&&feed.solUsd&&!s.balanceMismatch?equity(s,feed.markets,feed.solUsd):null;
-    const closed=s.trades.filter(t=>t.side==='SELL'&&t.closed);
-    let diagnostics=diagnose({...s,lastEvaluationAt:state.lastEvaluationAt},feed,rankings);
-    if(!authenticated)diagnostics={...diagnostics,phase:'owner-required',message:'Đăng nhập bằng ví chủ để xem số dư và điều khiển giao dịch thật.'};
-    else if(!vault.exists)diagnostics={...diagnostics,phase:'wallet-required',message:'Chưa có ví bot. Hoàn tất két ví và lưu trữ trước khi nạp SOL.'};
-    else if(!vault.keypair)diagnostics={...diagnostics,phase:'vault-locked',message:'Két ví đang khóa; không ký giao dịch.'};
-    else if(!s.enabled)diagnostics={...diagnostics,phase:'disabled',message:s.lastError||'Chưa bật mainnet. Kiểm tra số dư, API key và bấm Bật giao dịch thật.'};
-    else if(s.entryBlockedReason)diagnostics={...diagnostics,phase:'missing-held-price',message:s.entryBlockedReason};
-    return {mode:'live',ownerAuthenticated:authenticated,readOnly:true,running:!!(s.enabled&&vault.keypair),automationRequested:s.enabled,settings:s.settings,rankings,diagnostics,feed,buildRevision:process.env.RAILWAY_GIT_COMMIT_SHA??'local',cashSol:haveBalance?(s.observedBalanceSol??s.cashSol):null,equitySol:value,pnlSol:value===null||!s.funded?null:value+(s.withdrawnSol??0)-s.settings.initialSol,positions:visible?s.positions:[],trades:visible?s.trades:[],curve:visible?s.curve:[],events:visible?s.events:[],watchlist:[],halted:visible?s.halted:null,peakEquity:visible&&s.funded?s.peakEquity:null,maxDrawdownObservedPct:visible&&s.funded?s.maxDrawdownObservedPct:null,closedCount:visible?closed.length:0,winRate:visible&&closed.length?closed.filter(t=>(t.positionPnlSol??t.pnlSol)>0).length/closed.length:null,decisionStats:{...state.decisionStats,bought:visible?s.trades.filter(t=>t.side==='BUY').length:0},decisions:visible?[...state.decisions,...s.decisions].sort((a,b)=>b.at-a.at).slice(0,300):state.decisions};
+    const authenticated=auth.authenticated(req);
+    const diagnostics={...diagnose({...state,running:false},feed,rankings),phase:authenticated?'owner-wallet':'owner-required',message:authenticated?'Ví chủ ký trực tiếp. Bật theo dõi để bot đề xuất lệnh; mỗi giao dịch cần xác nhận trong ví.':'Kết nối đúng ví chủ để đọc số dư và giao dịch trực tiếp.'};
+    return {mode:'live',walletMode:'owner',ownerAuthenticated:authenticated,readOnly:true,running:false,automationRequested:false,settings:DEFAULTS,rankings,diagnostics,feed,buildRevision:process.env.RAILWAY_GIT_COMMIT_SHA??'local',cashSol:null,equitySol:null,pnlSol:null,positions:[],trades:[],curve:[],events:[],watchlist:[],halted:null,peakEquity:null,maxDrawdownObservedPct:null,closedCount:0,winRate:null,decisionStats:state.decisionStats,decisions:state.decisions};
   }
   return {...state,rankings,diagnostics:diagnose(state,feed,rankings),buildRevision:process.env.RAILWAY_GIT_COMMIT_SHA??'local',mode:'paper',readOnly,feed,equitySol:feed.solUsd?value:null,pnlSol:feed.solUsd?value-state.settings.initialSol:null,winRate:closed.length?closed.filter(t=>(t.positionPnlSol??t.pnlSol)>0).length/closed.length:null,closedCount:closed.length};
 }
@@ -89,43 +75,41 @@ const assets={'/spider.js':['spider.js','text/javascript'],'/wallet.js':['wallet
 const server=http.createServer(async(req,res)=>{
   try{
     const url=new URL(req.url,'http://localhost');
-    if(url.pathname.startsWith('/api/auth/')||url.pathname.startsWith('/api/live/')){
-      if(req.method==='GET'&&url.pathname==='/api/auth/status')return json(res,200,{owner:auth.owner,authenticated:auth.authenticated(req),persistentStorage});
-      if(req.method==='GET'&&url.pathname==='/api/live/status'){
+    if(url.pathname.startsWith('/api/auth/')||url.pathname.startsWith('/api/live/')||url.pathname.startsWith('/api/direct/')){
+      if(req.method==='GET'&&url.pathname==='/api/auth/status')return json(res,200,{owner:auth.owner,authenticated:auth.authenticated(req),walletMode:'owner'});
+      if(req.method==='GET'&&url.pathname==='/api/direct/status'){
         if(!auth.authenticated(req))return json(res,401,{error:'Cần xác thực bằng ví chủ.'});
-        return json(res,200,{...live.status(),rpcProvider:execution.provider,persistentStorage,backupDownloaded:!!vault.backupDownloaded});
+        return json(res,200,await direct.status());
       }
-      if(req.method==='GET'&&url.pathname==='/api/live/backup'){
+      if(req.method==='GET'&&url.pathname.startsWith('/api/live/')){
         if(!auth.authenticated(req))return json(res,401,{error:'Cần xác thực bằng ví chủ.'});
-        const backup=await vault.backup();vault.backupDownloaded=true;res.writeHead(200,{'Content-Type':'application/json','Cache-Control':'no-store','Content-Disposition':'attachment; filename="meme-pilot-encrypted-wallet.json"'});return res.end(backup);
+        if(url.pathname==='/api/live/backup'){
+          try{const backup=await readFile(path.join(dataDir,'wallet-vault.json'),'utf8');res.writeHead(200,{'Content-Type':'application/json','Cache-Control':'no-store','Content-Disposition':'attachment; filename="legacy-encrypted-wallet.json"'});return res.end(backup);}catch{return json(res,404,{error:'Không có bản sao ví phụ cũ.'});}
+        }
+        return json(res,410,{error:'Đã chuyển sang ví chủ ký trực tiếp. Tải lại trang.'});
       }
       if(req.method!=='POST'||!auth.sameOrigin(req))return json(res,403,{error:'Origin hoặc loại yêu cầu không hợp lệ.'});
-      auth.limit(req.socket.remoteAddress??'unknown');const input=await body(req);
+      if(url.pathname.startsWith('/api/auth/'))auth.limit(req.socket.remoteAddress??'unknown');const input=await body(req);
       if(url.pathname==='/api/auth/challenge')return json(res,200,auth.challenge(input.address));
       if(url.pathname==='/api/auth/login'){const session=auth.login(input.nonce,input.signature);res.setHeader('Set-Cookie',auth.cookie(session));return json(res,200,{authenticated:true});}
       if(!auth.authenticated(req))return json(res,401,{error:'Cần xác thực bằng ví chủ.'});
       if(url.pathname==='/api/auth/logout'){auth.logout(req);res.setHeader('Set-Cookie',auth.cookie(''));return json(res,200,{authenticated:false});}
-      if(url.pathname==='/api/live/pause'){await live.pause();return json(res,200,live.status());}
-      if(url.pathname==='/api/live/lock'){await live.pause();vault.lock();return json(res,200,live.status());}
-      if(!persistentStorage)return json(res,409,{error:'Cần volume lưu bền vững và DATA_DIR trỏ vào volume trước khi tạo/nạp ví thật.'});
-      if(url.pathname==='/api/live/create'){await live.serial(async()=>{await vault.create(input.password,input.apiKey,input.heliusKey);if(vault.heliusKey)execution.configureHelius(vault.heliusKey);});return json(res,200,live.status());}
-      if(url.pathname==='/api/live/unlock'){await live.serial(async()=>{await vault.unlock(input.password,input.apiKey,input.heliusKey);if(vault.heliusKey)execution.configureHelius(vault.heliusKey);});return json(res,200,live.status());}
-      if(url.pathname==='/api/live/close')return json(res,200,await live.close(input.mint,feed));
-      if(url.pathname==='/api/live/withdraw')return json(res,200,await live.withdraw(auth.owner,input.confirm));
-      if(url.pathname==='/api/live/enable'){return json(res,200,await live.enable(input.confirm));}
-      if(url.pathname==='/api/live/fund'){
-        if(!vault.publicKey||!vault.backupDownloaded)return json(res,409,{error:'Tạo ví và tải bản sao mã hóa trước khi nạp.'});
-        if(!vault.apiKey&&!process.env.JUPITER_API_KEY)return json(res,409,{error:'Cấu hình Jupiter API key trước khi nạp SOL.'});
-        if(live.state.funded)return json(res,409,{error:'Ví đã bắt đầu giao dịch; không nạp bổ sung qua ứng dụng để giữ đúng sổ vốn.'});
-        try{const balance=await execution.balance(vault.publicKey);const lamports=Math.floor((.3-balance)*1e9);const transaction=await execution.fundingTransaction(auth.owner,vault.publicKey,lamports);return json(res,200,{transaction});}
-        catch{return json(res,400,{error:'Không chuẩn bị được giao dịch nạp. Kiểm tra RPC và giới hạn 0,3 SOL.'});}
+      if(url.pathname.startsWith('/api/live/'))return json(res,410,{error:'Đã bỏ tạo/nạp ví phụ. Dùng ví chủ ký trực tiếp.'});
+      if(url.pathname==='/api/direct/config')return await serial(async()=>json(res,200,direct.configure(input)));
+      if(url.pathname==='/api/direct/watch'){
+        if(!Array.isArray(input.mints)||input.mints.length>20||input.mints.some(m=>typeof m!=='string'||! /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(m)))throw Error('Danh sách token không hợp lệ.');
+        const changed=direct.watched.join(',')!==input.mints.join(',');direct.watched=[...new Set(input.mints)];if(changed)setImmediate(refresh);return json(res,200,{watching:direct.watched.length});
       }
+      if(url.pathname==='/api/direct/prepare')return await serial(async()=>json(res,200,await direct.prepare(input,feed)));
+      if(url.pathname==='/api/direct/submit')return await serial(async()=>json(res,200,await direct.submit(input)));
+      if(url.pathname==='/api/direct/reconcile')return await serial(async()=>json(res,200,await direct.reconcile(input)));
+      if(url.pathname==='/api/direct/cancel')return await serial(async()=>json(res,200,direct.cancel(input.id)));
       return json(res,404,{error:'Không tìm thấy thao tác ví.'});
     }
     if(req.method==='GET'&&url.pathname==='/api/state')return json(res,200,snapshot(req));
-    if(req.method==='GET'&&url.pathname==='/api/health')return json(res,200,{status:'ok',mode:liveOnly?'live':'paper',running:liveOnly?!!(live.state.enabled&&vault.keypair):state.running,readOnly,marketReady:!!feed.updatedAt,marketFresh:!!feed.updatedAt&&!feed.error&&Date.now()-feed.updatedAt<90000});
+    if(req.method==='GET'&&url.pathname==='/api/health')return json(res,200,{status:'ok',mode:liveOnly?'live':'paper',running:liveOnly?false:state.running,readOnly,marketReady:!!feed.updatedAt,marketFresh:!!feed.updatedAt&&!feed.error&&Date.now()-feed.updatedAt<90000});
     if(req.method==='GET'&&url.pathname==='/api/export'){
-      if(liveOnly){if(!auth.authenticated(req))return json(res,401,{error:'Cần xác thực bằng ví chủ.'});return json(res,200,{mode:'live',trades:live.state.trades,journal:live.state.journal});}
+      if(liveOnly){if(!auth.authenticated(req))return json(res,401,{error:'Cần xác thực bằng ví chủ.'});return json(res,200,{mode:'live',walletMode:'owner',message:'Xuất lịch sử trong phần ví chủ trên trình duyệt đang giao dịch.'});}
       res.writeHead(200,{'Content-Type':'application/json','Content-Disposition':'attachment; filename="paper-trades.json"','Cache-Control':'no-store'});return res.end(JSON.stringify({mode:'paper',exportedAt:new Date().toISOString(),settings:state.settings,trades:state.trades},null,2));
     }
     if(req.method==='POST'&&url.pathname==='/api/command'){
