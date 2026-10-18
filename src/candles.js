@@ -14,7 +14,7 @@ export function candleStructure(rows,currentPrice,now=Date.now()){
 /** H4 risk uses real 4-hour bars. A young pool can have one forming bar, never four fake hours. */
 export function fourHourRisk(rows,currentPrice,pairCreatedAt,now=Date.now()){
  const unknown=reason=>({state:'unknown',reasons:[reason],checkedAt:now});
- if(!Array.isArray(rows)||!rows.length||rows.length>16||!Number.isFinite(currentPrice)||currentPrice<=0||!Number.isFinite(pairCreatedAt)||pairCreatedAt>now||now-pairCreatedAt<R.minHistoryMs)return unknown('H4_INSUFFICIENT_HISTORY');
+ if(!Array.isArray(rows)||!rows.length||rows.length>16||!Number.isFinite(currentPrice)||currentPrice<=0||!Number.isFinite(pairCreatedAt)||pairCreatedAt<=0||pairCreatedAt>now||now-pairCreatedAt<R.minHistoryMs)return unknown('H4_INSUFFICIENT_HISTORY');
  const bars=rows.map(r=>Array.isArray(r)?r.slice(0,6):[]).sort((a,b)=>a[0]-b[0]);
  if(bars.some((r,i)=>r.length!==6||!r.every(Number.isFinite)||!Number.isInteger(r[0])||r[0]%14400!==0||r[0]*1000>now||r[1]<=0||r[4]<=0||r[3]<=0||r[2]<Math.max(r[1],r[4])||r[3]>Math.min(r[1],r[4])||r[5]<0||i>0&&r[0]===bars[i-1][0]))return unknown('H4_INVALID_OHLCV');
  const relevant=bars.filter(r=>(r[0]+14400)*1000>pairCreatedAt),last=relevant.at(-1);

@@ -69,3 +69,11 @@ test('a failed H4 provider cannot clear a previously observed rejection; fresh r
  const run=async()=>{const [out]=await v.enrich([{...m,evidence:undefined,updatedAt:clock}],[],clock);return rankMarket(out,undefined,clock);};
  assert.equal((await run()).h4Status,'reject');clock+=20001;phase=1;assert.equal((await run()).h4Status,'reject');clock+=20001;phase=2;assert.equal((await run()).h4Status,'clear');
 });
+
+test('a young or undated pool with unavailable H4 remains eligible at reduced size when trend and mandatory safety pass',()=>{
+ for(const pairCreatedAt of [now-1000,undefined,null,0]){
+  const m=verifiedMarket({pairCreatedAt},now),h4Risk={...fourHourRisk([bar(100,120,95,115)],115,pairCreatedAt,now),mint:m.mint,pairAddress:m.pairAddress};
+  assert.equal(h4Risk.state,'unknown');const rank=rankMarket({...m,evidence:{...m.evidence,h4Risk}},undefined,now);
+  assert.equal(rank.eligible,true);assert.equal(rank.orderSol,.02);assert.equal(rank.h4Status,'unknown');
+ }
+});

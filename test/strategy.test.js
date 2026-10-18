@@ -7,7 +7,7 @@ const now=Date.UTC(2026,9,17,12);
 const m=verifiedMarket({mint:'mint'},now);
 test('score is transparent and all conditions are required for an automatic entry',()=>{
  const rank=rankMarket(m,DEFAULTS,now);assert.equal(rank.score,100);assert.equal(rank.eligible,true);assert.deepEqual(rank.reasons,[]);
- for(const override of [{valuationUsd:100000000},{valuationUsd:0},{liquidityQuoteSol:19},{volume24hUsd:1},{change5mPct:-9},{buys5m:7},{sells5m:100},{pairCreatedAt:0},{pairCreatedAt:now-1000},{updatedAt:now-90001}]){
+ for(const override of [{valuationUsd:100000000},{valuationUsd:0},{liquidityQuoteSol:19},{volume24hUsd:1},{change5mPct:-9},{buys5m:7},{sells5m:100},{updatedAt:now-90001}]){
   const rank=rankMarket({...m,...override},DEFAULTS,now);assert.equal(rank.eligible,false);assert.ok(rank.reasons.length);
  }
 });

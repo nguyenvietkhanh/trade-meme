@@ -17,7 +17,7 @@ test('all mandatory safety facts remain fail-closed; optional creator and score 
 });
 test('coarse market gates and raw quote liquidity apply independently of USD liquidity',()=>{
  const m=verifiedMarket({},now);
- for(const change of [{liquidityQuoteSol:19.99},{liquidityUsd:29999},{valuationSource:'fdv'},{pairCreatedAt:now-899999},{pairCreatedAt:now-86400001},{buys5m:7},{buys5m:8,sells5m:6},{buys1h:39},{priceUsd:NaN},{updatedAt:now+1},{change5mPct:-8.01},{change1hPct:150.01},{symbol:'BONK'}])assert.equal(rankMarket({...m,...change},R,now).eligible,false,JSON.stringify(change));
+ for(const change of [{liquidityQuoteSol:19.99},{liquidityUsd:29999},{valuationSource:'fdv'},{buys5m:7},{buys5m:8,sells5m:6},{buys1h:39},{priceUsd:NaN},{updatedAt:now+1},{change5mPct:-8.01},{change1hPct:150.01},{symbol:'BONK'}])assert.equal(rankMarket({...m,...change},R,now).eligible,false,JSON.stringify(change));
  assert.equal(rankMarket({...m,hasProfile:false},R,now).eligible,true);
  assert.equal(rankMarket({...m,pairCreatedAt:now-900000},R,now).eligible,true);
  assert.equal(rankMarket({...m,pairCreatedAt:now-86400000},R,now).eligible,true);
@@ -77,4 +77,17 @@ test('null decision inputs and incomplete runner targets fail closed without a r
  for(const input of [null,{}, {market:null},{market:[]}, {market:{mint:'t'}}]){const d=analyzeDecision(input);assert.equal(d.action,'SKIP');assert.ok(Number.isFinite(d.score));assert.ok(d.reasons.length<=3);}
  const {p,m}=account();p.phase='runner';p.nextTakeProfitPriceUsd=null;
  assert.equal(analyzeDecision({market:m,position:p,now}).action,'SKIP');
+});
+
+test('pool age is neither a BUY gate nor a scoring preference, including legacy settings and missing birth dates',()=>{
+ const m=verifiedMarket({},now),base=rankMarket(m,R,now),legacy={...R,minPairAgeMs:900000,maxPairAgeMs:86400000};
+ assert.equal(base.scoreParts.momentum,30);assert.equal(Object.hasOwn(base.scoreParts,'age'),false);
+ assert.equal(Object.values(base.scoreParts).reduce((a,b)=>a+b,0),100);
+ for(const pairCreatedAt of [now,now-1000,now-899999,now-86400001,now-365*86400000,undefined,null,0,NaN]){
+  const market={...m,pairCreatedAt},rank=rankMarket(market,legacy,now);
+  assert.equal(rank.eligible,true,String(pairCreatedAt));assert.equal(rank.score,base.score);assert.equal(rank.red_flags.includes('POOL_AGE'),false);
+  for(const change of [{change5mPct:0},{change5mPct:-1},{change1hPct:0},{change1hPct:-1}])assert.equal(rankMarket({...market,...change},legacy,now).eligible,false);
+  assert.equal(rankMarket({...market,evidence:{}},legacy,now).eligible,false);
+  assert.equal(rankMarket({...market,updatedAt:now-30001},legacy,now).eligible,false,'removing birth-date limits must not remove data freshness');
+ }
 });

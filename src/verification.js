@@ -39,7 +39,7 @@ export class VerificationFeed{
   return markets.map(m=>({...m,...this.cache.get(m.mint+':'+m.pairAddress)?.value}));
  }
  async enrich(markets,tracked=[],now=Date.now()){
-  const targets=markets.filter(m=>(tracked.includes(m.mint)||rankMarket(m,undefined,now).roughEligible)&&(tracked.includes(m.mint)||(now-m.pairCreatedAt>=900000&&now-m.pairCreatedAt<=86400000&&m.liquidityUsd>=20*m.solUsd))).sort((a,b)=>Number(tracked.includes(b.mint))-Number(tracked.includes(a.mint))||b.volume5mUsd-a.volume5mUsd).slice(0,6);
+  const targets=markets.filter(m=>(tracked.includes(m.mint)||rankMarket(m,undefined,now).roughEligible)&&(tracked.includes(m.mint)||m.liquidityUsd>=20*m.solUsd)).sort((a,b)=>Number(tracked.includes(b.mint))-Number(tracked.includes(a.mint))||b.volume5mUsd-a.volume5mUsd).slice(0,6);
   const results=new Map();
   // Bounded requests and short deadlines keep safety-provider outages from blocking every scan.
   for(let i=0;i<targets.length;i+=2)await Promise.all(targets.slice(i,i+2).map(async m=>{

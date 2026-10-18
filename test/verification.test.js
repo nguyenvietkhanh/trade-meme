@@ -50,3 +50,14 @@ test('repeated failures on two high-volume tokens cannot starve other eligible c
  await feed.enrichCached(markets,[],now+5000);await Promise.all([...feed.jobs.values()]);
  assert.deepEqual(called,markets.map(m=>m.mint));
 });
+
+test('safety verification accepts rough-qualified young, old and undated pools without the hidden age gate',async()=>{
+ const markets=[now-1000,now-365*86400000,undefined].map((pairCreatedAt,i)=>verifiedMarket({mint:'1111111111111111111111111111111'+(i+2),pairCreatedAt},now)),inspected=[];
+ const feed=new VerificationFeed(async url=>{
+  const token=String(url).split('/').at(-2);
+  return new Response(JSON.stringify(String(url).includes('rugcheck')?{...report,mint:token}:{}));
+ },{inspectMarket:async market=>{inspected.push(market.mint);return markets.find(m=>m.mint===market.mint).evidence;}});
+ const result=await feed.enrich(markets.map(m=>({...m,evidence:undefined})),[],now);
+ assert.deepEqual(new Set(inspected),new Set(markets.map(m=>m.mint)));
+ for(const m of result)assert.equal(rankMarket(m,undefined,now).eligible,true);
+});

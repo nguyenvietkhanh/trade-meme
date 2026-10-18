@@ -27,7 +27,7 @@ test('a realistic normalized candidate without Dex quote reserves can complete v
 
 test('diagnostics report the first failing stage instead of counting unrequested safety evidence as a failure',()=>{
  const s=createOwnerLedger('owner',.3);s.running=true;
- const old=verifiedMarket({pairCreatedAt:now-172800000,evidence:{}},now);old.evidence={};
+ const old=verifiedMarket({dexId:'raydium',pairCreatedAt:now-172800000,evidence:{}},now);old.evidence={};
  const safe=verifiedMarket({},now),rankings=[old,safe].map(m=>({...m,...rankMarket(m,undefined,now)}));
  const d=diagnose(s,{markets:[old,safe],solUsd:150,updatedAt:now},rankings,now);
  assert.equal(d.stages.discovery,1);assert.equal(d.stages.ready,1);assert.equal(d.topBlockers.some(b=>b.reason.includes('authority')||b.reason.includes('kiểm chứng')),false);

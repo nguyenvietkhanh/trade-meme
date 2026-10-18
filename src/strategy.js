@@ -6,13 +6,11 @@ const MAJOR_NAMES=new Set(['SOL','SOLANA','WSOL','USDC','USD COIN','USDT','TETHE
 export function coarseMarket(m,s=T,now=Date.now()){
  m=m&&typeof m==='object'?m:{};const reasons=[],red_flags=[];
  const fail=(ok,code,text)=>{if(!ok){red_flags.push(code);reasons.push(text);}};
- const age=now-m.pairCreatedAt;
  fail(m.blacklisted!==true,'BLACKLISTED_MINT','Mint đã vào blacklist giả mạo token lớn');
  fail(!ENTRY_EXCLUDED_MINTS.includes(m.mint),'OWNER_EXCLUDED_MINT','Mint chủ ví chỉ định tránh mua theo mẫu H4');
  fail(m.dexId==='pumpswap','UNSUPPORTED_DEX','Không phải pool PumpSwap');
  fail(finite(m.valuationUsd)&&m.valuationUsd>=s.minMarketCapUsd&&m.valuationUsd<=s.maxMarketCapUsd&&(['marketCap','pump-fdv'].includes(m.valuationSource)),'INVALID_MARKET_CAP',`Vốn hóa ngoài $${s.minMarketCapUsd.toLocaleString('en-US')}–$${s.maxMarketCapUsd.toLocaleString('en-US')} hoặc thiếu; FDV chỉ dùng mint đuôi pump`);
  fail(m.valuationSource!=='pump-fdv'||String(m.mint??'').endsWith('pump'),'INVALID_FDV_FALLBACK','Không cho FDV thay market cap với mint khác đuôi pump');
- fail(finite(m.pairCreatedAt)&&age>=s.minPairAgeMs&&age<=s.maxPairAgeMs,'POOL_AGE','Tuổi pool ngoài 15 phút–24 giờ');
  fail(![m.symbol,m.name].some(x=>MAJOR_NAMES.has(String(x??'').normalize('NFKC').replace(/[\u200B-\u200D\uFEFF]/g,'').trim().toUpperCase())),'MAJOR_TOKEN_OR_IMPERSONATOR','Tên/symbol thuộc token lớn; không mua bản trùng tên trong tập low-cap');
  return {eligible:!reasons.length,reasons,red_flags};
 }
@@ -60,12 +58,11 @@ export function rankMarket(m,s=T,now=Date.now()){
  const missing=[];
  const component=(key,known,max,calculate)=>{if(!known){missing.push(key);return max/2;}return Math.max(0,Math.min(max,calculate()));};
  const parts={
-  momentum:component('momentum',finite(acceleration)&&finite(m.change5mPct),25,()=>15*clamp(acceleration/1.5)+(m.change5mPct>0&&m.change5mPct<=12?10:0)),
+  momentum:component('momentum',finite(acceleration)&&finite(m.change5mPct),30,()=>20*clamp(acceleration/1.5)+(m.change5mPct>0&&m.change5mPct<=12?10:0)),
   flow:component('flow',counts.slice(0,2).every(Number.isSafeInteger),20,()=>ratio>=1.15&&ratio<=2.5?20:ratio>2.5&&ratio<=4?8:0),
   structure:component('structure',typeof e.higherLows==='boolean'&&finite(e.pullback30mPct)&&typeof e.greenCandleConfirmed==='boolean',20,()=>(e.higherLows?8:0)+(e.pullback30mPct>=10&&e.pullback30mPct<=30?8:0)+(e.greenCandleConfirmed?4:0)),
   depth:component('depth',finite(depth),15,()=>15*clamp(depth/.1)),
   holders:component('holders',pct(e.top10Pct)&&pct(e.largestHolderPct),10,()=>5*clamp((40-e.top10Pct)/20)+5*clamp((10-e.largestHolderPct)/5)),
-  age:component('age',finite(m.pairCreatedAt),5,()=>now-m.pairCreatedAt>=1800000&&now-m.pairCreatedAt<=21600000?5:2.5),
   community:component('community',typeof m.hasProfile==='boolean',5,()=>m.hasProfile?5:0)
  };
  const trades=m.buys5m+m.sells5m;
