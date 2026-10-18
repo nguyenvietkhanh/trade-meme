@@ -2,6 +2,7 @@ import {fetchStructure} from './candles.js';
 import {rankMarket} from './strategy.js';
 import {SCAN_RULES} from './scanner.js';
 import {TREND_RULES} from './desk-rules.js';
+import {backoffFetch} from './provider-fetch.js';
 // Provider messages can contain URLs/credentials. Expose only a fixed label and HTTP status.
 function providerFailure(provider,error){
  if(error?.code==='HOLDER_SCAN_UNAVAILABLE')return 'RPC không cung cấp được toàn bộ holder; chưa thể xác minh phân bổ, khóa BUY.';
@@ -25,7 +26,7 @@ export function rugEvidence(report,market,now=Date.now()){
  return out;
 }
 export class VerificationFeed{
- constructor(fetcher=globalThis.fetch,execution=null){this.fetcher=fetcher;this.execution=execution;this.cache=new Map();this.jobs=new Map();this.h4Memory=new Map();}
+ constructor(fetcher=globalThis.fetch,execution=null,options={}){this.fetcher=fetcher;this.reportFetch=backoffFetch(fetcher,{provider:'RugCheck',...options});this.execution=execution;this.cache=new Map();this.jobs=new Map();this.h4Memory=new Map();}
  async enrichCached(markets,tracked=[],now=Date.now()){
   // Rotate candidates by oldest check so two failing high-volume tokens cannot monopolize both jobs.
   const checkedAt=m=>this.cache.get(m.mint+':'+m.pairAddress)?.at??0;
@@ -47,9 +48,9 @@ export class VerificationFeed{
    const key=m.mint+':'+m.pairAddress,cached=this.cache.get(key);
    if(reusable(cached,now)){results.set(key,cached.value);return;}
    let value;
-   try{const response=await this.fetcher('https://api.rugcheck.xyz/v1/tokens/'+encodeURIComponent(m.mint)+'/report',{signal:AbortSignal.timeout(2000)});if(!response.ok)throw Error('HTTP '+response.status);value={evidence:rugEvidence(await response.json(),m,now)};}
+   try{const response=await this.reportFetch('https://api.rugcheck.xyz/v1/tokens/'+encodeURIComponent(m.mint)+'/report',{signal:AbortSignal.timeout(2000)});if(!response.ok)throw Error('HTTP '+response.status);value={evidence:rugEvidence(await response.json(),m,now)};}
    catch(error){value={verificationError:providerFailure('RugCheck',error)};}
-   if(this.execution)try{const structure=await fetchStructure(m,this.fetcher);value.evidence={...value.evidence,...structure};}catch{}
+   if(this.execution&&value.evidence)try{const structure=await fetchStructure(m,this.fetcher);value.evidence={...value.evidence,...structure};}catch{}
    const current=value.evidence?.h4Risk,previous=this.h4Memory.get(key);
    if(current&&['clear','reject'].includes(current.state))this.h4Memory.set(key,current);
    else if(previous?.state==='reject'&&Date.now()-previous.checkedAt<=TREND_RULES.h4RejectMemoryMs)value.evidence={...value.evidence,h4Risk:previous};

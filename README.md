@@ -15,6 +15,12 @@ Bot chọn token PumpSwap và tự ký từ ví chủ **7JePGU7MFtRo9z5jMh2486Un
 
 Chỉ SOL native khả dụng hiển thị trong số dư ví. P&L/đường vốn tính ngân sách, giá vị thế và lãi đã chuyển; không tính mọi token khác trong ví. Không mua trộn hoặc tự bán token đã có sẵn. Browser signing cũ chỉ còn fallback khi server bật `SIGNER_MODE=disabled`; không chạy hai ngân sách đồng thời.
 
+## Độ ổn định API/RPC
+
+Yêu cầu đọc trùng đang chạy được gộp; không cache giá/số dư đã trả về hoặc kéo dài hạn kiểm chứng 30 giây. RPC đọc thử nguồn dự phòng đã xác minh mainnet. Nguồn 429/quá tải/lỗi mạng được giảm tần suất theo backoff tăng dần có jitter; tôn trọng `Retry-After` tới 10 phút. Lỗi 403 chờ ít nhất 30 giây, không đổi IP hay bỏ xác thực để vượt chặn. Phương thức/index không được RPC hỗ trợ nghỉ riêng 60 giây mà không chặn các phương thức còn dùng được. RugCheck và Jupiter có backoff riêng; vòng quét giá vẫn đặt mục tiêu 5 giây.
+
+Khóa BUY do lỗi mạng lúc chuẩn bị lệnh có thể tự gỡ sau hai vòng RPC/số dư/thị trường khỏe và có quote an toàn mới được kiểm chứng sau lúc khóa. Không tự gỡ khóa do giao dịch on-chain lỗi/hết hạn liên tiếp, khóa cũ chưa rõ nguyên nhân, drawdown hoặc pause thủ công. Giới hạn retry theo từng lệnh vẫn giữ; giao dịch đã ký chưa rõ kết quả luôn đối soát, không gửi lại qua RPC khác. Lỗi mạng khi đối soát không tự làm mất lệnh chờ hoặc khóa vĩnh viễn bot. RPC công khai có thể thiếu chỉ mục holder; backoff không tạo ra dữ liệu thiếu hoặc khắc phục được quyền truy cập bị từ chối.
+
 ## Tốc độ
 
 Quét DexScreener mục tiêu mỗi **5 giây**, bộ điều phối mỗi **2 giây** và chỉ đánh giá giá mới; thời gian API/RPC có thể làm vòng quét lâu hơn. Không còn thời gian chờ người ký. Giao diện đo riêng thời gian chuẩn bị, ký, phản hồi gửi RPC và xác nhận của lệnh gần nhất; không dùng thời gian ký để quảng cáo thời gian khớp. Đây **chưa phải hạ tầng mili giây**: chưa tích hợp feed gRPC/shred/WebSocket pool, colocation hay Jito. Không hứa latency hoặc khả năng khớp trước đối thủ. Muốn tiến tới mục tiêu đó cần dữ liệu on-chain, RPC chuyên dụng và đo tín hiệu → gửi → xác nhận; không thể suy ra từ thời gian ký cục bộ.

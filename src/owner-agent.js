@@ -18,6 +18,7 @@ export function signerRequestAllowed(req,expectedOrigin,onRailway){
  if(onRailway)return typeof expectedOrigin==='string'&&expectedOrigin.startsWith('https://');
  return ['127.0.0.1','::1','::ffff:127.0.0.1'].includes(req.socket.remoteAddress)&&/^127\.0\.0\.1:\d+$/.test(req.headers.host??'');
 }
+function networkFailure(error){return ['TimeoutError','AbortError'].includes(error?.name)||error?.code==='PROVIDER_BACKOFF'||/RPC|fetch|timeout|timed out|hết thời gian|Jupiter quote chưa khả dụng|HTTP\s+(403|408|429|5\d\d)/i.test(typeof error==='string'?error:error?.message??'');}
 function validatedState(s,owner){
  if(s?.owner!==owner||s.ownerLedgerVersion!==1||!Array.isArray(s.positions)||!Array.isArray(s.trades)||!Array.isArray(s.events)||!Array.isArray(s.curve)||!Array.isArray(s.recordedSignatures)||!Number.isFinite(s.cashSol)||s.cashSol<0||!(s.settings?.initialSol>0&&s.settings.initialSol<=DEFAULTS.initialSol))throw Error('Nhật ký không thuộc ví chủ hoặc sai cấu trúc.');
  for(const p of s.positions)if(typeof p.rawQuantity!=='string'||!/^\d{1,20}$/.test(p.rawQuantity)||BigInt(p.rawQuantity)<=0n||!Number.isInteger(p.decimals)||p.decimals<0||p.decimals>9||!Number.isFinite(p.quantity)||p.quantity<=0||!Number.isFinite(p.costSol)||p.costSol<0)throw Error('Vị thế khôi phục không hợp lệ.');
@@ -71,7 +72,7 @@ export class OwnerAgent{
   clearLegacyDailyHalt(this.state);clearLegacyLossPause(this.state);
   if(this.state.halted&&!this.state.liquidating)throw Error(this.state.halted);
   allocateOwnerCapital(this.state,balance);
-  this.state.storageBlockedReason=this.storageBlockedReason;this.state.orderAttempts={};this.state.buyPaused=false;this.state.buyCircuitOpen=false;this.state.executionFailures=0;
+  this.state.storageBlockedReason=this.storageBlockedReason;this.state.orderAttempts={};this.state.buyPaused=false;this.state.buyCircuitOpen=false;this.state.buyCircuitKind=null;this.state.networkHealthyScans=0;this.state.executionFailures=0;
   delete this.state.entryStatus;this.state.running=true;this.state.consecutiveFailures=0;this.lastDecisionFeed=null;this.error=null;event(this.state,'Bộ ký tự động đã bật: ký lệnh bằng ví chủ, không chờ trình duyệt.');try{await this.save();}catch(e){this.state.running=false;this.vault.lock();throw e;}
  });}
  async reviewRisk(feed){return this.serial(async()=>{
@@ -128,10 +129,10 @@ export class OwnerAgent{
     if(result.status==='pending')return;
     const applied=applyOwnerReceipt(s,pending,result);
     if(applied&&this.telegram.enabled)enqueueTradeReport(s,pending,result);
-    if(result.status==='confirmed'){if(pending.attemptKey)delete s.orderAttempts[pending.attemptKey];s.executionFailures=0;s.buyCircuitOpen=false;s.consecutiveFailures=0;if(s.lastExecutionLatency&&pending.timing?.broadcastStartedAt)s.lastExecutionLatency.confirmationMs=Date.now()-pending.timing.broadcastStartedAt;}else{
+    if(result.status==='confirmed'){if(pending.attemptKey)delete s.orderAttempts[pending.attemptKey];s.executionFailures=0;s.buyCircuitOpen=false;s.buyCircuitKind=null;s.consecutiveFailures=0;if(s.lastExecutionLatency&&pending.timing?.broadcastStartedAt)s.lastExecutionLatency.confirmationMs=Date.now()-pending.timing.broadcastStartedAt;}else{
      s.consecutiveFailures=(s.consecutiveFailures??0)+1;this.error='Lệnh '+result.status+'; đã đối soát, không gửi lại giao dịch cũ.';
      if(pending.intent.side==='BUY')s.cooldowns[pending.intent.mint]=Date.now()+((s.orderAttempts?.[pending.attemptKey]??0)>=DEFAULTS.maxRetries+1?DEFAULTS.coarseCooldownMs:2000);
-     if(s.consecutiveFailures>=3){s.buyCircuitOpen=true;s.buyBlockedReason='Liên tiếp giao dịch lỗi/hết hạn: dừng BUY, vẫn xét thoát lệnh.';}
+     if(s.consecutiveFailures>=3){s.buyCircuitOpen=true;s.buyCircuitKind='execution';s.buyBlockedReason='Liên tiếp giao dịch lỗi/hết hạn: dừng BUY, vẫn xét thoát lệnh.';}
     }
     await this.save();return;
    }
@@ -152,16 +153,22 @@ export class OwnerAgent{
     }catch(e){networkError=e.message;}
    }
    s.networkFailures=networkError?(s.networkFailures??0)+1:0;
-   s.buyBlockedReason=s.buyCircuitOpen||s.networkFailures>=DEFAULTS.networkFailureLimit?'API/RPC lỗi liên tiếp: dừng BUY, vẫn quản lý SELL.':null;
+   if(s.buyCircuitOpen&&s.buyCircuitKind==='network'){
+    const now=Date.now(),rechecked=working.markets.some(m=>Number.isFinite(m.evidence?.quoteCheckedAt)&&m.evidence.quoteCheckedAt>s.buyCircuitOpenedAt&&m.evidence.quoteCheckedAt<=now&&now-m.evidence.quoteCheckedAt<=DEFAULTS.maxPriceAgeMs&&rankMarket(m,DEFAULTS,now).eligible);
+    s.networkHealthyScans=!networkError&&Number.isFinite(balance)&&balance>=0&&!working.error&&Number.isFinite(working.updatedAt)&&working.updatedAt<=now&&now-working.updatedAt<=DEFAULTS.maxPriceAgeMs&&rechecked?(s.networkHealthyScans??0)+1:0;
+    if(s.networkHealthyScans>=2){s.buyCircuitOpen=false;s.buyCircuitKind=null;s.executionFailures=0;event(s,'API/RPC đã hồi phục qua 2 vòng kiểm tra và quote mới; tiếp tục xét BUY theo điều kiện hiện tại.');}
+   }
+   s.buyBlockedReason=s.buyCircuitOpen?(s.buyCircuitKind==='network'?'Lỗi mạng khi chuẩn bị lệnh: chờ API/RPC và kiểm chứng mới hồi phục; vẫn quản lý SELL.':'Liên tiếp giao dịch lỗi/hết hạn: kiểm tra rồi bật lại thủ công; vẫn quản lý SELL.'):s.networkFailures>=DEFAULTS.networkFailureLimit?'API/RPC lỗi liên tiếp: dừng BUY, vẫn quản lý SELL.':null;
    if(networkError)this.error=networkError;
+   else if(!s.buyCircuitOpen&&networkFailure(this.error))this.error=null;
    if(!s.running||!this.vault.keypair)return;
    const order=nextOwnerOrder(s,working,balance);s.entryStatus=diagnoseOwnerEntry(s,working,balance);s.curve.push({at:Date.now(),equitySol:equity(s,working.markets,working.solUsd)});s.curve=s.curve.slice(-1440);await this.save();
    if(!order)return;
    try{await this.execute(order,working);if(!networkError)this.error=null;}
-   catch(e){if(s.pending)throw e;this.error=e.message;if(/RPC|fetch|timeout|429|503/i.test(e.message)){s.executionFailures=(s.executionFailures??0)+1;if(s.executionFailures>=DEFAULTS.networkFailureLimit)s.buyCircuitOpen=true;}if(order.side==='BUY')s.cooldowns[order.mint]=Date.now()+((s.orderAttempts?.['BUY:'+order.mint+':fixed']??0)>=DEFAULTS.maxRetries+1?DEFAULTS.coarseCooldownMs:2000);event(s,'Chưa thực hiện '+order.side+' '+order.symbol+': '+e.message);await this.save();}
+   catch(e){if(s.pending)throw e;this.error=e.message;if(networkFailure(e)){s.executionFailures=(s.executionFailures??0)+1;if(s.executionFailures>=DEFAULTS.networkFailureLimit&&!s.buyCircuitOpen){s.buyCircuitOpen=true;s.buyCircuitKind='network';s.buyCircuitOpenedAt=Date.now();s.networkHealthyScans=0;}}if(order.side==='BUY')s.cooldowns[order.mint]=Date.now()+((s.orderAttempts?.['BUY:'+order.mint+':fixed']??0)>=DEFAULTS.maxRetries+1?DEFAULTS.coarseCooldownMs:2000);event(s,'Chưa thực hiện '+order.side+' '+order.symbol+': '+e.message);await this.save();}
 
   });}
-  catch(e){this.error=e.message;if(this.state){if(!/RPC|fetch failed|429|timeout/i.test(e.message))this.state.running=false;await this.save().catch(()=>{});}}
+  catch(e){this.error=e.message;if(this.state){if(!networkFailure(e))this.state.running=false;await this.save().catch(()=>{});}}
   finally{this.busy=false;}
  }
 }

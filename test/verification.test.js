@@ -14,10 +14,10 @@ test('RugCheck identity and pool binding are required; overlapping LP figures ar
  assert.equal(rugEvidence({...report,token:{},risks:[{name:'unknown',level:'new-schema'}]},m,now).mintRevoked,undefined);
 });
 test('report failures stay unknown, are cached briefly, and cannot prevent marks/exits from updating',async()=>{
- let calls=0;const feed=new VerificationFeed(async()=>{calls++;return new Response('blocked',{status:403});});
+ let calls=0,time=now;const feed=new VerificationFeed(async()=>{calls++;return new Response('blocked',{status:403});},null,{clock:()=>time,random:()=>0});
  const result=await feed.enrich([{...m,evidence:undefined}],[],now);assert.equal(result[0].evidence,undefined);assert.ok(result[0].verificationError);assert.equal(result[0].priceUsd,m.priceUsd);
  await feed.enrich([m],[],now+1000);assert.equal(calls,1);
- await feed.enrich([{...m,updatedAt:now+30001}],[],now+30001);assert.equal(calls,2);
+ time=now+30001;await feed.enrich([{...m,updatedAt:time}],[],time);assert.equal(calls,2);
 });
 test('bounded verification only contacts the fixed public RugCheck endpoint, never Helius/Jupiter',async()=>{
  const urls=[];const feed=new VerificationFeed(async url=>{urls.push(url);return new Response(JSON.stringify(report));});
@@ -32,22 +32,22 @@ test('slow safety jobs do not hold up fresh market snapshots and concurrency is 
 });
 
 test('failed safety providers retry after five seconds, expose status without URLs, and never bypass safety',async()=>{
- let calls=0;
- const feed=new VerificationFeed(async()=>{calls++;if(calls===1)throw Error('HTTP 403 https://private.invalid/?api-key=never-display');return new Response(JSON.stringify(report));});
+ let calls=0,time=now;
+ const feed=new VerificationFeed(async()=>{calls++;if(calls===1)throw Error('HTTP 403 https://private.invalid/?api-key=never-display');return new Response(JSON.stringify(report));},null,{clock:()=>time,random:()=>0});
  const first=(await feed.enrich([{...m,evidence:undefined,coarseCooldownUntil:now+1800000}],[],now))[0];
  assert.match(first.verificationError,/RugCheck: HTTP 403/);assert.ok(!first.verificationError.includes('never-display'));
  assert.equal(rankMarket(first,undefined,now).roughEligible,true);assert.equal(rankMarket(first,undefined,now).eligible,false);
  assert.ok(rankMarket(first,undefined,now).reasons.includes(first.verificationError));
  await feed.enrich([m],[],now+4999);assert.equal(calls,1);
- const recovered=(await feed.enrich([{...m,evidence:undefined,updatedAt:now+5000}],[],now+5000))[0];assert.equal(calls,2);assert.equal(recovered.verificationError,undefined);
+ time=now+5000;const recovered=(await feed.enrich([{...m,evidence:undefined,updatedAt:time}],[],time))[0];assert.equal(calls,2);assert.equal(recovered.verificationError,undefined);
  assert.equal(rankMarket(recovered,undefined,now+5000).eligible,false,'a recovered partial report still needs on-chain and round-trip verification');
 });
 
 test('repeated failures on two high-volume tokens cannot starve other eligible candidates',async()=>{
- const called=[],markets=Array.from({length:4},(_,i)=>({...m,mint:'1111111111111111111111111111111'+(i+2),volume5mUsd:10000-i}));
- const feed=new VerificationFeed(async url=>{called.push(String(url).split('/').at(-2));return new Response('unavailable',{status:503});});
+ let time=now;const called=[],markets=Array.from({length:4},(_,i)=>({...m,mint:'1111111111111111111111111111111'+(i+2),volume5mUsd:10000-i}));
+ const feed=new VerificationFeed(async url=>{called.push(String(url).split('/').at(-2));return new Response('unavailable',{status:503});},null,{clock:()=>time,random:()=>0});
  await feed.enrichCached(markets,[],now);await Promise.all([...feed.jobs.values()]);
- await feed.enrichCached(markets,[],now+5000);await Promise.all([...feed.jobs.values()]);
+ time=feed.reportFetch.diagnostics().retryAt;await feed.enrichCached(markets,[],time);await Promise.all([...feed.jobs.values()]);
  assert.deepEqual(called,markets.map(m=>m.mint));
 });
 

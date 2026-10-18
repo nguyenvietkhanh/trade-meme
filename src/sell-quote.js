@@ -2,7 +2,7 @@ import {TRADE_RULES,BUY_LAMPORTS} from './desk-rules.js';
 import {SOL} from './engine.js';
 async function quote(inputMint,outputMint,amount,slippageBps,fetcher){
  const url=new URL('https://lite-api.jup.ag/swap/v1/quote');for(const [k,v]of Object.entries({inputMint,outputMint,amount,slippageBps,swapMode:'ExactIn'}))url.searchParams.set(k,v);
- const r=await fetcher(url,{signal:AbortSignal.timeout(2500)}),q=await r.json();
+ const r=await fetcher(url,{signal:AbortSignal.timeout(2500)});let q;try{q=await r.json();}catch{throw Error(r.ok?'Jupiter quote thiếu JSON hợp lệ.':'Jupiter quote HTTP '+r.status);}
  if(['COULD_NOT_FIND_ANY_ROUTE','TOKEN_NOT_TRADABLE'].includes(q.errorCode))return {failed:true};
  if(!r.ok)throw Error('Jupiter quote HTTP '+r.status);
  if(q.inputMint!==inputMint||q.outputMint!==outputMint||q.inAmount!==amount||q.swapMode!=='ExactIn'||!/^\d+$/.test(q.outAmount??'')||!/^\d+$/.test(q.otherAmountThreshold??'')||BigInt(q.outAmount)<=0n||BigInt(q.outAmount)>18446744073709551615n||BigInt(q.otherAmountThreshold)<BigInt(q.outAmount)*BigInt(10000-slippageBps)/10000n||BigInt(q.otherAmountThreshold)>BigInt(q.outAmount)||!Array.isArray(q.routePlan)||!q.routePlan.length||q.slippageBps!==slippageBps||!Number.isSafeInteger(q.contextSlot))throw Error('Jupiter quote không khớp hoặc thiếu dữ liệu.');

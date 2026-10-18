@@ -68,6 +68,34 @@ test('a running agent durably records confirmed top-up capital before preparing 
  }finally{await f.cleanup();}
 });
 
+test('transient preparation failures recover only after two healthy scans with post-failure verified quotes, retaining retry limits',async t=>{
+ let now=Date.now();t.mock.method(Date,'now',()=>now);const f=await fixture();try{
+  await f.agent.enable();const original=f.execution.prepare;f.execution.prepare=async()=>{throw Error('Jupiter HTTP 429');};
+  for(let i=0;i<3;i++){now+=5000;await f.agent.tick(f.feed());}
+  assert.equal(f.agent.state.buyCircuitOpen,true);assert.equal(f.agent.state.buyCircuitKind,'network');assert.equal(f.sends,0);
+  f.execution.prepare=original;now+=5000;const stale=f.feed();stale.markets[0].evidence.quoteCheckedAt=f.agent.state.buyCircuitOpenedAt-1;await f.agent.tick(stale);assert.equal(f.agent.state.networkHealthyScans,0);
+  for(let i=0;i<2;i++){now+=5000;const feed=f.feed();feed.markets[0].evidence.quoteCheckedAt=now;await f.agent.tick(feed);if(i===0){assert.equal(f.agent.state.buyCircuitOpen,true);assert.equal(f.sends,0);}}
+  assert.equal(f.agent.state.buyCircuitOpen,false);assert.equal(f.agent.state.buyCircuitKind,null);assert.equal(f.agent.state.pending.intent.amount,'200000000');assert.equal(f.sends,1);assert.equal(f.agent.state.orderAttempts['BUY:'+f.mint+':fixed'],4);
+ }finally{await f.cleanup();}
+});
+
+test('healthy market and RPC probes never automatically clear failed-transaction or legacy unlabeled circuits',async()=>{
+ const f=await fixture();try{
+  await f.agent.enable();Object.assign(f.agent.state,{buyCircuitOpen:true,buyCircuitKind:'execution',buyCircuitOpenedAt:Date.now()-10000});
+  for(let i=0;i<2;i++){const feed=f.feed();feed.markets[0].evidence.quoteCheckedAt=Date.now();await f.agent.tick(feed);}
+  assert.equal(f.agent.state.buyCircuitOpen,true);assert.equal(f.agent.state.buyCircuitKind,'execution');assert.equal(f.sends,0);
+  delete f.agent.state.buyCircuitKind;const feed=f.feed();feed.markets[0].evidence.quoteCheckedAt=Date.now();await f.agent.tick(feed);assert.equal(f.agent.state.buyCircuitOpen,true);assert.equal(f.sends,0);
+ }finally{await f.cleanup();}
+});
+
+test('a 503 during pending receipt reconciliation preserves the signed order, never rebroadcasts and can resume',async()=>{
+ const f=await fixture();try{
+  await f.agent.enable();await f.agent.tick(f.feed());const pending=structuredClone(f.agent.state.pending),original=f.execution.status;
+  f.execution.status=async()=>{throw Error('HTTP 503');};await f.agent.tick(f.feed());assert.equal(f.agent.state.running,true);assert.deepEqual(f.agent.state.pending,pending);assert.equal(f.sends,1);
+  f.execution.status=original;await f.agent.tick(f.feed());assert.equal(f.agent.state.pending,null);assert.equal(f.agent.state.trades.length,1);assert.equal(f.sends,1);
+ }finally{await f.cleanup();}
+});
+
 test('Telegram outbox is committed only with a new confirmed trade and network delivery runs separately',async()=>{
  const f=await fixture();try{
   await f.agent.telegram.configure('123456789:fixture_ABCDEFGHIJKLMNOPQRSTUVWXYZ123456789','123456789',f.kp);

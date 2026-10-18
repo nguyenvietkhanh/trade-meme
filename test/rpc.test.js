@@ -44,3 +44,38 @@ test('a read unavailable on an unindexed RPC retries the other verified mainnet 
  const result=await keylessConnection().getProgramAccounts(Keypair.generate().publicKey);
  assert.deepEqual(result,[]);assert.deepEqual(calls.filter(x=>x[1]==='getProgramAccounts').map(x=>x[0]),[...PUBLIC_RPC_ENDPOINTS]);
 });
+
+test('concurrent identical RPC reads and genesis checks are coalesced, with no price/balance result cache',async t=>{
+ let genesis=0,balances=0,entered,release;const started=new Promise(r=>entered=r),wait=new Promise(r=>release=r);
+ t.mock.method(globalThis,'fetch',async(_url,options)=>{const r=JSON.parse(options.body);if(r.method==='getGenesisHash'){genesis++;return reply(r,GENESIS);}balances++;entered();await wait;return reply(r,{context:{slot:50},value:balances*100000000});});
+ const rpc=keylessConnection(),key=Keypair.generate().publicKey,reads=Array.from({length:8},()=>rpc.getBalance(key));await started;assert.equal(genesis,1);assert.equal(balances,1);release();
+ assert.deepEqual(await Promise.all(reads),Array(8).fill(100000000));assert.equal(await rpc.getBalance(key),200000000);assert.equal(genesis,1);
+});
+
+test('all throttled RPCs respect Retry-After and fail fast until the retry deadline, then recover',async t=>{
+ let now=0,calls=0,available=false;
+ t.mock.method(globalThis,'fetch',async(_url,options)=>{const r=JSON.parse(options.body);if(r.method==='getGenesisHash')return reply(r,GENESIS);calls++;return available?reply(r,{context:{slot:50},value:300000000}):new Response('{}',{status:429,headers:{'retry-after':'120'}});});
+ const rpc=keylessConnection(undefined,{clock:()=>now,random:()=>0}),key=Keypair.generate().publicKey;
+ await assert.rejects(rpc.getBalance(key));assert.equal(calls,2);assert.equal(rpc.rpcDiagnostics().cooldowns.length,2);
+ now=119999;await assert.rejects(rpc.getBalance(key));assert.equal(calls,2);
+ now=120000;available=true;assert.equal(await rpc.getBalance(key),300000000);assert.equal(calls,3);
+});
+
+test('unsupported holder scans are remembered per method without quarantining working balance reads',async t=>{
+ let now=1000,unavailable=false;const calls=[];
+ t.mock.method(globalThis,'fetch',async(url,options)=>{const r=JSON.parse(options.body);if(r.method==='getGenesisHash')return reply(r,GENESIS);calls.push([url,r.method]);
+  if(url===PUBLIC_RPC_ENDPOINTS[1]&&unavailable)return new Response('{}',{status:503});
+  if(r.method==='getProgramAccounts'&&url===PUBLIC_RPC_ENDPOINTS[0])return new Response(JSON.stringify({jsonrpc:'2.0',id:r.id,error:{code:-32010,message:'unindexed'}}));
+  return reply(r,r.method==='getProgramAccounts'?[]:{context:{slot:50},value:300000000});});
+ const rpc=keylessConnection(undefined,{clock:()=>now,random:()=>0}),key=Keypair.generate().publicKey;
+ assert.deepEqual(await rpc.getProgramAccounts(key),[]);unavailable=true;assert.equal(await rpc.getBalance(key),300000000);
+ await assert.rejects(rpc.getProgramAccounts(key));assert.equal(calls.filter(c=>c[0]===PUBLIC_RPC_ENDPOINTS[0]&&c[1]==='getProgramAccounts').length,1);assert.equal(await rpc.getBalance(key),300000000);
+});
+
+test('a late healthy RPC response cannot erase a rate limit received by another concurrent method',async t=>{
+ let entered,release;const started=new Promise(r=>entered=r),wait=new Promise(r=>release=r);
+ t.mock.method(globalThis,'fetch',async(_url,options)=>{const r=JSON.parse(options.body);if(r.method==='getGenesisHash')return reply(r,GENESIS);
+  if(r.method==='getBalance'){entered();await wait;return reply(r,{context:{slot:50},value:300000000});}return new Response('{}',{status:429});});
+ const rpc=keylessConnection(undefined,{clock:()=>1000,random:()=>0}),balance=rpc.getBalance(Keypair.generate().publicKey);await started;
+ await assert.rejects(rpc.getSlot());release();assert.equal(await balance,300000000);assert.equal(rpc.rpcDiagnostics().cooldowns.length,2);
+});

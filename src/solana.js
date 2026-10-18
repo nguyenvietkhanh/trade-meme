@@ -3,6 +3,7 @@ import bs58 from 'bs58';
 import {OnlinePumpAmmSdk,poolPda,PUMP_PROGRAM_ID} from '@pump-fun/pump-swap-sdk';
 import {DEFAULT_OWNER} from './security.js';
 import {jupiterSellQuote,jupiterRoundTrip,jupiterEntryQuote} from './sell-quote.js';
+import {backoffFetch} from './provider-fetch.js';
 import {buildPumpSwap,PUMP_PROGRAM} from './pump-swap.js';
 import {SOL} from './engine.js';
 import {keylessConnection,PUBLIC_RPC_ENDPOINTS,MAINNET_GENESIS_HASH} from './rpc.js';
@@ -45,7 +46,7 @@ function tokenData(info){
  return {mint:new PublicKey(data.subarray(0,32)).toBase58(),owner:new PublicKey(data.subarray(32,64)).toBase58(),amount:data.readBigUInt64LE(64).toString(),delegate:data.subarray(72,165).toString('hex'),raw:data.toString('base64')};
 }
 export class SolanaExecution{
- constructor(url){this.rpc=keylessConnection(url?[url]:PUBLIC_RPC_ENDPOINTS);this.provider='Solana RPC công khai';this.mintFacts=new Map();}
+ constructor(url){this.rpc=keylessConnection(url?[url]:PUBLIC_RPC_ENDPOINTS);this.provider='Solana RPC công khai';this.mintFacts=new Map();this.quoteFetch=backoffFetch(undefined,{provider:'Jupiter'});}
  async network(){if(await this.rpc.getGenesisHash()!==MAINNET_GENESIS_HASH)throw new TradePolicyError('RPC không phải Solana mainnet.');}
  async balance(address,minContextSlot){return (await this.rpc.getBalance(new PublicKey(address),minContextSlot?{commitment:'confirmed',minContextSlot}:'confirmed'))/1e9;}
  async mintCheck(mint){
@@ -78,7 +79,7 @@ export class SolanaExecution{
   if(supply<=0n||total!==supply)throw Error('Phân bổ holder không đầy đủ so với cung on-chain.');
   const distribution=[...owners.values()].sort((a,b)=>a>b?-1:a<b?1:0),percent=n=>Number(n*100000000n/supply)/1000000;
   const creator=m.creatorAddress?new PublicKey(m.creatorAddress).toBase58():null,devPct=creator&&!excluded.has(creator)&&creator!==PublicKey.default.toBase58()?percent(owners.get(creator)??0n):undefined;
-  const roundTrip=await jupiterRoundTrip(m.mint),slot=await this.rpc.getSlot('confirmed');if(roundTrip.quoteContextSlot>slot+20||slot-roundTrip.quoteContextSlot>20)throw Error('Jupiter quote slot không còn mới.');
+  const roundTrip=await jupiterRoundTrip(m.mint,this.quoteFetch),slot=await this.rpc.getSlot('confirmed');if(roundTrip.quoteContextSlot>slot+20||slot-roundTrip.quoteContextSlot>20)throw Error('Jupiter quote slot không còn mới.');
   return {...facts,...roundTrip,quoteReserveSol:Number(state.poolQuoteAmount.toString())/1e9,holderCount:owners.size,top10ExcludesPool:true,top10Pct:percent(distribution.slice(0,10).reduce((a,b)=>a+b,0n)),largestHolderPct:percent(distribution[0]??0n),devPct};
  }
  async holdings(owner,mint=null){
@@ -88,7 +89,7 @@ export class SolanaExecution{
   if(mint&&all.some(a=>!Buffer.isBuffer(a.account.data)||a.account.data.length<165||new PublicKey(a.account.data.subarray(0,32)).toBase58()!==mint||!new PublicKey(a.account.data.subarray(32,64)).equals(key)))throw new TradePolicyError('Số dư token trả về không khớp lệnh/ví chủ.');
   if(all.length>64)throw new TradePolicyError('Ví có quá nhiều tài khoản token để kiểm tra an toàn.');return all;
  }
- async entryQuote(mint,amount){const q=await jupiterEntryQuote(mint,amount),slot=await this.rpc.getSlot('confirmed');if(q.contextSlot>slot+20||slot-q.contextSlot>20)throw Error('Jupiter entry quote slot đã cũ.');return q;}
+ async entryQuote(mint,amount){const q=await jupiterEntryQuote(mint,amount,this.quoteFetch),slot=await this.rpc.getSlot('confirmed');if(q.contextSlot>slot+20||slot-q.contextSlot>20)throw Error('Jupiter entry quote slot đã cũ.');return q;}
  async prepare({keypair,ownerAddress,input,output,amount,poolAddress,reason='',closeEmptyInput=false,referenceMinOut}){
   if(input===SOL&&String(amount)!==BUY_LAMPORTS)throw new TradePolicyError('Chỉ cho lệnh mua 0,2 SOL.');
   await this.network();const owner=keypair?.publicKey??new PublicKey(ownerAddress);
@@ -119,7 +120,7 @@ export class SolanaExecution{
   return {bytes:tx.serialize(),signature:keypair?bs58.encode(tx.signatures[0]):null,lastValidBlockHeight,quote:q,minNativeOutLamports,closedInputAccount};
  }
  async sellQuote({ownerAddress,mint,amount,poolAddress}){
-  try{const q=await jupiterSellQuote({mint,rawAmount:amount});const slot=await this.rpc.getSlot('confirmed');if(q.contextSlot&&(q.contextSlot>slot+20||slot-q.contextSlot>20))throw Error('Quote slot đã cũ.');return q;}
+  try{const q=await jupiterSellQuote({mint,rawAmount:amount},this.quoteFetch);const slot=await this.rpc.getSlot('confirmed');if(q.contextSlot&&(q.contextSlot>slot+20||slot-q.contextSlot>20))throw Error('Quote slot đã cũ.');return q;}
   catch{
    // Jupiter may be unavailable. An executable local pool quote still protects existing positions.
    const p=await this.prepare({ownerAddress,input:mint,output:SOL,amount,poolAddress,reason:'quote-probe'});
