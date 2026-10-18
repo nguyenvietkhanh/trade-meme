@@ -9,7 +9,7 @@ import {verifiedMarket} from './fixtures/verified-market.js';
 const now=Date.UTC(2026,9,17,12);
 test('all mandatory safety facts remain fail-closed; optional creator and score inputs do not veto',()=>{
  const m=verifiedMarket({},now);assert.equal(decideMarket(m,R,now).action,'BUY');
- for(const key of ['mint','pairAddress','checkedAt','mintRevoked','freezeRevoked','tokenProgram','lpSecuredPct','probeSol','roundTripQuoteOk','roundTripLossPct','buyImpactPct','sellImpactPct','top10Pct','top10ExcludesPool','largestHolderPct','riskWarningsChecked','criticalWarnings']){
+ for(const key of ['mint','pairAddress','checkedAt','mintRevoked','freezeRevoked','tokenProgram','lpSecuredPct','quoteReserveSol','probeSol','roundTripQuoteOk','quoteCheckedAt','roundTripLossPct','buyImpactPct','sellImpactPct','top10Pct','top10ExcludesPool','largestHolderPct','riskWarningsChecked','criticalWarnings']){
   const e={...m.evidence};delete e[key];const rank=rankMarket({...m,evidence:e},R,now);assert.equal(rank.eligible,false,key);assert.ok(Number.isInteger(rank.score));
  }
  for(const e of [{mintRevoked:false},{freezeRevoked:false},{lpSecuredPct:89.99},{probeSol:0},{roundTripLossPct:6.01},{buyImpactPct:2.01},{sellImpactPct:2.01},{top10Pct:35.01},{top10ExcludesPool:false},{largestHolderPct:8.01},{devPct:5.01},{checkedAt:now-30001},{checkedAt:now+1},{mint:'other'},{pairAddress:'other'},{criticalWarnings:['danger']}])assert.equal(rankMarket({...m,evidence:{...m.evidence,...e}},R,now).eligible,false,JSON.stringify(e));

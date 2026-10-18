@@ -3,15 +3,14 @@ import assert from 'node:assert/strict';
 import {loadMarkets} from '../src/market.js';
 import {SOL} from '../src/engine.js';
 import {Keypair} from '@solana/web3.js';
-const pair=(mint,symbol,liquidity,chainId='solana')=>({chainId,baseToken:{address:mint,symbol,name:symbol},priceUsd:'1',marketCap:1000000,liquidity:{usd:liquidity},volume:{h24:200000},priceChange:{m5:2},txns:{m5:{buys:20,sells:5}},pairAddress:'pair-'+liquidity,pairCreatedAt:Date.now()-86400000});
-test('verified pre-migration curve replaces a zero-liquidity DexScreener duplicate without replacing PumpSwap or a tracked pool',async t=>{
- const mint=Keypair.generate().publicKey.toBase58(),curve={mint,symbol:'CURVE',name:'Curve',venue:'pumpfun',dexId:'pumpfun',pairAddress:'official-curve',liquidityUsd:3000,liquidityQuoteSol:30,valuationUsd:40000,valuationSource:'curve-marketCap',priceUsd:.00004,updatedAt:Date.now()},pumpFun={cachedMarkets:()=>({markets:[curve],warnings:[],diagnostics:{status:'ready',freshMarkets:1}})};
- let dexId='pumpfun';
+const pair=(mint,symbol,liquidity,chainId='solana')=>({chainId,dexId:'pumpswap',baseToken:{address:mint,symbol,name:symbol},priceUsd:'1',marketCap:1000000,liquidity:{usd:liquidity},volume:{h24:200000},priceChange:{m5:2},txns:{m5:{buys:20,sells:5}},pairAddress:'pair-'+liquidity,pairCreatedAt:Date.now()-86400000});
+test('discovery never invokes a pre-migration feed; only PumpSwap and tracked legacy pools remain',async t=>{
+ const mint=Keypair.generate().publicKey.toBase58();let dexId='pumpfun',calls=0;
+ const disabled={cachedMarkets:()=>{calls++;throw Error('disabled source must never run');}};
  t.mock.method(globalThis,'fetch',async url=>new Response(JSON.stringify({pairs:String(url).endsWith(SOL)?[{...pair(SOL,'SOL',999999),priceUsd:'100'}]:[{...pair(mint,'CURVE',0),dexId}]})));
- const feed=await loadMarkets([],{},null,pumpFun);assert.equal(feed.markets.length,1);assert.equal(feed.markets[0].venue,'pumpfun');assert.equal(feed.markets[0].liquidityUsd,3000);assert.equal(feed.sources.preMigrationCandidates,1);assert.equal(feed.sources.pumpFun.status,'ready');
- dexId='pumpswap';const swap=await loadMarkets([],{},null,pumpFun);assert.equal(swap.markets[0].dexId,'pumpswap');assert.equal(swap.sources.preMigrationCandidates,0);assert.equal(swap.sources.pumpFun.freshMarkets,1);
- dexId='pumpfun';const held=await loadMarkets([mint],{[mint]:'pair-0'},null,pumpFun);assert.equal(held.markets[0].pairAddress,'pair-0');assert.equal(held.markets[0].venue,undefined);
- const stale={cachedMarkets:()=>({markets:[{...curve,updatedAt:Date.now()-31000}],warnings:[]})};assert.equal((await loadMarkets([],{},null,stale)).sources.preMigrationCandidates,0);
+ const feed=await loadMarkets([],{},null,disabled);assert.equal(feed.markets.length,0);assert.equal(calls,0);assert.equal(feed.sources.preMigrationEnabled,false);
+ dexId='pumpswap';const swap=await loadMarkets([],{},null,disabled);assert.equal(swap.markets[0].dexId,'pumpswap');assert.equal(calls,0);
+ dexId='pumpfun';const held=await loadMarkets([mint],{[mint]:'pair-0'},null,disabled);assert.equal(held.markets[0].pairAddress,'pair-0');assert.equal(held.markets[0].dexId,'pumpfun');assert.equal(calls,0);
 });
 test('provider adapter filters chains/native impersonators and selects highest-liquidity pool per mint',async t=>{
  t.mock.method(globalThis,'fetch',async url=>new Response(JSON.stringify({pairs:String(url).endsWith(SOL)?[{...pair(SOL,'SOL',999999),priceUsd:'150'}]:[pair('mint-one','MEME',100000),pair('mint-one','MEME',200000),pair('other-chain','MEME',999999,'ethereum'),pair('fake-sol','SOL',9999999),{...pair('invalid','BROKEN',999999),priceUsd:'Infinity'}]}),{status:200}));

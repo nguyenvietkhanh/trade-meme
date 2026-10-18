@@ -1,5 +1,6 @@
 import {AsyncLocalStorage} from 'node:async_hooks';
 const context=new AsyncLocalStorage();
+export const rpcPriority=()=>context.getStore();
 export const withRpcPriority=(priority,work)=>context.run(priority,work);
 export function rpcScheduler(){
  let active=0,scans=0;const queue=[];

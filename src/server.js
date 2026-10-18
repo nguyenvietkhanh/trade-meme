@@ -15,7 +15,6 @@ import {DirectWallet} from './direct-wallet.js';
 import {VerificationFeed} from './verification.js';
 import {STRATEGY_VERSION} from './desk-rules.js';
 import {OwnerAgent,signerRequestAllowed} from './owner-agent.js';
-import {PumpFunMarkets} from './pump-fun-market.js';
 import {initializeStorage} from './storage.js';
 import {withRpcPriority} from './rpc-priority.js';
 import {ResearchJournal} from './research-journal.js';
@@ -48,10 +47,9 @@ const expectedOrigin=process.env.PUBLIC_ORIGIN??(onRailway?'https://'+(process.e
 const auth=new OwnerAuth({owner:DEFAULT_OWNER,origin:expectedOrigin});
 const execution=new SolanaExecution();
 const direct=new DirectWallet(execution);
-const pumpFunMarkets=new PumpFunMarkets(execution);
 const ownerAgent=liveOnly&&process.env.SIGNER_MODE!=='disabled'?new OwnerAgent(dataDir,direct,execution,auth.owner,{storageMode:process.env.RAILWAY_VOLUME_MOUNT_PATH?'persistent-volume':onRailway?'ephemeral':'local-disk'}):null;
 await ownerAgent?.load();
-const research=new ResearchJournal(dataDir),paperResearch=new PaperResearch(dataDir,requests=>execution.paperCurveQuotes(requests),research);
+const research=new ResearchJournal(dataDir),paperResearch=new PaperResearch(dataDir,null,research);
 await paperResearch.load();if(ownerAgent)ownerAgent.research=research;
 let feed={markets:[],solUsd:null,updatedAt:null,error:null};
 const verification=new VerificationFeed(globalThis.fetch,execution);
@@ -64,13 +62,13 @@ function serial(fn){const task=pending.then(fn);pending=task.catch(()=>{});retur
 async function refresh(){
   if(refreshing)return;refreshing=true;
   try{
-    const latest=await withRpcPriority('background',()=>loadMarkets([...new Set([...state.positions.map(p=>p.mint),...direct.watched,...(ownerAgent?.trackedMints()??[]),...state.watchlist])],Object.fromEntries((ownerAgent?.state?.positions??state.positions).filter(p=>p.pairAddress).map(p=>[p.mint,p.pairAddress])),discovery,pumpFunMarkets));
+    const latest=await withRpcPriority('background',()=>loadMarkets([...new Set([...state.positions.map(p=>p.mint),...direct.watched,...(ownerAgent?.trackedMints()??[]),...state.watchlist])],Object.fromEntries((ownerAgent?.state?.positions??state.positions).filter(p=>p.pairAddress).map(p=>[p.mint,p.pairAddress])),discovery));
     latest.markets=scannerMarkets(state,latest.markets);
     latest.markets=await withRpcPriority('background',()=>verification.enrichCached(latest.markets,ownerAgent?.trackedMints()??[]));
     await serial(async()=>{latest.markets=observeMarkets(state,latest.markets);feed={...latest,error:null};
       if(liveOnly){
         state.lastEvaluationAt=Date.now();
-        for(const market of feed.markets){const rank=rankMarket(market,state.settings);recordEvaluation(state,{at:Date.now(),mint:market.mint,symbol:market.symbol,score:rank.score,blockingStage:rank.blockingStage,decision:decideMarket(market,state.settings),action:rank.eligible?'WATCH':'SKIP',reason:rank.eligible?'Đạt bộ lọc thị trường; còn kiểm tra on-chain, ví và giới hạn thực thi.':rank.primaryReasons.join('; ')});}
+        for(const market of feed.markets){const rank=rankMarket(market,state.settings);recordEvaluation(state,{at:Date.now(),mint:market.mint,symbol:market.symbol,pairAddress:market.pairAddress,score:rank.score,minScore:rank.minScore,blockingStage:rank.blockingStage,primaryFlags:rank.primaryFlags,missingData:rank.missingData,blockingCategory:rank.blockingCategory,redFlags:rank.red_flags,decision:decideMarket(market,state.settings),action:rank.eligible?'WATCH':'SKIP',reason:rank.eligible?'Đạt bộ lọc thị trường; còn kiểm tra on-chain, ví và giới hạn thực thi.':rank.primaryReasons.join('; ')});}
       }else{if(state.automationRequested&&state.haltKind!=='drawdown')state.running=true;tick(state,feed.markets,feed.solUsd);}
       research.scan(feed);state.discovery=discovery.snapshot();await save();});
   }catch(e){feed.error=e.message;console.error('Market feed:',e.message);}
@@ -98,7 +96,7 @@ const server=http.createServer(async(req,res)=>{
       if(req.method!=='GET')return json(res,405,{error:'Kho nghiên cứu chỉ đọc.'});
       if(url.pathname==='/api/research')return json(res,200,{journal:research.status(),paper:paperResearch.status(),files:await research.files()});
       if(url.pathname==='/api/research/file'){const name=url.searchParams.get('name'),content=await research.document(name);res.writeHead(200,{'Content-Type':'application/gzip','Content-Disposition':'attachment; filename="meme-pilot-research.jsonl.gz"','Cache-Control':'no-store'});return res.end(content);}
-      if(url.pathname==='/api/research/paper'){return json(res,200,{policy:'quote-shadow; not calibrated backtest',status:paperResearch.status(),state:paperResearch.state});}
+      if(url.pathname==='/api/research/paper'){return json(res,200,{policy:'archived pre-migration study; disabled, no new quotes or fills',status:paperResearch.status(),state:paperResearch.state});}
       if(url.pathname==='/api/research/export'){const day=url.searchParams.get('day')??new Date().toISOString().slice(0,10);if(!/^\d{4}-\d{2}-\d{2}$/.test(day))throw Error('Ngày không hợp lệ.');await research.flush();const files=(await research.files()).filter(n=>n.startsWith(day+'/'));if(!files.length)return json(res,404,{error:'Ngày này chưa có log nghiên cứu.'});const parts=[];let bytes=0;for(const name of files){const content=await research.document(name);bytes+=content.length;if(bytes>32*1024*1024)return json(res,413,{error:'Log ngày lớn hơn 32 MiB; tải từng phần qua danh mục /api/research.'});parts.push(content);}res.writeHead(200,{'Content-Type':'application/gzip','Content-Disposition':`attachment; filename="meme-pilot-research-${day}.jsonl.gz"`,'Cache-Control':'no-store'});return res.end(Buffer.concat(parts));}
       return json(res,404,{error:'Không có tệp nghiên cứu.'});
     }
@@ -161,7 +159,7 @@ const server=http.createServer(async(req,res)=>{
       return json(res,404,{error:'Không tìm thấy thao tác ví.'});
     }
     if(req.method==='GET'&&url.pathname==='/api/state')return json(res,200,snapshot(req));
-    if(req.method==='GET'&&url.pathname==='/api/health')return json(res,200,{status:'ok',mode:liveOnly?'live':'paper',rpcMode:execution.rpcMode,heliusConfigured:execution.heliusConfigured,rpcProvider:execution.provider,apiKeyRequired:false,unattendedSigningAvailable:!!ownerAgent,strategyVersion:STRATEGY_VERSION,swapProvider:liveOnly?'PumpSwap + pump.fun':null,signingMode:ownerAgent?'owner-agent':liveOnly?'owner-wallet':null,buildRevision:process.env.RAILWAY_GIT_COMMIT_SHA??'local',running:liveOnly?false:state.running,readOnly,marketReady:!!feed.updatedAt,marketFresh:!!feed.updatedAt&&!feed.error&&Date.now()-feed.updatedAt<DEFAULTS.maxPriceAgeMs});
+    if(req.method==='GET'&&url.pathname==='/api/health')return json(res,200,{status:'ok',mode:liveOnly?'live':'paper',rpcMode:execution.rpcMode,heliusConfigured:execution.heliusConfigured,rpcProvider:execution.provider,apiKeyRequired:false,unattendedSigningAvailable:!!ownerAgent,strategyVersion:STRATEGY_VERSION,swapProvider:liveOnly?'PumpSwap':null,signingMode:ownerAgent?'owner-agent':liveOnly?'owner-wallet':null,buildRevision:process.env.RAILWAY_GIT_COMMIT_SHA??'local',running:liveOnly?false:state.running,readOnly,marketReady:!!feed.updatedAt,marketFresh:!!feed.updatedAt&&!feed.error&&Date.now()-feed.updatedAt<DEFAULTS.maxPriceAgeMs});
     if(req.method==='GET'&&url.pathname==='/api/export'){
       if(liveOnly){if(!auth.authenticated(req))return json(res,401,{error:'Cần xác thực bằng ví chủ.'});return json(res,200,{mode:'live',walletMode:'owner',message:'Xuất lịch sử trong phần ví chủ trên trình duyệt đang giao dịch.'});}
       res.writeHead(200,{'Content-Type':'application/json','Content-Disposition':'attachment; filename="paper-trades.json"','Cache-Control':'no-store'});return res.end(JSON.stringify({mode:'paper',exportedAt:new Date().toISOString(),settings:state.settings,trades:state.trades},null,2));
@@ -209,6 +207,6 @@ server.listen(port,host,()=>{if(!auth.origin)auth.origin=`http://127.0.0.1:${ser
 const timer=setInterval(refresh,SCAN_RULES.intervalMs);
 const agentTimer=ownerAgent?setInterval(()=>ownerAgent.tick(feed),2000):null;
 const telegramTimer=ownerAgent?setInterval(async()=>{await ownerAgent.training.tick(ownerAgent);await ownerAgent.telegram.tick(ownerAgent);},2000):null;
-const researchTimer=setInterval(()=>{research.flush();paperResearch.tick(feed,{liveBusy:!!ownerAgent&&(ownerAgent.busy||!!ownerAgent.state?.pending||(ownerAgent.state?.networkFailures??0)>0||!!ownerAgent.state?.positions.some(p=>p.exitBlocked))});},3100);
+const researchTimer=setInterval(()=>research.flush(),3100);
 async function shutdown(){clearInterval(timer);clearInterval(researchTimer);if(agentTimer)clearInterval(agentTimer);if(telegramTimer)clearInterval(telegramTimer);server.close();if(ownerAgent)await ownerAgent.pause(true);await serial(async()=>{state.running=false;await save();});await research.flush();process.exit(0);}
 process.on('SIGTERM',shutdown);process.on('SIGINT',shutdown);

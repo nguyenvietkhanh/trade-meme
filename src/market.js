@@ -5,7 +5,7 @@ export async function fetchJson(url,{timeoutMs=12000,...options}={}) {
   if(!response.ok) throw Error(`Dịch vụ bên ngoài trả HTTP ${response.status}`);
   return response.json();
 }
-export async function loadMarkets(extraMints=[],preferredPools={},discovery=null,pumpFun=null) {
+export async function loadMarkets(extraMints=[],preferredPools={},discovery=null) {
   const queries=['pumpswap','pump','solana'];
   const discover=()=>Promise.allSettled([
     ...queries.map(q=>fetchJson('https://api.dexscreener.com/latest/dex/search?q='+q)),
@@ -51,17 +51,8 @@ export async function loadMarkets(extraMints=[],preferredPools={},discovery=null
     const prior=seen.get(m.mint);
     if(!prior||(m.dexId==='pumpswap'&&prior.dexId!=='pumpswap')||((m.dexId==='pumpswap')===(prior.dexId==='pumpswap')&&prior.liquidityUsd<m.liquidityUsd))seen.set(m.mint,m);
   }
-  let pumpFunStatus=null;
-  if(pumpFun)try{const pre=pumpFun.cachedMarkets?pumpFun.cachedMarkets(solUsd,extraMints):await pumpFun.markets(solUsd,extraMints);pumpFunStatus=pre.diagnostics??null;warnings.push(...pre.warnings);for(const m of pre.markets){
-    const prior=seen.get(m.mint);
-    // A DexScreener pumpfun row is not a verified curve. Prefer fresh on-chain
-    // curve data, while preserving migrated PumpSwap pools and tracked routes.
-    if(m.venue!=='pumpfun'||!Number.isFinite(m.updatedAt)||Date.now()-m.updatedAt>30000||m.updatedAt>Date.now())continue;
-    if(prior?.dexId==='pumpswap'||preferredPools[m.mint]&&preferredPools[m.mint]!==m.pairAddress)continue;
-    seen.set(m.mint,m);
-  }}catch{pumpFunStatus={status:'unavailable',message:'pump.fun trước migrate: chưa đọc được trạng thái nguồn.'};warnings.push('Nguồn bonding curve chưa xác minh được; nhánh PumpSwap vẫn quét bình thường.');}
-  const all=[...seen.values()];discovery?.remember(all.filter(m=>m.dexId==='pumpswap'));
+  const all=[...seen.values()].filter(m=>m.dexId==='pumpswap'||extraMints.includes(m.mint));discovery?.remember(all.filter(m=>m.dexId==='pumpswap'));
   const priority=new Map(all.map(m=>[m,rankMarket(m).roughEligible?2:coarseMarket(m).eligible?1:0]));
   const markets=all.sort((a,b)=>priority.get(b)-priority.get(a)||b.liquidityUsd-a.liquidityUsd).filter((m,i)=>i<60||extraMints.includes(m.mint));
-  return {solUsd,markets,updatedAt:Date.now(),warnings,sources:{searches:good.length,newSolanaProfiles:profileMints.length,newPumpSwapPools:newPoolMints.length,revisitedTokens:revisited.length,discoveryQueue:discovery?.entries.size??0,preMigrationCandidates:all.filter(m=>m.venue==='pumpfun').length,pumpFun:pumpFunStatus,discoveredCandidates:all.length,shortlistedCandidates:markets.length}};
+  return {solUsd,markets,updatedAt:Date.now(),warnings,sources:{searches:good.length,newSolanaProfiles:profileMints.length,newPumpSwapPools:newPoolMints.length,revisitedTokens:revisited.length,discoveryQueue:discovery?.entries.size??0,preMigrationEnabled:false,discoveredCandidates:all.length,shortlistedCandidates:markets.length}};
 }

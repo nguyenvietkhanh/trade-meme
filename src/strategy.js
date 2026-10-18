@@ -1,5 +1,5 @@
 import {isPumpCurve} from './venues.js';
-import {TRADE_RULES as T,TREND_RULES,ENTRY_EXCLUDED_MINTS,CURVE_RULES} from './desk-rules.js';
+import {TRADE_RULES as T,TREND_RULES,ENTRY_EXCLUDED_MINTS,CURVE_RULES,SCREENER_RULES} from './desk-rules.js';
 const finite=Number.isFinite,pct=v=>finite(v)&&v>=0&&v<=100;
 const clamp=v=>finite(v)?Math.max(0,Math.min(1,v)):0;
 const MAJOR_NAMES=new Set(['SOL','SOLANA','WSOL','USDC','USD COIN','USDT','TETHER','BONK','WIF','DOGWIFHAT','POPCAT']);
@@ -9,8 +9,10 @@ export function coarseMarket(m,s=T,now=Date.now()){
  const fail=(ok,code,text)=>{if(!ok){red_flags.push(code);reasons.push(text);}};
  fail(m.blacklisted!==true,'BLACKLISTED_MINT','Mint đã vào blacklist giả mạo token lớn');
  fail(!ENTRY_EXCLUDED_MINTS.includes(m.mint),'OWNER_EXCLUDED_MINT','Mint chủ ví chỉ định tránh mua theo mẫu H4');
- fail(m.dexId==='pumpswap'||isPumpCurve(m),'UNSUPPORTED_DEX','Không phải PumpSwap hoặc bonding curve pump.fun');
- fail(finite(m.valuationUsd)&&m.valuationUsd>=s.minMarketCapUsd&&m.valuationUsd<=s.maxMarketCapUsd&&(['marketCap','pump-fdv',...(isPumpCurve(m)?['curve-marketCap']:[])].includes(m.valuationSource)),'INVALID_MARKET_CAP',`Vốn hóa ngoài $${s.minMarketCapUsd.toLocaleString('en-US')}–$${s.maxMarketCapUsd.toLocaleString('en-US')} hoặc thiếu; FDV chỉ dùng mint đuôi pump`);
+ fail(m.dexId==='pumpswap'&&!isPumpCurve(m),'UNSUPPORTED_DEX','Chỉ mua pool PumpSwap; đã tắt mua pump.fun trước migrate');
+ const capKnown=finite(m.valuationUsd)&&m.valuationUsd>0;
+ fail(capKnown,'MISSING_MARKET_CAP','Thiếu vốn hóa hợp lệ');
+ if(capKnown){fail(m.valuationUsd>=s.minMarketCapUsd,'MARKET_CAP_TOO_LOW',`Vốn hóa $${m.valuationUsd.toLocaleString('en-US')} dưới $${s.minMarketCapUsd.toLocaleString('en-US')}`);fail(m.valuationUsd<=s.maxMarketCapUsd,'MARKET_CAP_TOO_HIGH',`Vốn hóa $${m.valuationUsd.toLocaleString('en-US')} vượt $${s.maxMarketCapUsd.toLocaleString('en-US')}`);fail(['marketCap','pump-fdv'].includes(m.valuationSource),'UNTRUSTED_MARKET_CAP','Chưa có market cap đáng tin; FDV chỉ dùng cho mint đuôi pump');}
  fail(m.valuationSource!=='pump-fdv'||String(m.mint??'').endsWith('pump'),'INVALID_FDV_FALLBACK','Không cho FDV thay market cap với mint khác đuôi pump');
  fail(![m.symbol,m.name].some(x=>MAJOR_NAMES.has(String(x??'').normalize('NFKC').replace(/[\u200B-\u200D\uFEFF]/g,'').trim().toUpperCase())),'MAJOR_TOKEN_OR_IMPERSONATOR','Tên/symbol thuộc token lớn; không mua bản trùng tên trong tập low-cap');
  return {eligible:!reasons.length,reasons,red_flags};
@@ -36,11 +38,11 @@ export function rankMarket(m,s=T,now=Date.now()){
  const volumes=[m.volume5mUsd,m.volume1hUsd,m.volume24hUsd];
  fail(volumes.every(v=>v==null||finite(v)&&v>=0)&&!(finite(volumes[0])&&finite(volumes[1])&&volumes[0]>volumes[1])&&!(finite(volumes[1])&&finite(volumes[2])&&volumes[1]>volumes[2]),'INCONSISTENT_VOLUME','Volume âm hoặc mâu thuẫn');
  if(curve){fail(finite(m.pairCreatedAt)&&m.pairCreatedAt<=now-CURVE_RULES.minTokenAgeMs,'CURVE_TOO_NEW','Pump.fun cần ít nhất 3 phút lịch sử');fail(m.historyComplete===true&&finite(m.activityCheckedAt)&&fresh(m.activityCheckedAt),'CURVE_ACTIVITY_UNVERIFIED','Lịch sử trade curve thiếu hoặc cũ');fail(Number.isSafeInteger(m.uniqueBuyers5m)&&m.uniqueBuyers5m>=CURVE_RULES.minUniqueBuyers5m&&m.uniqueBuyers5m/Math.max(1,m.buys5m)>=CURVE_RULES.minUniqueBuyerRatio,'CURVE_BUYERS_UNVERIFIED','Chưa đủ ví mua độc lập cho curve');fail(m.creatorSoldRecently===false&&m.suspectedBundle===false,'CURVE_DEV_OR_BUNDLE','Dev vừa bán hoặc có cụm mua đồng bộ đáng ngờ');}
- const roughEligible=reasons.length===0;
+ const roughEligible=reasons.length===0,marketFlagEnd=red_flags.length;
  const marketReasons=reasons.slice(coarse.reasons.length),safetyStart=reasons.length;
  fail(!m.verificationError,'VERIFICATION_PROVIDER_ERROR',m.verificationError);
  fail(e.mint===m.mint&&e.pairAddress===m.pairAddress&&fresh(e.checkedAt),'MISSING_SAFETY_EVIDENCE','Thiếu kiểm chứng an toàn mới, đúng mint/pool');
- const reserve=finite(m.liquidityQuoteSol)?m.liquidityQuoteSol:e.mint===m.mint&&e.pairAddress===m.pairAddress&&fresh(e.checkedAt)?e.quoteReserveSol:null;
+ const reserve=e.mint===m.mint&&e.pairAddress===m.pairAddress&&fresh(e.checkedAt)?e.quoteReserveSol:null;
  fail(finite(reserve)&&reserve>=20,'UNVERIFIED_QUOTE_RESERVE','Chưa xác minh dự trữ SOL thực của pool ≥20 SOL');
  fail(e.mintRevoked===true&&e.freezeRevoked===true,'ACTIVE_OR_UNKNOWN_AUTHORITY','Mint/freeze chưa xác nhận revoke');
  fail(e.tokenProgram==='spl-token'||e.tokenProgram==='spl-token-2022'&&e.extensionsSafe===true,'UNSAFE_TOKEN_PROGRAM','Token program hoặc extension chưa được kiểm tra');
@@ -49,12 +51,13 @@ export function rankMarket(m,s=T,now=Date.now()){
  fail(e.devPct==null||pct(e.devPct)&&e.devPct<=5,'DEV_CONCENTRATION','Creator nắm quá 5% hoặc dữ liệu sai');
  if(!curve)fail(e.riskWarningsChecked===true&&Array.isArray(e.criticalWarnings)&&e.criticalWarnings.length===0,'RUG_WARNINGS','Thiếu RugCheck hoặc có rủi ro nghiêm trọng');
  fail(e.roundTripQuoteOk===true&&finite(e.probeSol)&&e.probeSol>0&&finite(e.roundTripLossPct)&&e.roundTripLossPct>=0&&e.roundTripLossPct<=6&&pct(e.buyImpactPct)&&e.buyImpactPct<=2&&pct(e.sellImpactPct)&&e.sellImpactPct<=2,'ROUND_TRIP_UNVERIFIED',curve?'Quote curve theo cỡ lệnh chưa đạt hao hụt ≤6%, impact ≤2%':'Jupiter quote vòng theo cỡ lệnh chưa đạt hao hụt ≤6%, impact mỗi chiều ≤2%');
+ fail(e.roundTripQuoteOk!==true||fresh(e.quoteCheckedAt),'QUOTE_STALE','Quote chưa có thời gian xác minh hoặc đã quá 30 giây');
  if(curve){fail(e.curveVerified===true&&e.curveComplete===false&&e.roundTripProvider==='pumpfun','CURVE_UNVERIFIED','Chưa xác minh curve chính thức và quote trực tiếp');fail(Number.isSafeInteger(e.holderCount)&&e.holderCount>=CURVE_RULES.minHolderCount,'CURVE_HOLDERS_LOW','Curve cần ít nhất 30 holder');fail(pct(e.devPct)&&e.devPct<=5,'CURVE_CREATOR_UNKNOWN','Chưa xác minh creator của curve');}
  const h4=e.h4Risk,h4Bound=h4&&typeof h4==='object'&&h4.mint===m.mint&&h4.pairAddress===m.pairAddress&&finite(h4.checkedAt)&&h4.checkedAt<=now;
  const h4Known=h4Bound&&now-h4.checkedAt<=TREND_RULES.h4MaxAgeMs&&['clear','reject'].includes(h4.state);
  const h4Rejected=h4Bound&&h4.state==='reject'&&now-h4.checkedAt<=TREND_RULES.h4RejectMemoryMs;
  fail(curve||!h4Rejected,'H4_DUMP_PATTERN','H4 đỏ mạnh/râu trên dài và giá tụt sâu sau nhịp tăng vọt; bỏ qua mua mới');
- const safetyReasons=reasons.slice(safetyStart);
+ const safetyReasons=reasons.slice(safetyStart),safetyFlagEnd=red_flags.length;
  fail(m.signalConfirmed===true,'UNCONFIRMED_SIGNAL','Chờ 2 lần quét liên tiếp cách 10–15 giây');
  const acceleration=curve?(finite(m.volume1mUsd)&&finite(m.volume5mUsd)&&m.volume5mUsd>m.volume1mUsd?m.volume1mUsd/((m.volume5mUsd-m.volume1mUsd)/4):null):finite(m.volume5mUsd)&&finite(m.volume1hUsd)&&m.volume1hUsd>m.volume5mUsd?m.volume5mUsd/((m.volume1hUsd-m.volume5mUsd)/11):null;
  const ratio=m.buys5m/Math.max(1,m.sells5m);
@@ -73,10 +76,16 @@ export function rankMarket(m,s=T,now=Date.now()){
  const washPenalty=(oddVolume?5:0)+(ratio>4?5:0),boostPenalty=m.boosted?5:0;
  const h4Penalty=curve||h4Known?0:5;
  const score=Math.round(Math.max(0,Object.values(parts).reduce((a,b)=>a+b,0)-washPenalty-boostPenalty-h4Penalty));
- fail(score>=60,'LOW_SCORE','Điểm dưới 60/100');
- const blockingStage=!coarse.eligible?'discovery':!roughEligible?'market':safetyReasons.length?'safety':m.signalConfirmed!==true?'confirmation':score<60?'score':'ready';
- const primaryReasons=blockingStage==='discovery'?coarse.reasons:blockingStage==='market'?marketReasons:blockingStage==='safety'?safetyReasons:blockingStage==='confirmation'?['Chờ 2 lần quét liên tiếp cách 10–15 giây']:blockingStage==='score'?['Điểm dưới 60/100']:[];
- return {roughEligible,score,eligible:!reasons.length,reasons,primaryReasons,blockingStage,red_flags,scoreParts:parts,missingScoreData:missing,washPenalty,boostPenalty,h4Penalty,h4Status:h4Rejected?'reject':h4Known?h4.state:'unknown',volumeAcceleration:acceleration,buyShare:trades?m.buys5m/trades:0,orderSol:e.probeSol??null,coarseRejected:!coarse.eligible};
+ const minScore=SCREENER_RULES.minScore;
+ fail(score>=minScore,'LOW_SCORE',`Điểm dưới ${minScore}/100`);
+ const blockingStage=!coarse.eligible?'discovery':!roughEligible?'market':safetyReasons.length?'safety':m.signalConfirmed!==true?'confirmation':score<minScore?'score':'ready';
+ const primaryReasons=blockingStage==='discovery'?coarse.reasons:blockingStage==='market'?marketReasons:blockingStage==='safety'?safetyReasons:blockingStage==='confirmation'?['Chờ 2 lần quét liên tiếp cách 10–15 giây']:blockingStage==='score'?[`Điểm dưới ${minScore}/100`]:[];
+ const preQuoteEligible=roughEligible&&score>=minScore&&red_flags.every(code=>['ROUND_TRIP_UNVERIFIED','QUOTE_STALE','UNCONFIRMED_SIGNAL','LOW_SCORE'].includes(code));
+ const unavailable={MISSING_MARKET_CAP:true,UNTRUSTED_MARKET_CAP:true,STALE_MARKET:true,MISSING_IDENTITY:true,INVALID_PRICE:true,VERIFICATION_PROVIDER_ERROR:true,MISSING_SAFETY_EVIDENCE:true,UNVERIFIED_QUOTE_RESERVE:!finite(reserve),ACTIVE_OR_UNKNOWN_AUTHORITY:typeof e.mintRevoked!=='boolean'||typeof e.freezeRevoked!=='boolean',UNSAFE_TOKEN_PROGRAM:!e.tokenProgram||e.tokenProgram==='spl-token-2022'&&typeof e.extensionsSafe!=='boolean',LP_UNVERIFIED:!pct(e.lpSecuredPct),HOLDER_CONCENTRATION:e.top10ExcludesPool!==true||!pct(e.top10Pct)||!pct(e.largestHolderPct),RUG_WARNINGS:e.riskWarningsChecked!==true||!Array.isArray(e.criticalWarnings),ROUND_TRIP_UNVERIFIED:e.roundTripQuoteOk!==true,QUOTE_STALE:true,UNCONFIRMED_SIGNAL:true};
+ const missingData=red_flags.filter(code=>unavailable[code]===true),failedChecks=red_flags.filter(code=>!missingData.includes(code));
+ const primaryFlags=blockingStage==='discovery'?coarse.red_flags:blockingStage==='market'?red_flags.slice(coarse.red_flags.length,marketFlagEnd):blockingStage==='safety'?red_flags.slice(marketFlagEnd,safetyFlagEnd):blockingStage==='confirmation'?['UNCONFIRMED_SIGNAL']:blockingStage==='score'?['LOW_SCORE']:[];
+ const blockingCategory=primaryFlags.some(code=>missingData.includes(code))?'missing-data':primaryFlags.length?'rule-failed':'ready';
+ return {roughEligible,preQuoteEligible,minScore,missingData,failedChecks,blockingCategory,primaryFlags,score,eligible:!reasons.length,reasons,primaryReasons,blockingStage,red_flags,scoreParts:parts,missingScoreData:missing,washPenalty,boostPenalty,h4Penalty,h4Status:h4Rejected?'reject':h4Known?h4.state:'unknown',volumeAcceleration:acceleration,buyShare:trades?m.buys5m/trades:0,orderSol:e.probeSol??null,coarseRejected:!coarse.eligible};
 }
 export function decideMarket(m,s=T,now=Date.now()){
  const r=rankMarket(m,s,now);

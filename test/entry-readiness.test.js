@@ -8,7 +8,7 @@ import {verifiedMarket} from './fixtures/verified-market.js';
 const now=Date.now();
 
 test('missing optional Dex reserves reach RPC verification but cannot pass BUY until actual reserves are proven',()=>{
- const m=verifiedMarket({liquidityQuoteSol:null},now);
+ const m=verifiedMarket({liquidityQuoteSol:null,evidence:{quoteReserveSol:undefined}},now);
  assert.equal(rankMarket(m,undefined,now).roughEligible,true);assert.equal(rankMarket(m,undefined,now).eligible,false);
  const good={...m,evidence:{...m.evidence,quoteReserveSol:20}};
  assert.equal(rankMarket(good,undefined,now).eligible,true);

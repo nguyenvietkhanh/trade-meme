@@ -20,7 +20,7 @@ test('FDV fallback is limited to pump suffix, legacy scanner cooldown cannot blo
  const m=verifiedMarket({},now);assert.equal(rankMarket({...m,mint:'samplepump',valuationSource:'pump-fdv',evidence:{...m.evidence,mint:'samplepump'}},R,now).eligible,true);
  assert.equal(coarseMarket({...m,valuationSource:'pump-fdv'},R,now).eligible,false);
  assert.equal(rankMarket({...m,coarseCooldownUntil:now+1800000},R,now).eligible,true);
- assert.equal(rankMarket({...m,liquidityQuoteSol:null,liquidityUsd:9999999},R,now).eligible,false);
+ assert.equal(rankMarket({...m,liquidityQuoteSol:null,liquidityUsd:9999999,evidence:{...m.evidence,quoteReserveSol:undefined}},R,now).eligible,false);
 });
 test('two scans confirm in 10–15 seconds and an intervening dump resets confirmation',()=>{
  const s=freshState(now),m=verifiedMarket({},now);observeMarkets(s,[m],now);

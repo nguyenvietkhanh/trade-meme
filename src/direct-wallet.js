@@ -23,7 +23,7 @@ export function verifyOwnerTransaction(encoded,owner=DEFAULT_OWNER){
 // This service never possesses a wallet key or signs. The owner's wallet signs in the browser.
 export class DirectWallet{
  constructor(execution){this.execution=execution;this.owner=DEFAULT_OWNER;this.intent=null;this.watched=[];}
- configure(){return {walletMode:'owner',rpcProvider:this.execution.provider,swapProvider:'PumpSwap + pump.fun',swapReady:true,signingMode:'owner-wallet',unattendedSigning:false,profitRecipient:PROFIT_RECIPIENT};}
+ configure(){return {walletMode:'owner',rpcProvider:this.execution.provider,swapProvider:'PumpSwap',swapReady:true,signingMode:'owner-wallet',unattendedSigning:false,profitRecipient:PROFIT_RECIPIENT};}
  async status(minContextSlot){
   try{await this.execution.network();const balanceSol=await this.execution.balance(this.owner,minContextSlot),tokenBalances={};
    if(this.watched.length)for(const a of await this.execution.holdings(this.owner)){const d=a.account.data;if(d.length>=165){const mint=new PublicKey(d.subarray(0,32)).toBase58();if(this.watched.includes(mint))tokenBalances[mint]=(BigInt(tokenBalances[mint]??'0')+d.readBigUInt64LE(64)).toString();}}
@@ -42,6 +42,7 @@ export class DirectWallet{
   const side=input.side;if(!['BUY','SELL'].includes(side))throw Error('Loại lệnh không hợp lệ.');
   if(side==='BUY'&&(feed.error||!feed.updatedAt||Date.now()-feed.updatedAt>DEFAULTS.maxPriceAgeMs||feed.updatedAt>Date.now()||!Number.isFinite(feed.solUsd)||feed.solUsd<=0))throw Error('Chờ dữ liệu thị trường mới.');
   const market=feed.markets.find(m=>m.mint===input.mint);if(!market)throw Error('Token chưa có dữ liệu trong tập quét.');
+  if(side==='BUY'&&(isPumpCurve(market)||input.venue==='pumpfun'||market.dexId!=='pumpswap'))throw Error('Chỉ cho phép BUY PumpSwap; nhánh trước migrate đã tắt.');
   const holdings=await this.execution.holdings(this.owner,market.mint);
   let held=0n;for(const a of holdings){const d=a.account.data;if(d.length>=165&&new PublicKey(d.subarray(0,32)).toBase58()===market.mint)held+=d.readBigUInt64LE(64);}
   const curve=isPumpCurve(market)||input.venue==='pumpfun';let amount,sizing={};

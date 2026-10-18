@@ -109,6 +109,7 @@ export class OwnerAgent{
   let prepared;const epoch=this.commandEpoch,started=performance.now(),decisionAt=Date.now();
   const attemptId=`${decisionAt}:${key}:${s.orderAttempts[key]}`;this.research?.execution('preparing',order,{attemptId});
   try{
+   if(order.side==='BUY'&&order.venue==='pumpfun')throw Error('Đã tắt BUY pump.fun trước migrate.');
    prepared=await withRpcPriority(order.side==='SELL'?'exit':'normal',()=>this.direct.prepare(order,feed));
    if(order.side==='SELL'&&BigInt(prepared.intent.amount)>BigInt(s.positions.find(p=>p.mint===order.mint)?.rawQuantity??'0'))throw Error('Lệnh vượt số token ứng dụng quản lý.');
    const prepareMs=performance.now()-started;

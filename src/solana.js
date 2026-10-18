@@ -4,6 +4,7 @@ import {OnlinePumpAmmSdk,poolPda,PUMP_PROGRAM_ID} from '@pump-fun/pump-swap-sdk'
 import {DEFAULT_OWNER} from './security.js';
 import {jupiterSellQuote,jupiterRoundTrip,jupiterEntryQuote} from './sell-quote.js';
 import {backoffFetch} from './provider-fetch.js';
+import {quoteScheduler} from './quote-queue.js';
 import {buildPumpSwap,PUMP_PROGRAM} from './pump-swap.js';
 import {SOL} from './engine.js';
 import {isPumpCurve} from './venues.js';
@@ -49,7 +50,7 @@ function tokenData(info){
  return {mint:new PublicKey(data.subarray(0,32)).toBase58(),owner:new PublicKey(data.subarray(32,64)).toBase58(),amount:data.readBigUInt64LE(64).toString(),delegate:data.subarray(72,165).toString('hex'),raw:data.toString('base64')};
 }
 export class SolanaExecution{
- constructor(url){const config=url?{endpoints:[url],heliusConfigured:false,mode:'custom'}:rpcConfiguration();this.heliusConfigured=config.heliusConfigured;this.rpcMode=config.mode;this.rpc=keylessConnection(config.endpoints,{preferPrimary:config.heliusConfigured});this.mintFacts=new Map();this.quoteFetch=backoffFetch(undefined,{provider:'Jupiter'});}
+ constructor(url){const config=url?{endpoints:[url],heliusConfigured:false,mode:'custom'}:rpcConfiguration();this.heliusConfigured=config.heliusConfigured;this.rpcMode=config.mode;this.rpc=keylessConnection(config.endpoints,{preferPrimary:config.heliusConfigured});this.mintFacts=new Map();this.quoteFetch=backoffFetch(undefined,{provider:'Jupiter',minBackoffMs:30000});this.quoteFetch.scheduleQuote=quoteScheduler();}
  get provider(){return this.heliusConfigured?(this.rpc.rpcDiagnostics?.().activeHost==='mainnet.helius-rpc.com'?'Helius RPC':'Solana RPC công khai · dự phòng Helius'):'Solana RPC công khai';}
  async network(){if(await this.rpc.getGenesisHash()!==MAINNET_GENESIS_HASH)throw new TradePolicyError('RPC không phải Solana mainnet.');}
  async balance(address,minContextSlot){return (await this.rpc.getBalance(new PublicKey(address),minContextSlot?{commitment:'confirmed',minContextSlot}:'confirmed'))/1e9;}
@@ -68,8 +69,8 @@ export class SolanaExecution{
   const facts={decimals:m.decimals,mintRevoked:true,freezeRevoked:true,tokenProgram:program.equals(TOKEN)?'spl-token':'spl-token-2022',extensionsSafe:true};
   this.mintFacts.set(mint,facts);return facts; // Only irreversible authority facts, never mutable supply/holders.
  }
- async inspectMarket(m){
-  if(isPumpCurve(m))return this.inspectCurveMarket(m);
+ async inspectMarketFacts(m){
+  if(isPumpCurve(m)||m.dexId&&m.dexId!=='pumpswap')throw new TradePolicyError('Chỉ kiểm tra mua PumpSwap.');
   const facts=await this.mintCheck(m.mint),mint=new PublicKey(m.mint),poolKey=new PublicKey(m.pairAddress),state=await new OnlinePumpAmmSdk(this.rpc).swapSolanaState(poolKey,new PublicKey(DEFAULT_OWNER)),{pool}=state;
   if(!pool.baseMint.equals(mint)||pool.quoteMint.toBase58()!==SOL||!poolPda(pool.index,pool.creator,pool.baseMint,pool.quoteMint).equals(poolKey))throw Error('Pool không khớp mint/PDA.');
   const curve=PublicKey.findProgramAddressSync([Buffer.from('bonding-curve'),mint.toBuffer()],PUMP_PROGRAM_ID)[0].toBase58();
@@ -77,8 +78,18 @@ export class SolanaExecution{
   // Full owner aggregation below already includes every large account; a redundant largest-accounts
   // request adds latency and can reject an otherwise supported indexed RPC.
   const holders=await this.holderFacts(mint,program,excluded,new Set([pool.poolBaseTokenAccount.toBase58()]),m.creatorAddress);
+  return {...facts,quoteReserveSol:Number(state.poolQuoteAmount.toString())/1e9,...holders};
+ }
+ // Compatibility reader; production verification stages facts before requesting any quote.
+ async inspectMarket(m){
+  const facts=await this.inspectMarketFacts(m);
+  if(facts.quoteReserveSol<20||facts.top10Pct>35||facts.largestHolderPct>8||facts.devPct>5)return facts;
   const roundTrip=await this.roundTripQuote(m.mint,String(Math.round(walletOrderSol(await this.balance(DEFAULT_OWNER))*1e9)));
-  return {...facts,...roundTrip,quoteReserveSol:Number(state.poolQuoteAmount.toString())/1e9,...holders};
+  return {...facts,...roundTrip};
+ }
+ async inspectMarketQuote(m){
+  const size=walletOrderSol(await this.balance(DEFAULT_OWNER));if(!size)throw new TradePolicyError('Chưa đủ SOL sau dự phòng gas.');
+  return this.roundTripQuote(m.mint,String(Math.round(size*1e9)));
  }
  async holderFacts(mint,program,excluded,excludedAccounts,creatorAddress){
   const supply=atomic((await this.rpc.getTokenSupply(mint)).value.amount);
@@ -132,6 +143,7 @@ export class SolanaExecution{
  }
  async entryQuote(mint,amount){const q=await jupiterEntryQuote(mint,amount,this.quoteFetch),slot=await this.rpc.getSlot('confirmed');if(q.contextSlot>slot+20||slot-q.contextSlot>20)throw Error('Jupiter entry quote slot đã cũ.');return q;}
  async prepare({keypair,ownerAddress,input,output,amount,poolAddress,reason='',closeEmptyInput=false,referenceMinOut,minContextSlot,venue,referencePriceSol}){
+  if(input===SOL&&venue==='pumpfun')throw new TradePolicyError('Đã tắt BUY pump.fun trước migrate; SELL vị thế cũ vẫn hoạt động.');
   if(input===SOL&&!validBuyLamports(String(amount)))throw new TradePolicyError('Cỡ lệnh SOL không hợp lệ.');
   await this.network();const owner=keypair?.publicKey??new PublicKey(ownerAddress);
   if(input===SOL){const size=walletOrderSol(await this.balance(owner,minContextSlot),venue==='pumpfun'?CURVE_RULES.orderFraction:WALLET_ORDER_FRACTION);if(!size||String(amount)!==String(Math.round(size*1e9)))throw new TradePolicyError('Số dư đã đổi hoặc cỡ lệnh không bằng 20% ví sau dự phòng gas; tính lại quote trước khi ký.');}

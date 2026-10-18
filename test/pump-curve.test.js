@@ -11,11 +11,9 @@ import {curveFixture} from './fixtures/curve-rpc.js';
 import {pumpFixture} from './fixtures/pump-rpc.js';
 import {walletOrderSol,validHistoricalBuy,WALLET_SIZING_VERSION,CURVE_RULES} from '../src/desk-rules.js';
 
-test('official pump.fun exact-SOL instructions use 5% wallet size, fixed input and simulated owned output for SPL and Token-2022',async()=>{
- for(const token2022 of [false,true]){const f=await curveFixture({token2022}),e=new SolanaExecution();e.rpc=f.rpc;
-  const state=await curveState(f.rpc,f.mint.toBase58(),f.address.toBase58()),proof=curveRoundTrip(state,'50000000');assert.equal(proof.probeSol,.05);assert.equal(proof.roundTripProvider,'pumpfun');assert.ok(proof.roundTripLossPct<6);
-  const p=await e.prepare({ownerAddress:f.user.toBase58(),input:SOL,output:f.mint.toBase58(),amount:'50000000',poolAddress:f.address.toBase58(),venue:'pumpfun',referencePriceSol:60/536500000});assert.equal(p.venue,'pumpfun');assert.equal(p.quote.inAmount,'50000000');assert.equal(p.entryQuoteProof.probeSol,.05);assert.ok(p.bytes.length<=1232);
-  const ix=p.quote.routePlan[0].swapInfo;assert.equal(ix.ammKey,f.address.toBase58());await assert.rejects(e.prepare({ownerAddress:f.user.toBase58(),input:SOL,output:f.mint.toBase58(),amount:'200000000',poolAddress:f.address.toBase58(),venue:'pumpfun'}),/5|20|cỡ lệnh/);
+test('low-level execution rejects every curve BUY before any RPC or simulation, including Token-2022',async()=>{
+ for(const token2022 of [false,true]){const f=await curveFixture({token2022}),e=new SolanaExecution();let calls=0;e.network=async()=>{calls++;};
+  await assert.rejects(e.prepare({ownerAddress:f.user.toBase58(),input:SOL,output:f.mint.toBase58(),amount:'50000000',poolAddress:f.address.toBase58(),venue:'pumpfun'}),/Đã tắt BUY/);assert.equal(calls,0);
  }
 });
 test('curve transaction guard rejects wrong PDA/owner, virtual-only liquidity and buys crossing completion',async()=>{
@@ -37,16 +35,6 @@ test('a completed curve never auto-buys the migrated pool, but sells resolve onl
 test('curve allocation is 5% without reintroducing daily/streak pauses, and versioned receipts bind size to the venue',()=>{
  assert.equal(CURVE_RULES.orderFraction,.05);assert.equal(walletOrderSol(1,.05),.05);assert.equal(walletOrderSol(2,.05),.1);assert.equal(walletOrderSol(.05,.05),0);assert.equal(walletOrderSol(1),.2);
  const intent={sizingVersion:WALLET_SIZING_VERSION,walletBalanceLamports:1000000000,venue:'pumpfun',amount:'50000000'};assert.equal(validHistoricalBuy(intent),true);assert.equal(validHistoricalBuy({...intent,amount:'200000000'}),false);assert.equal(validHistoricalBuy({...intent,venue:'pumpswap'}),false);
-});
-
-test('BUY refuses a curve quote that ages beyond five seconds during simulation',async t=>{
- const f=await curveFixture(),e=new SolanaExecution();e.rpc=f.rpc;let now=Date.now();t.mock.method(Date,'now',()=>now);const simulate=f.rpc.simulateTransaction;f.rpc.simulateTransaction=async(...args)=>{const r=await simulate(...args);now+=5001;return r;};
- await assert.rejects(e.prepare({ownerAddress:f.user.toBase58(),input:SOL,output:f.mint.toBase58(),amount:'50000000',poolAddress:f.address.toBase58(),venue:'pumpfun',referencePriceSol:60/536500000}),/quá 5 giây/);
-});
-
-test('curve roundtrip cost includes nonrefundable account overhead instead of counting recoverable token rent as a fee',async()=>{
- const f=await curveFixture(),e=new SolanaExecution();e.rpc=f.rpc;const simulate=f.rpc.simulateTransaction;f.rpc.simulateTransaction=async(...args)=>{const result=await simulate(...args);result.value.accounts[0].lamports-=2900000;return result;};
- await assert.rejects(e.prepare({ownerAddress:f.user.toBase58(),input:SOL,output:f.mint.toBase58(),amount:'50000000',poolAddress:f.address.toBase58(),venue:'pumpfun',referencePriceSol:60/536500000}),/khứ hồi curve vượt 8%/);
 });
 
 test('a curve position can actually build and simulate its sale through the canonical migrated PumpSwap pool',async()=>{
