@@ -1,7 +1,7 @@
 import {freshState,recordBuy,recordSell,riskCheck,exitPlan,event} from './engine.js';
 import {rankMarket} from './strategy.js';
 import {profitOrder,PROFIT_RECIPIENT} from './profit.js';
-import {STRATEGY_VERSION} from './desk-rules.js';
+import {STRATEGY_VERSION,positionLimitReached} from './desk-rules.js';
 
 export function createOwnerLedger(owner,balance){
  if(!Number.isFinite(balance)||balance<.075)throw Error('Cần ít nhất 0,075 SOL để giữ dự phòng và chuẩn bị lệnh 0,02 SOL.');
@@ -23,7 +23,7 @@ export function nextOwnerOrder(s,feed,walletBalance){
  }
  if(feed.error||!feed.updatedAt||now-feed.updatedAt>s.settings.maxPriceAgeMs||feed.updatedAt>now||!validSol||s.buyPaused||s.buyBlockedReason)return null;
  const payout=s.recoveryRequired?null:profitOrder(s,walletBalance);if(payout)return payout;
- if(!Number.isFinite(walletBalance)||s.halted||s.lossPauseUntil>Date.now()||s.positions.length>=s.settings.maxPositions||s.cashSol-.025<.05||walletBalance-.025<.05||s.positions.some(p=>!feed.markets.some(m=>m.mint===p.mint)))return null;
+ if(!Number.isFinite(walletBalance)||s.halted||s.lossPauseUntil>Date.now()||positionLimitReached(s.positions.length,s.settings)||s.cashSol-.025<.05||walletBalance-.025<.05||s.positions.some(p=>!feed.markets.some(m=>m.mint===p.mint)))return null;
  const m=feed.markets.map(m=>({...m,...rankMarket(m,s.settings)})).filter(m=>m.eligible&&s.cashSol-m.orderSol-.005>=s.settings.reserveSol&&walletBalance-m.orderSol-.005>=s.settings.reserveSol&&!s.positions.some(p=>p.mint===m.mint)&&!(s.cooldowns[m.mint]>Date.now())&&!exhausted({side:'BUY',mint:m.mint})).sort((a,b)=>b.score-a.score)[0];
  return m?{side:'BUY',mint:m.mint,symbol:m.symbol,reason:'autonomous-low-cap',orderSol:m.orderSol,strategyVersion:STRATEGY_VERSION,riskSol:m.orderSol*s.settings.stopLossPct/100}:null;
 }

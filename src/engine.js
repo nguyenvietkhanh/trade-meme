@@ -1,4 +1,4 @@
-import {TRADE_RULES as DEFAULTS} from './desk-rules.js';
+import {TRADE_RULES as DEFAULTS,positionLimitReached} from './desk-rules.js';
 import {rankMarket} from './strategy.js';
 import {recordEvaluation} from './scanner.js';
 export const SOL = 'So11111111111111111111111111111111111111112';
@@ -34,7 +34,7 @@ export function riskCheck(state,markets,solUsd,now=Date.now()){
 export function buy(state,m,solUsd,now=Date.now(),source='manual'){
  riskCheck(state,[m],solUsd,now);if(state.halted)throw Error(state.halted);if(state.lossPauseUntil>now)throw Error('Nghỉ 2 giờ sau 3 lệnh thua.');assertMarket(m,now,state.settings);
  const s=state.settings,size=source.startsWith('auto-score:')?rankMarket(m,s,now).orderSol:s.orderSol,cost=size+s.feeSol;
- if(state.positions.length>=s.maxPositions)throw Error('Đã đủ số vị thế cho phép.');
+ if(positionLimitReached(state.positions.length,s))throw Error('Đã đủ số vị thế cho phép.');
  if(state.positions.some(p=>p.mint===m.mint))throw Error('Đã có vị thế token này.');
  if(state.cooldowns[m.mint]>now)throw Error('Token đang khóa mua lại trong 24 giờ.');
  if(state.cashSol-cost<s.reserveSol)throw Error('Không đủ SOL ngoài khoản dự phòng.');

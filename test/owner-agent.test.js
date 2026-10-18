@@ -147,3 +147,13 @@ test('legacy recovery and storage BUY locks do not survive explicit enable; inco
   await f.agent.tick(f.feed());assert.equal(f.sends,1);assert.equal(f.agent.state.pending.intent.side,'BUY');
  }finally{await f.cleanup();}
 });
+
+test('restarting or restoring more than five positions preserves them and migrates the old count cap',async()=>{
+ const f=await fixture();try{
+  const {recordBuy}=await import('../src/engine.js');await f.agent.enable();await f.agent.pause();
+  for(let i=0;i<7;i++){const mint=Keypair.generate().publicKey.toBase58(),m=verifiedMarket({mint,priceUsd:1});recordBuy(f.agent.state,m,100,{quantity:2,costSol:.0201,priceUsd:1,rawQuantity:'2000000',decimals:6,signature:'restore-many-'+i},Date.now(),'fixture','live');}
+  f.agent.state.settings.maxPositions=2;const cash=f.agent.state.cashSol;await f.agent.save();
+  const restarted=new OwnerAgent(f.dir,f.direct,f.execution,f.owner);await restarted.load();assert.equal(restarted.state.positions.length,7);assert.equal(restarted.state.trades.length,7);assert.equal(restarted.state.cashSol,cash);assert.equal(restarted.state.settings.maxPositions,null);assert.equal(restarted.state.running,false);
+  await restarted.restore(JSON.parse(await readFile(f.agent.file,'utf8')));assert.equal(restarted.state.positions.length,7);assert.equal(restarted.state.cashSol,cash);
+ }finally{await f.cleanup();}
+});

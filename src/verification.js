@@ -29,7 +29,7 @@ export class VerificationFeed{
  async enrichCached(markets,tracked=[],now=Date.now()){
   // Rotate candidates by oldest check so two failing high-volume tokens cannot monopolize both jobs.
   const checkedAt=m=>this.cache.get(m.mint+':'+m.pairAddress)?.at??0;
-  const targets=markets.filter(m=>tracked.includes(m.mint)||rankMarket(m,undefined,now).roughEligible).sort((a,b)=>Number(tracked.includes(b.mint))-Number(tracked.includes(a.mint))||checkedAt(a)-checkedAt(b)||b.volume5mUsd-a.volume5mUsd).slice(0,6);
+  const targets=markets.filter(m=>tracked.includes(m.mint)||rankMarket(m,undefined,now).roughEligible).sort((a,b)=>checkedAt(a)-checkedAt(b)||Number(tracked.includes(b.mint))-Number(tracked.includes(a.mint))||b.volume5mUsd-a.volume5mUsd);
   for(const m of targets){
    const key=m.mint+':'+m.pairAddress,cached=this.cache.get(key);
    if(this.jobs.size>=2)break;

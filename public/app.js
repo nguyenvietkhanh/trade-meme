@@ -35,7 +35,7 @@ function render(){
   $('feed-time').textContent=f.updatedAt?`Giá SOL ${money(f.solUsd)} · ${time(f.updatedAt)}`:'Đang lấy giá thật…';
   $('start').disabled=busy||s.running||!fresh;$('pause').disabled=busy||!s.running;
   $('error').textContent=commandError||s.halted||f.error||'';
-  $('risk-summary').innerHTML=[['Vốn hóa tối thiểu',money(cfg.minMarketCapUsd)],['Xu hướng mua','M5 và H1 cùng tăng'],['Nến H4','Tránh đỏ mạnh / tăng vọt rồi xả'],['Mỗi lệnh','0,02–0,03 SOL theo điểm và H4'],['Dự phòng',`${cfg.reserveSol} SOL`],['Cắt lỗ',`−${cfg.stopLossPct}%`],['Chốt lần đầu',`+${cfg.takeProfitTriggerPct}% → bán 78%`],['Phần thả nổi','2×/4×/8× bán 50% · trailing −30/25/20%'],['Time-stop','45 phút chưa vượt +20%'],['Giữ tối đa','6 giờ'],['Mua lại cùng token','Nghỉ 24 giờ'],['Giá mua','Phải mới ≤30 giây'],['Quote khứ hồi','Hao hụt ≤6%'],['Priority + tip','≤0,002 SOL/chiều'],['Retry','Tối đa 3 lần sau lần đầu'],['Thua liên tiếp','3 lệnh → nghỉ BUY 2 giờ'],['Giới hạn lỗ/ngày',`${cfg.maxDailyLossSol} SOL (UTC)`],['Drawdown tối đa',`${cfg.maxDrawdownPct}%`],['Slippage tối đa','Mua 4% · bán 3% · khẩn 10%'],['Phí đã khớp',s.mode==='live'?'Theo receipt Solana':`${cfg.feeSol} SOL`]].map(([a,b])=>`<div><span>${a}</span><strong>${b}</strong></div>`).join('');
+  $('risk-summary').innerHTML=[['Vốn hóa tối thiểu',money(cfg.minMarketCapUsd)],['Xu hướng mua','M5 và H1 cùng tăng'],['Nến H4','Tránh đỏ mạnh / tăng vọt rồi xả'],['Mỗi lệnh','0,02–0,03 SOL theo điểm và H4'],['Số vị thế',cfg.maxPositions==null?'Theo vốn khả dụng':cfg.maxPositions],['Dự phòng',`${cfg.reserveSol} SOL`],['Cắt lỗ',`−${cfg.stopLossPct}%`],['Chốt lần đầu',`+${cfg.takeProfitTriggerPct}% → bán 78%`],['Phần thả nổi','2×/4×/8× bán 50% · trailing −30/25/20%'],['Time-stop','45 phút chưa vượt +20%'],['Giữ tối đa','6 giờ'],['Mua lại cùng token','Nghỉ 24 giờ'],['Giá mua','Phải mới ≤30 giây'],['Quote khứ hồi','Hao hụt ≤6%'],['Priority + tip','≤0,002 SOL/chiều'],['Retry','Tối đa 3 lần sau lần đầu'],['Thua liên tiếp','3 lệnh → nghỉ BUY 2 giờ'],['Giới hạn lỗ/ngày',`${cfg.maxDailyLossSol} SOL (UTC)`],['Drawdown tối đa',`${cfg.maxDrawdownPct}%`],['Slippage tối đa','Mua 4% · bán 3% · khẩn 10%'],['Phí đã khớp',s.mode==='live'?'Theo receipt Solana':`${cfg.feeSol} SOL`]].map(([a,b])=>`<div><span>${a}</span><strong>${b}</strong></div>`).join('');
   const curve=s.curve;
   $('chart-empty').hidden=curve.length>0;
   if(curve.length){
@@ -45,7 +45,7 @@ function render(){
     $('line').setAttribute('d','M'+points.join(' L'));$('area').setAttribute('d','M'+points.join(' L')+' L740,230 L20,230 Z');
     $('curve-start').textContent=time(curve[0].at);$('curve-end').textContent=`${fmt(values.at(-1),5)} SOL · ${time(curve.at(-1).at)}`;
   }else{$('line').setAttribute('d','');$('area').setAttribute('d','');}
-  $('position-count').textContent=`${s.positions.length} / ${cfg.maxPositions}`;
+  $('position-count').textContent=cfg.maxPositions==null?`${s.positions.length} vị thế · theo vốn khả dụng`:`${s.positions.length} / ${cfg.maxPositions}`;
   $('positions').innerHTML=s.positions.map(p=>{
     const m=f.markets.find(m=>m.mint===p.mint),price=m?.priceUsd??p.lastPriceUsd;
     const pnl=p.priceBasis==='sol'?(p.lastQuoteAt&&Date.now()-p.lastQuoteAt<=cfg.maxPriceAgeMs?p.quantity*p.lastPriceSol-p.costSol:null):p.quantity*price*(1-cfg.slippageBps/10000)/f.solUsd-cfg.feeSol-p.costSol;

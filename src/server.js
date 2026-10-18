@@ -133,7 +133,7 @@ const server=http.createServer(async(req,res)=>{
       if(url.pathname.startsWith('/api/live/'))return json(res,410,{error:'Đã bỏ tạo/nạp ví phụ. Dùng ví chủ ký trực tiếp.'});
       if(url.pathname==='/api/direct/config')return await serial(async()=>json(res,200,direct.configure(input)));
       if(url.pathname==='/api/direct/watch'){
-        if(!Array.isArray(input.mints)||input.mints.length>20||input.mints.some(m=>typeof m!=='string'||! /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(m)))throw Error('Danh sách token không hợp lệ.');
+        if(!Array.isArray(input.mints)||input.mints.some(m=>typeof m!=='string'||! /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(m)))throw Error('Danh sách token không hợp lệ.');
         const changed=direct.watched.join(',')!==input.mints.join(',');direct.watched=[...new Set(input.mints)];if(changed)setImmediate(refresh);return json(res,200,{watching:direct.watched.length});
       }
       if(ownerAgent?.vault.exists&&['/api/direct/prepare','/api/direct/submit'].includes(url.pathname))return json(res,409,{error:'Bộ ký server đang quản lý ví; không tạo ngân sách hoặc lệnh từ tab khác.'});

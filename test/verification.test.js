@@ -61,3 +61,11 @@ test('safety verification accepts rough-qualified young, old and undated pools w
  assert.deepEqual(new Set(inspected),new Set(markets.map(m=>m.mint)));
  for(const m of result)assert.equal(rankMarket(m,undefined,now).eligible,true);
 });
+
+test('more than six tracked holdings cannot hide a new candidate from safety verification',async()=>{
+ const held=Array.from({length:8},(_,i)=>verifiedMarket({mint:'1111111111111111111111111111111'+(i+2)},now)),candidate=verifiedMarket({mint:'1111111111111111111111111111111A'},now),called=[];
+ const feed=new VerificationFeed(async url=>{called.push(String(url).split('/').at(-2));return new Response('unavailable',{status:503});});
+ for(const m of held)feed.cache.set(m.mint+':'+m.pairAddress,{at:now-1000,value:{evidence:m.evidence}});
+ await feed.enrichCached([...held,candidate],held.map(m=>m.mint),now);await Promise.all([...feed.jobs.values()]);
+ assert.deepEqual(called,[candidate.mint]);assert.equal(feed.jobs.size,0);
+});

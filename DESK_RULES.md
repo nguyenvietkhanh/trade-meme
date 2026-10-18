@@ -26,7 +26,7 @@ RPC reads a full mint-filtered account distribution, aggregates by token-account
 
 Jupiter quote round trip: exactly 0.03 SOL buys quoted tokens, then quote-sell **all quoted output**. Include a 0.00005 SOL network-fee allowance; loss <=6%, impact <=2% each direction, mint/amount/route/context slot must match. This is a quote check, not a claim that a round-trip simulation or trade occurred.
 
-Safety work runs in at most two background jobs, is cached briefly and does not block the fast price/observation loop. Only rough-qualified candidates and tracked holdings receive expensive checks. Provider errors leave facts unknown and block BUY.
+Safety work runs in at most two background jobs, is cached briefly and does not block the fast price/observation loop. Only rough-qualified candidates and tracked holdings receive expensive checks. Background scheduling prioritizes the oldest verification, with tracked holdings first on ties, so more than six held tokens cannot permanently starve new candidates. Provider errors leave facts unknown and block BUY.
 
 ## Score and entry
 
@@ -34,7 +34,7 @@ Weights total 100: momentum 30, flow 20, structure 20, depth 15, distribution 10
 
 Momentum rewards >=1.5x M5 volume acceleration versus the previous H1 five-minute average and mildly positive M5 price. Flow prefers M5 buy/sell 1.15–2.5. Structure uses actual completed contiguous 1-minute OHLCV, rising local pivot lows, 10–30% pullback from the 30-minute high and a green completed candle. Candle requests are bound to the pool's base mint; insufficient/mismatched bars remain unknown. Pool age receives no score bonus or penalty. Website/social is optional; paid boosts deduct five points.
 
-Two observations separated by 10–15 seconds must retain price/liquidity, and intervening dumping observations reset confirmation. Minimum score 60; scores 60–74 use 0.02 SOL, >=75 use 0.03 SOL, with unknown creator always capped at 0.02. At most two positions, no mixing preexisting wallet assets. Keep >=0.05 SOL native after estimated order overhead; a wallet below reserve cannot BUY. Budget remains <=0.3 SOL.
+Two observations separated by 10–15 seconds must retain price/liquidity, and intervening dumping observations reset confirmation. Minimum score 60; scores 60–74 use 0.02 SOL, >=75 use 0.03 SOL, with unknown creator always capped at 0.02. No fixed position-count ceiling (`maxPositions: null`): each new position must fit the available application/wallet SOL balance after reserve and estimated overhead. Never mix preexisting wallet assets. Keep >=0.05 SOL native after estimated order overhead; a wallet below reserve cannot BUY. Budget remains <=0.3 SOL.
 
 Immediately before entry the bot obtains a fresh Jupiter quote for the **actual tier amount**. The locally built PumpSwap transaction must meet that output reference within the 4% ceiling, as well as its own stricter normal slippage. It does not fetch/sign a Jupiter swap transaction and uses no Jupiter API key. Facts and market-data freshness are rechecked before signing; this is not a pool-age gate. Native outflow, received token quantity, actual paid fees and returned rent are accounted from confirmed receipts; price-per-token uses nominal swap input and confirmed output, not refunded rent as token performance.
 

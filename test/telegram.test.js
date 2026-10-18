@@ -20,7 +20,7 @@ test('Telegram token/chat are encrypted on disk, never returned in status, and d
 test('only confirmed app BUY/SELL receipts enqueue reports; sale PnL and totals use actual ledger accounting',()=>{
  const s=state();assert.equal(enqueueTradeReport(s,pending,{...receipt,status:'pending'}),false);assert.equal(enqueueTradeReport(s,{intent:{side:'PROFIT'}},receipt),false);
  assert.equal(enqueueTradeReport(s,pending,receipt),true);assert.equal(enqueueTradeReport(s,pending,receipt),false);
- const text=s.telegramOutbox[0].text;assert.ok(text.includes('PnL lần bán sau phí: +0.005000 SOL'));assert.ok(text.includes('Tổng PnL đã chốt sau phí: +0.005000 SOL'));assert.ok(text.includes('0.000020 SOL'));assert.ok(text.includes('confirmed-fixture'));
+ const text=s.telegramOutbox[0].text;assert.ok(text.includes('PnL lần bán sau phí: +0.005000 SOL'));assert.ok(text.includes('Tổng PnL đã chốt sau phí: +0.005000 SOL'));assert.ok(text.includes('0.000020 SOL'));assert.ok(text.includes('confirmed-fixture'));assert.ok(text.includes('theo vốn khả dụng'));assert.ok(!text.includes('/null'));
 });
 
 test('notification attempt is saved before sending; successful events do not send again on restart',async()=>setup(async(dir,kp)=>{

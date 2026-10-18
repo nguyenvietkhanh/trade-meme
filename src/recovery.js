@@ -2,7 +2,7 @@ import {PublicKey} from '@solana/web3.js';
 import bs58 from 'bs58';
 import {OFFLINE_PUMP_AMM_PROGRAM as program,PUMP_AMM_PROGRAM_ID,poolPda} from '@pump-fun/pump-swap-sdk';
 import {SOL,freshState,event} from './engine.js';
-import {STRATEGY_VERSION} from './desk-rules.js';
+import {STRATEGY_VERSION,positionLimitReached} from './desk-rules.js';
 
 export function purchaseSignature(value){
  let signature=String(value??'').trim();
@@ -53,7 +53,7 @@ export function adoptPurchase(current,owner,proof,walletBalance){
  if(current?.positions.some(p=>p.mint===proof.mint))throw Error('Token đã có vị thế; không cộng trùng.');
  if(!Number.isFinite(walletBalance)||walletBalance<0)throw Error('Chưa đọc được số dư SOL.');
  const s=current?structuredClone(current):{...freshState(),owner,ownerLedgerVersion:1,strategyVersion:STRATEGY_VERSION,settings:{...freshState().settings,initialSol:.3},cashSol:Math.min(walletBalance,Math.max(0,.3-proof.costSol)),peakEquity:.3,dayStartEquity:.3,pending:null,recordedSignatures:[],realizedNetSol:0,withdrawnSol:0,payoutFeesSol:0,payouts:[],expenses:[]};
- if(s.positions.length>=s.settings.maxPositions)throw Error('Đã đủ số vị thế; không ghi đè vị thế khác.');
+ if(positionLimitReached(s.positions.length,s.settings))throw Error('Đã đủ số vị thế; không ghi đè vị thế khác.');
  const entryPriceSol=proof.swapInputSol/proof.quantity;
  s.positions.push({mint:proof.mint,pairAddress:proof.pairAddress,symbol:proof.mint.slice(0,6),quantity:proof.quantity,initialQuantity:proof.quantity,rawQuantity:proof.rawQuantity,decimals:proof.decimals,costSol:proof.costSol,initialCostSol:proof.costSol,costUsd:0,initialCostUsd:0,entrySolUsd:null,entryPriceUsd:null,lastPriceUsd:null,peakPriceUsd:null,priceBasis:'sol',entryPriceSol,lastPriceSol:entryPriceSol,peakPriceSol:entryPriceSol,nextTakeProfitPriceSol:null,maxGainPct:0,openedAt:proof.openedAt,observedSince:Date.now(),phase:'initial',realizedPnlSol:0,recoveredUsd:0,runnerSteps:0,recoverySignature:proof.signature});
  s.trades.unshift({side:'BUY',mode:'live',mint:proof.mint,symbol:proof.mint.slice(0,6),quantity:proof.quantity,priceUsd:null,sol:proof.costSol,at:proof.openedAt,reason:'verified-recovery',signature:proof.signature,networkFeeSol:proof.networkFeeSol,recovered:true});

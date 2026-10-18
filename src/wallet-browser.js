@@ -11,7 +11,7 @@ async function api(path,body){const r=await fetch(path,{method:body?'POST':'GET'
 const storageKey=()=>`meme-pilot-owner-ledger-v1:${owner}`;
 function message(text){$('wallet-error').textContent=text;}
 function validateLedger(value){
- if(value?.ownerLedgerVersion!==1||value.owner!==owner||!Array.isArray(value.positions)||value.positions.length>5||!Array.isArray(value.trades)||!Array.isArray(value.events)||!Array.isArray(value.curve)||!Array.isArray(value.recordedSignatures)||!Number.isFinite(value.cashSol)||!(value.settings?.initialSol>0&&value.settings.initialSol<=.3))throw Error('Nhật ký không hợp lệ hoặc thuộc ví khác. Không ghi đè dữ liệu đang có.');
+ if(value?.ownerLedgerVersion!==1||value.owner!==owner||!Array.isArray(value.positions)||!Array.isArray(value.trades)||!Array.isArray(value.events)||!Array.isArray(value.curve)||!Array.isArray(value.recordedSignatures)||!Number.isFinite(value.cashSol)||!(value.settings?.initialSol>0&&value.settings.initialSol<=.3))throw Error('Nhật ký không hợp lệ hoặc thuộc ví khác. Không ghi đè dữ liệu đang có.');
  for(const p of value.positions)if(typeof p.rawQuantity!=='string'||!/^\d{1,20}$/.test(p.rawQuantity)||BigInt(p.rawQuantity)<=0n||!Number.isInteger(p.decimals)||p.decimals<0||p.decimals>9||!Number.isFinite(p.quantity)||!(p.quantity>0))throw Error('Vị thế trong nhật ký không hợp lệ.');
  const withdrawnSol=value.withdrawnSol??0,payoutFeesSol=value.payoutFeesSol??0;
  if(!Number.isFinite(withdrawnSol)||withdrawnSol<0||!Number.isFinite(payoutFeesSol)||payoutFeesSol<0||!Array.isArray(value.payouts??[]))throw Error('Nhật ký chuyển lãi không hợp lệ.');

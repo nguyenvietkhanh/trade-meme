@@ -72,3 +72,20 @@ test('a stopped token stays blocked for 24 hours and the entry tier respects the
  const o=nextOwnerOrder(small,{markets:[tier],solUsd:100,updatedAt:Date.now()},.08);assert.equal(o.orderSol,.02);
  assert.equal(nextOwnerOrder(small,{markets:[m],solUsd:100,updatedAt:Date.now()},.08),null,'a 0.03 order must not consume reserve');
 });
+
+test('owner entry opens more than two positions until SOL reserve and fees prevent the next buy',()=>{
+ const s=createOwnerLedger('owner',.3),markets=[],feed=()=>({markets,solUsd:100,updatedAt:Date.now()});
+ assert.equal(s.settings.maxPositions,null);
+ for(let i=0;i<20;i++){
+  const m=verifiedMarket({mint:'capital-'+i,priceUsd:1},Date.now());markets.push(m);
+  const order=nextOwnerOrder(s,feed(),s.cashSol);
+  if(!order)break;
+  assert.equal(order.side,'BUY');assert.equal(order.mint,m.mint);
+  const intent={...order,owner:'owner',amount:'30000000',solUsd:100,priceUsd:1};
+  applyOwnerReceipt(s,{intent},{status:'confirmed',signature:'capital-fill-'+i,tokenDelta:'3000000',solDelta:-.0301,decimals:6,feeSol:.00002});
+  assert.ok(s.cashSol>=s.settings.reserveSol);
+ }
+ assert.ok(s.positions.length>5);assert.ok(s.trades.length>5);assert.equal(nextOwnerOrder(s,feed(),s.cashSol),null);
+ const position=s.positions[0];applyOwnerReceipt(s,{intent:{side:'SELL',mint:position.mint,symbol:position.symbol,solUsd:100,priceUsd:1,reason:'owner-exit'}},{status:'confirmed',signature:'capital-exit',tokenDelta:'-3000000',solDelta:.0302,decimals:6,feeSol:.00002});
+ const resumed=nextOwnerOrder(s,feed(),s.cashSol);assert.equal(resumed.side,'BUY');assert.equal(resumed.mint,markets.at(-1).mint);
+});

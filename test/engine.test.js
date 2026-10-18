@@ -13,8 +13,8 @@ test('round trip deducts slippage and fees on both sides; no fabricated profit',
 test('fresh quotes and minimum liquidity required for buys',()=>{
  for(const m of [market({updatedAt:now-90001}),market({priceUsd:NaN}),market({liquidityUsd:-1}),market({volume24hUsd:-1})])assert.throws(()=>buy(freshState(now),m,sol,now));
 });
-test('reserve, position cap, duplicate and cooldown enforced',()=>{
- const s=freshState(now);buy(s,market(),sol,now);assert.throws(()=>buy(s,market(),sol,now));
+test('reserve, an explicitly configured position cap, duplicate and cooldown are enforced',()=>{
+ const s=freshState(now);s.settings.maxPositions=2;buy(s,market(),sol,now);assert.throws(()=>buy(s,market(),sol,now));
  buy(s,market({mint:'two'}),sol,now);assert.throws(()=>buy(s,market({mint:'three'}),sol,now));
  sell(s,market(),sol,now);assert.throws(()=>buy(s,market(),sol,now+1));
  const poor=freshState(now);poor.cashSol=.06;assert.throws(()=>buy(poor,market(),sol,now));
@@ -45,5 +45,5 @@ test('equity includes SOL/USD change and open marked value',()=>{
  assert.ok(equity(s,[market()],300)<equity(s,[market()],150));
 });
 test('default budget reserves at least 0.05 SOL and fees reduce fills',()=>{
- assert.equal(DEFAULTS.initialSol,.3);assert.equal(DEFAULTS.maxPositions,2);assert.ok(DEFAULTS.orderSol*2+DEFAULTS.feeSol*2+DEFAULTS.reserveSol<DEFAULTS.initialSol);
+ assert.equal(DEFAULTS.initialSol,.3);assert.equal(DEFAULTS.maxPositions,null);assert.ok(DEFAULTS.orderSol*2+DEFAULTS.feeSol*2+DEFAULTS.reserveSol<DEFAULTS.initialSol);
 });

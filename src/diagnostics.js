@@ -1,3 +1,4 @@
+import {positionLimitReached} from './desk-rules.js';
 import {SCAN_RULES} from './scanner.js';
 import {rankMarket} from './strategy.js';
 export function diagnose(state,feed,rankings,now=Date.now()){
@@ -12,7 +13,7 @@ export function diagnose(state,feed,rankings,now=Date.now()){
  if(state.halted){phase='risk-halt';message=state.halted;}
  else if(feed.error||!feed.updatedAt||now-feed.updatedAt>s.maxPriceAgeMs){phase='waiting-data';message=feed.error||'Chờ dữ liệu giá mới trước khi xét lệnh.';}
  else if(!state.running){phase=state.automationRequested?'starting':'paused';message=state.automationRequested?'Đang chờ vòng quét đầu tiên để tự bật.':'Bot đang tạm dừng; chưa tự xét mua/bán.';}
- else if(state.positions.length>=s.maxPositions){phase='position-limit';message=`Đã đủ ${s.maxPositions} vị thế; tiếp tục theo dõi điều kiện bán.`;}
+ else if(positionLimitReached(state.positions.length,s)){phase='position-limit';message=`Đã đủ ${s.maxPositions} vị thế; tiếp tục theo dõi điều kiện bán.`;}
  else if(state.cashSol-s.orderSol-s.feeSol<s.reserveSol){phase='reserve';message='Giữ khoản SOL dự phòng; chưa đủ ngân sách cho lệnh mua mới.';}
  else if(!rankings.length){phase='empty-market';message='Đã kết nối nhưng nguồn khám phá chưa trả về token Solana để xét lệnh.';}
  else if(!eligible.length){phase='waiting-signal';message=`Bot đang quét ${rankings.length} token; chưa có token đạt toàn bộ điều kiện mua.`;}
@@ -32,7 +33,7 @@ export function diagnoseOwnerEntry(s,feed,balance,now=Date.now()){
  if(feed.error||!feed.updatedAt||feed.updatedAt>now||now-feed.updatedAt>s.settings.maxPriceAgeMs||!(feed.solUsd>0))return result('waiting-data','Chưa đủ dữ liệu thị trường mới để mua.');
  if(!Number.isFinite(balance))return result('rpc-unavailable','RPC chưa đọc được số dư ví; không thể kiểm tra ngân sách mua.');
  if(s.lossPauseUntil>now)return result('loss-pause','Đang nghỉ BUY sau chuỗi lệnh thua.');
- if(s.positions.length>=s.settings.maxPositions)return result('position-limit','Đã đủ số vị thế; tiếp tục theo dõi điều kiện bán.');
+ if(positionLimitReached(s.positions.length,s.settings))return result('position-limit','Đã đủ số vị thế; tiếp tục theo dõi điều kiện bán.');
  const eligible=feed.markets.map(m=>({...m,...rankMarket(m,s.settings,now)})).filter(m=>m.eligible);
  if(!eligible.length)return result('waiting-signal','Chưa có token qua hết các tầng; xem số lượng bị chặn và lý do phía dưới.');
  const funded=eligible.filter(m=>s.cashSol-m.orderSol-.005>=s.settings.reserveSol&&balance-m.orderSol-.005>=s.settings.reserveSol);
