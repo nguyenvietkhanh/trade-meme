@@ -18,7 +18,7 @@ export function coarseMarket(m,s=T,now=Date.now()){
 /** Deterministic six-stage analyst. Missing optional score data earns half, mandatory safety stays closed. */
 export function rankMarket(m,s=T,now=Date.now()){
  m=m&&typeof m==='object'&&!Array.isArray(m)?m:{};
- const coarse=coarseMarket(m,s,now);if(m.coarseCooldownUntil>now)return {roughEligible:false,score:0,eligible:false,reasons:['Tầng 0: nghỉ token 30 phút'],red_flags:['COARSE_COOLDOWN'],scoreParts:{},orderSol:0,coarseRejected:true};
+ const coarse=coarseMarket(m,s,now);
  const reasons=[...coarse.reasons],red_flags=[...coarse.red_flags];
  const fail=(ok,code,text)=>{if(!ok){red_flags.push(code);reasons.push(text);}};
  const e=m.evidence??{},fresh=t=>finite(t)&&t<=now&&now-t<=s.maxPriceAgeMs;
@@ -34,6 +34,7 @@ export function rankMarket(m,s=T,now=Date.now()){
  const volumes=[m.volume5mUsd,m.volume1hUsd,m.volume24hUsd];
  fail(volumes.every(v=>v==null||finite(v)&&v>=0)&&!(finite(volumes[0])&&finite(volumes[1])&&volumes[0]>volumes[1])&&!(finite(volumes[1])&&finite(volumes[2])&&volumes[1]>volumes[2]),'INCONSISTENT_VOLUME','Volume âm hoặc mâu thuẫn');
  const roughEligible=reasons.length===0;
+ fail(!m.verificationError,'VERIFICATION_PROVIDER_ERROR',m.verificationError);
  fail(e.mint===m.mint&&e.pairAddress===m.pairAddress&&fresh(e.checkedAt),'MISSING_SAFETY_EVIDENCE','Thiếu kiểm chứng an toàn mới, đúng mint/pool');
  fail(e.mintRevoked===true&&e.freezeRevoked===true,'ACTIVE_OR_UNKNOWN_AUTHORITY','Mint/freeze chưa xác nhận revoke');
  fail(e.tokenProgram==='spl-token'||e.tokenProgram==='spl-token-2022'&&e.extensionsSafe===true,'UNSAFE_TOKEN_PROGRAM','Token program hoặc extension chưa được kiểm tra');

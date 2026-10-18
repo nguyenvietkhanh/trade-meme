@@ -4,7 +4,8 @@ import {fileURLToPath} from 'node:url';
 import path from 'node:path';
 import {DEFAULTS,PROFILE,freshState,equity,event,buy,sell,tick} from './engine.js';
 import {loadMarkets} from './market.js';
-import {rankMarket,decideMarket,coarseMarket} from './strategy.js';
+import {rankMarket,decideMarket} from './strategy.js';
+import {SCAN_RULES,initializeScanner,scannerMarkets,recordEvaluation} from './scanner.js';
 import {diagnose} from './diagnostics.js';
 import {observeMarkets} from './signals.js';
 import {OwnerAuth,DEFAULT_OWNER} from './security.js';
@@ -37,6 +38,7 @@ if(onRailway||process.env.PAPER_AUTOSTART==='true')state.automationRequested=tru
 state.settings={...state.settings,...DEFAULTS};
 state.strategy='autonomous';state.watchlist??=[];state.decisions??=[];
 state.decisionStats??={evaluated:0,bought:0,rejected:0};
+initializeScanner(state);
 const expectedOrigin=process.env.PUBLIC_ORIGIN??(onRailway?'https://'+(process.env.RAILWAY_PUBLIC_DOMAIN??'trade-meme-production.up.railway.app'):null);
 const auth=new OwnerAuth({owner:DEFAULT_OWNER,origin:expectedOrigin});
 const execution=new SolanaExecution();
@@ -54,14 +56,12 @@ async function refresh(){
   if(refreshing)return;refreshing=true;
   try{
     const latest=await loadMarkets([...new Set([...state.positions.map(p=>p.mint),...direct.watched,...(ownerAgent?.trackedMints()??[]),...state.watchlist])],Object.fromEntries((ownerAgent?.state?.positions??state.positions).filter(p=>p.pairAddress).map(p=>[p.mint,p.pairAddress])));
-    state.coarseCooldowns??={};state.blacklistedMints??={};for(const m of latest.markets){if(coarseMarket(m).red_flags.includes('MAJOR_TOKEN_OR_IMPERSONATOR'))state.blacklistedMints[m.mint]=true;m.blacklisted=state.blacklistedMints[m.mint]===true;if(!coarseMarket(m).eligible&&!(state.coarseCooldowns[m.mint]>Date.now()))state.coarseCooldowns[m.mint]=Date.now()+DEFAULTS.coarseCooldownMs;m.coarseCooldownUntil=state.coarseCooldowns[m.mint]??0;}
-    for(const [mint,until]of Object.entries(state.coarseCooldowns))if(until<=Date.now())delete state.coarseCooldowns[mint];
+    latest.markets=scannerMarkets(state,latest.markets);
     latest.markets=await verification.enrichCached(latest.markets,ownerAgent?.trackedMints()??[]);
     await serial(async()=>{latest.markets=observeMarkets(state,latest.markets);feed={...latest,error:null};
       if(liveOnly){
         state.lastEvaluationAt=Date.now();
-        for(const market of feed.markets){const rank=rankMarket(market,state.settings);state.decisionStats.evaluated++;if(!rank.eligible)state.decisionStats.rejected++;state.decisions.unshift({at:Date.now(),mint:market.mint,symbol:market.symbol,score:rank.score,decision:decideMarket(market,state.settings),action:rank.eligible?'WATCH':'SKIP',reason:rank.eligible?'Đạt bộ lọc thị trường; còn kiểm tra on-chain, ví và giới hạn thực thi.':rank.reasons.join('; ')});}
-        state.decisions=state.decisions.slice(0,300);
+        for(const market of feed.markets){const rank=rankMarket(market,state.settings);recordEvaluation(state,{at:Date.now(),mint:market.mint,symbol:market.symbol,score:rank.score,decision:decideMarket(market,state.settings),action:rank.eligible?'WATCH':'SKIP',reason:rank.eligible?'Đạt bộ lọc thị trường; còn kiểm tra on-chain, ví và giới hạn thực thi.':rank.reasons.join('; ')});}
       }else{if(state.automationRequested&&state.haltKind!=='drawdown')state.running=true;tick(state,feed.markets,feed.solUsd);}
       await save();});
   }catch(e){feed.error=e.message;console.error('Market feed:',e.message);}
@@ -182,7 +182,7 @@ const server=http.createServer(async(req,res)=>{
 });
 const host=process.env.HOST??(onRailway?'0.0.0.0':'127.0.0.1'),port=Number(process.env.PORT??3000);
 server.listen(port,host,()=>{if(!auth.origin)auth.origin=`http://127.0.0.1:${server.address().port}`;console.log(`Meme Desk listening on ${host}:${server.address().port} — ${liveOnly?'MAINNET / OWNER AUTH REQUIRED':'PAPER TEST WORKSPACE'}`);refresh();});
-const timer=setInterval(refresh,ownerAgent?5000:30000);
+const timer=setInterval(refresh,SCAN_RULES.intervalMs);
 const agentTimer=ownerAgent?setInterval(()=>ownerAgent.tick(feed),2000):null;
 async function shutdown(){clearInterval(timer);if(agentTimer)clearInterval(agentTimer);server.close();if(ownerAgent)await ownerAgent.pause(true);await serial(async()=>{state.running=false;await save();});process.exit(0);}
 process.on('SIGTERM',shutdown);process.on('SIGINT',shutdown);

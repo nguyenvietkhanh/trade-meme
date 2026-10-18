@@ -27,5 +27,5 @@ test('daily risk halt blocks entries but does not liquidate positions before the
  const s=freshState(now);s.running=true;buy(s,m(1),150,now);s.halted='daily limit';tick(s,[m(.9)],150,now);assert.equal(s.positions.length,1);assert.equal(s.trades.length,1);tick(s,[m(.7)],150,now);assert.equal(s.positions.length,0);assert.equal(s.trades[0].reason,'stop-loss');
 });
 test('USD profit targets do not silently change when SOL/USD moves',()=>{
- const s=account();const p=s.positions[0];assert.equal(exitPlan(p,m(1.8),2,s.settings).reason,'recover-capital');assert.equal(exitPlan(p,m(1.1),.5,s.settings),null);
+ const s=account();const p=s.positions[0];assert.equal(exitPlan(p,m(1.8),2,s.settings,now).reason,'recover-capital');assert.equal(exitPlan(p,m(1.1),.5,s.settings,now),null);
 });

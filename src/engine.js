@@ -1,5 +1,6 @@
 import {TRADE_RULES as DEFAULTS} from './desk-rules.js';
 import {rankMarket} from './strategy.js';
+import {recordEvaluation} from './scanner.js';
 export const SOL = 'So11111111111111111111111111111111111111112';
 export const PROFILE='staged-03sol-v1';
 export {TRADE_RULES as DEFAULTS} from './desk-rules.js';
@@ -107,11 +108,10 @@ export function tick(state,markets,solUsd,now=Date.now()){
   state.lastEvaluationAt=now;
   const candidates=markets.map(m=>({market:m,rank:rankMarket(m,state.settings,now)})).sort((a,b)=>b.rank.score-a.rank.score);
   for(const {market:m,rank} of candidates){
-   let action='SKIP',reason=rank.reasons.join('; ');state.decisionStats.evaluated++;
+   let action='SKIP',reason=rank.reasons.join('; ');
    if(rank.eligible){try{buy(state,m,solUsd,now,`auto-score:${rank.score}`);action='BUY';reason=`Điểm ${rank.score}/100 · momentum +${m.change5mPct}% · mua/bán ${m.buys5m}/${m.sells5m}`;state.decisionStats.bought++;}catch(e){reason=e.message;}}
-   if(action==='SKIP')state.decisionStats.rejected++;
-   state.decisions.unshift({at:now,mint:m.mint,symbol:m.symbol,score:rank.score,action,reason});
-  }state.decisions=state.decisions.slice(0,300);
+   recordEvaluation(state,{at:now,mint:m.mint,symbol:m.symbol,score:rank.score,action,reason});
+  }
  }
  if(state.liquidating&&!state.positions.length){state.liquidating=false;state.running=false;}
  const value=riskCheck(state,markets,solUsd,now);state.curve.push({at:now,equitySol:value});state.curve=state.curve.slice(-1440);return value;

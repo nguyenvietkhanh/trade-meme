@@ -16,10 +16,10 @@ test('six-stage score totals 100, tier size is authoritative, and missing creato
  delete e.devPct;r=rankMarket({...m,evidence:e},R,now);assert.equal(r.eligible,true);assert.equal(r.orderSol,.02);
  const unsafe=rankMarket({...m,evidence:{...e,top10Pct:36}},R,now);assert.equal(unsafe.eligible,false,'half score never fills mandatory safety');
 });
-test('FDV fallback is limited to pump suffix, cooldown precedes scoring, quote reserve is mandatory',()=>{
+test('FDV fallback is limited to pump suffix, legacy scanner cooldown cannot block scoring, quote reserve is mandatory',()=>{
  const m=verifiedMarket({},now);assert.equal(rankMarket({...m,mint:'samplepump',valuationSource:'pump-fdv',evidence:{...m.evidence,mint:'samplepump'}},R,now).eligible,true);
  assert.equal(coarseMarket({...m,valuationSource:'pump-fdv'},R,now).eligible,false);
- assert.equal(rankMarket({...m,coarseCooldownUntil:now+1},R,now).score,0);
+ assert.equal(rankMarket({...m,coarseCooldownUntil:now+1800000},R,now).eligible,true);
  assert.equal(rankMarket({...m,liquidityQuoteSol:null,liquidityUsd:9999999},R,now).eligible,false);
 });
 test('two scans confirm in 10–15 seconds and an intervening dump resets confirmation',()=>{

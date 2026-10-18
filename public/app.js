@@ -18,7 +18,7 @@ function render(){
   $('win').textContent=s.winRate===null?'Chưa có win rate':fmt(s.winRate*100,1)+'% win';
   $('drawdown').textContent=s.maxDrawdownObservedPct===null?'—':'−'+fmt(s.maxDrawdownObservedPct,1)+'%';$('peak').textContent=`Đỉnh vốn ${fmt(s.peakEquity,5)} SOL`;
   $('copied').innerHTML=`${s.bought??s.decisionStats.bought} <span>lệnh mua</span>`;
-  $('decision-summary').textContent=`${s.decisionStats.evaluated} lượt đánh giá · ${s.decisionStats.rejected} bỏ qua`;
+  $('decision-summary').textContent=`${s.decisionStats.evaluated.toLocaleString('vi-VN')} / ${(s.diagnostics.scanCycleLimit??10000).toLocaleString('vi-VN')} lượt đánh giá · vòng ${s.decisionStats.cycle??1} · ${s.decisionStats.rejected} bỏ qua`;
   $('decision-log').innerHTML=s.decisions.map(l=>`<div class="decision-entry ${l.action.toLowerCase()}" data-spider-mint="${escape(l.mint)}" data-spider-role="decision"><time>${time(l.at)}</time><span class="tag">[${escape(l.action)}]</span>${escape(l.symbol)}${l.score===null?'':' · '+l.score+'/100'} → ${escape(l.reason)}</div>`).join('')||'<p class="fine">Chưa có quyết định. Khi bật bot, mỗi vòng quét ghi lại token được chọn hoặc bị bỏ qua cùng lý do.</p>';
   $('candidates').innerHTML=s.rankings.slice(0,8).map((m,i)=>`<article class="candidate-card ${m.eligible?'active':''}" data-spider-mint="${escape(m.mint)}" data-spider-role="candidate"><div class="candidate-card-head"><span class="avatar">${escape(m.symbol.slice(0,1))}</span><strong>${escape(m.symbol)}</strong><small>#${i+1}</small></div><span class="candidate-score ${m.eligible?'positive':''}">${m.score}<small> / 100</small></span><span class="mint">${m.valuationSource==='fdv'?'FDV':'Market cap'} ${money(m.valuationUsd)}</span><span class="mint" title="${escape(m.mint)}">${escape(m.mint.slice(0,8))}…${escape(m.mint.slice(-6))}</span><div class="candidate-foot"><small>${m.eligible?'Đạt bộ lọc':escape(m.reasons[0]??'Đang đánh giá')}</small></div></article>`).join('')||'<p class="fine">Đang chờ dữ liệu thật. Không tạo token hoặc lợi nhuận giả.</p>';
   $('watchlist').innerHTML=s.watchlist.map(m=>`<span class="watch-token">${escape(m.slice(0,8))}…${escape(m.slice(-5))} <button data-action="remove-token" data-mint="${escape(m)}" aria-label="Xóa token">×</button></span>`).join('');
@@ -27,7 +27,7 @@ function render(){
   const d=s.diagnostics;
   $('activity-message').textContent=s.walletMode==='owner'&&ownerState?(s.halted|| (s.running?(s.signingMode==='owner-agent'?'Bot tự ký mua/bán trên server; không cần giữ tab mở.':'Đang theo dõi. Bot đề xuất lệnh; bạn xác nhận bằng ví chủ.'):'Đã kết nối ví chủ. Bật theo dõi để chọn tín hiệu.')):d.message;
   $('scan-counts').textContent=`${d.candidates} token trong tập quét · ${d.eligible} đạt bộ lọc · ${s.positions.length} vị thế đang theo dõi`;
-  $('last-evaluation').textContent=d.lastEvaluationAt?'Đánh giá gần nhất '+time(d.lastEvaluationAt):'Chưa có vòng đánh giá tự động';
+  $('last-evaluation').textContent=(d.lastEvaluationAt?'Đánh giá gần nhất '+time(d.lastEvaluationAt):'Chưa có vòng đánh giá tự động')+` · Mục tiêu ${(d.scanIntervalMs??5000)/1000} giây/lần`;
   $('scan-blockers').innerHTML=d.topBlockers.map(b=>`<span class="blocker">${b.count} token: ${escape(b.reason)}</span>`).join('');
   $('feed-warnings').textContent=(f.warnings??[]).join(' ');
   $('build-revision').textContent='Bản chạy: '+s.buildRevision.slice(0,7);

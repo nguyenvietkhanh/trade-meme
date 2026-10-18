@@ -1,3 +1,4 @@
+import {SCAN_RULES} from './scanner.js';
 export function diagnose(state,feed,rankings,now=Date.now()){
  const eligible=rankings.filter(m=>m.eligible);
  const held=new Set(state.positions.map(p=>p.mint));
@@ -15,5 +16,5 @@ export function diagnose(state,feed,rankings,now=Date.now()){
  else if(!eligible.length){phase='waiting-signal';message=`Bot đang quét ${rankings.length} token; chưa có token đạt toàn bộ điều kiện mua.`;}
  else if(!actionable.length){phase='cooldown';message='Token đạt bộ lọc đã có vị thế hoặc đang nghỉ 30 phút sau lần bán trước.';}
  else{phase='ready';message=`Có ${actionable.length} token đạt bộ lọc; sẽ kiểm tra ngân sách và an toàn thực thi trong vòng quét.`;}
- return {phase,message,candidates:rankings.length,eligible:eligible.length,actionable:actionable.length,lastEvaluationAt:state.lastEvaluationAt??null,topBlockers:[...reasons].sort((a,b)=>b[1]-a[1]).slice(0,4).map(([reason,count])=>({reason,count}))};
+ return {phase,message,candidates:rankings.length,eligible:eligible.length,actionable:actionable.length,scanIntervalMs:SCAN_RULES.intervalMs,scanCycleLimit:SCAN_RULES.cycleLimit,lastEvaluationAt:state.lastEvaluationAt??null,topBlockers:[...reasons].sort((a,b)=>b[1]-a[1]).slice(0,4).map(([reason,count])=>({reason,count}))};
 }
