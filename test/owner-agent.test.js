@@ -45,6 +45,16 @@ test('the autonomous agent transfers confirmed realized profit to the fixed reci
   await f.agent.tick(f.feed());assert.equal(f.agent.state.payouts.length,1);assert.equal(f.agent.state.withdrawnSol,.01999);assert.equal(f.agent.state.pending,null);assert.ok(f.agent.state.cashSol>=.3);assert.equal(f.sends,1);
  }finally{await f.cleanup();}
 });
+
+test('Telegram outbox is committed only with a new confirmed trade and network delivery runs separately',async()=>{
+ const f=await fixture();try{
+  await f.agent.telegram.configure('123456789:fixture_ABCDEFGHIJKLMNOPQRSTUVWXYZ123456789','123456789',f.kp);
+  let reports=0;f.agent.telegram.fetcher=async()=>{reports++;const disk=JSON.parse(await readFile(f.agent.file,'utf8'));assert.equal(disk.trades.length,1);assert.equal(disk.telegramOutbox[0].attempts,1);return new Response(JSON.stringify({ok:true,result:{message_id:123}}));};
+  await f.agent.enable();await f.agent.tick(f.feed());await f.agent.telegram.tick(f.agent);assert.equal(reports,0);assert.equal(f.agent.state.trades.length,0);
+  await f.agent.tick(f.feed());assert.equal(f.agent.state.telegramOutbox.length,1);assert.equal(reports,0);assert.ok(f.agent.state.telegramOutbox[0].text.includes('MUA ĐÃ XÁC NHẬN'));
+  await f.agent.telegram.tick(f.agent);await f.agent.telegram.tick(f.agent);assert.equal(reports,1);assert.equal(f.sends,1);
+ }finally{await f.cleanup();}
+});
 test('a failed durable write never broadcasts and an invalid token is skipped with cooldown instead of stopping the service',async()=>{
  const f=await fixture();try{
   await f.agent.enable();f.execution.mintCheck=async()=>{throw new TradePolicyError('unsafe token');};await f.agent.tick(f.feed());assert.equal(f.sends,0);assert.ok(f.agent.state.cooldowns[f.mint]>Date.now());assert.equal(f.agent.state.running,true);

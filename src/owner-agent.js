@@ -11,6 +11,7 @@ import {rankMarket} from './strategy.js';
 import {STRATEGY_VERSION} from './desk-rules.js';
 import {auditDesk} from './auditor.js';
 import {diagnoseOwnerEntry} from './diagnostics.js';
+import {TelegramReporter,enqueueTradeReport} from './telegram.js';
 
 export function signerRequestAllowed(req,expectedOrigin,onRailway){
  if(onRailway)return typeof expectedOrigin==='string'&&expectedOrigin.startsWith('https://');
@@ -21,6 +22,7 @@ function validatedState(s,owner){
  for(const p of s.positions)if(typeof p.rawQuantity!=='string'||!/^\d{1,20}$/.test(p.rawQuantity)||BigInt(p.rawQuantity)<=0n||!Number.isInteger(p.decimals)||p.decimals<0||p.decimals>9||!Number.isFinite(p.quantity)||p.quantity<=0||!Number.isFinite(p.costSol)||p.costSol<0)throw Error('Vị thế khôi phục không hợp lệ.');
  const withdrawnSol=s.withdrawnSol??0,payoutFeesSol=s.payoutFeesSol??0,realizedNetSol=s.realizedNetSol??s.cashSol+s.positions.reduce((sum,p)=>sum+p.costSol,0)+withdrawnSol+payoutFeesSol-s.settings.initialSol;
  if(!Number.isFinite(withdrawnSol)||withdrawnSol<0||!Number.isFinite(payoutFeesSol)||payoutFeesSol<0||!Number.isFinite(realizedNetSol)||!Array.isArray(s.payouts??[]))throw Error('Sổ chuyển lợi nhuận không hợp lệ.');
+ if(!Array.isArray(s.telegramOutbox??[])||(s.telegramOutbox??[]).some(m=>typeof m.id!=='string'||typeof m.text!=='string'||m.text.length>4096||!['queued','sent','failed'].includes(m.status)||!Number.isSafeInteger(m.attempts)||m.attempts<0||m.attempts>6||!Number.isFinite(m.nextAttemptAt)))throw Error('Hàng đợi báo cáo Telegram không hợp lệ.');
  if(s.pending&&(typeof s.pending.transaction!=='string'||s.pending.intent?.owner!==owner))throw Error('Khôi phục server chỉ nhận nhật ký pending có giao dịch đã ký đầy đủ.');
  if(s.strategyVersion!==STRATEGY_VERSION){
   for(const p of s.positions)if(p.phase==='runner'&&p.entryPriceUsd>0){const filled=s.trades.filter(t=>t.mint===p.mint&&t.side==='SELL'&&t.reason==='runner-double'&&t.at>=p.openedAt).map(t=>t.priceUsd).filter(Number.isFinite);const anchor=Math.max(p.entryPriceUsd,...filled);p.nextTakeProfitPriceUsd=p.entryPriceUsd*2**Math.max(1,Math.floor(Math.log2(anchor/p.entryPriceUsd))+1);}
@@ -30,10 +32,11 @@ function validatedState(s,owner){
  return {...s,strategyVersion:STRATEGY_VERSION,withdrawnSol,payoutFeesSol,realizedNetSol,payouts:s.payouts??[],settings:{...DEFAULTS,initialSol:s.settings.initialSol},running:false};
 }
 export class OwnerAgent{
- constructor(dir,direct,execution,owner=DEFAULT_OWNER){this.owner=owner;this.file=path.join(dir,'owner-agent-state.json');this.vault=new OwnerSignerVault(path.join(dir,'owner-signer.json'),owner);this.direct=direct;this.execution=execution;this.state=null;this.queue=Promise.resolve();this.busy=false;this.wallet=null;this.error=null;this.commandEpoch=0;}
+ constructor(dir,direct,execution,owner=DEFAULT_OWNER){this.owner=owner;this.file=path.join(dir,'owner-agent-state.json');this.vault=new OwnerSignerVault(path.join(dir,'owner-signer.json'),owner);this.telegram=new TelegramReporter(dir,owner);this.direct=direct;this.execution=execution;this.state=null;this.queue=Promise.resolve();this.busy=false;this.wallet=null;this.error=null;this.commandEpoch=0;}
  serial(fn){const task=this.queue.then(fn);this.queue=task.catch(()=>{});return task;}
  async load(){
   await this.vault.load();
+  await this.telegram.load();
   try{this.state=validatedState(JSON.parse(await readFile(this.file,'utf8')),this.owner);}
   catch(e){if(e.code!=='ENOENT')throw Error('Nhật ký bộ ký tự động không hợp lệ; không ghi đè.');}
  }
@@ -63,7 +66,7 @@ export class OwnerAgent{
  async status(){
   let balanceSol=null,rpcError=null;try{balanceSol=await this.execution.balance(this.owner);}catch{const failures=this.execution.rpc?.rpcDiagnostics?.().failures??[];rpcError='Chưa đọc được số dư qua RPC. '+(failures.length?failures.map(r=>r.host+': '+r.reason).join(' · '):'RPC chưa trả số dư hợp lệ.');}
   const entryStatus=!this.vault.keypair?{phase:'locked',message:'Bộ ký đang khóa; quét token không đồng nghĩa bot đã được phép mua.'}:!this.state?.running?{phase:'paused',message:'Bot chưa bật; quét token vẫn tiếp tục.'}:rpcError?{phase:'rpc-unavailable',message:rpcError}:this.state.entryStatus??{phase:'checking',message:'Đang kiểm tra điều kiện vào lệnh.'};
-  return {signerAvailable:true,vault:this.vault.status(),entryStatus,wallet:{...this.direct.configure(),balanceSol,tokenBalances:{},swapReady:balanceSol!==null,unattendedSigning:true},ledger:this.state?{...this.state,pending:this.state.pending?{intent:this.state.pending.intent,signature:this.state.pending.signature,transaction:!!this.state.pending.transaction}:null}:null,audit:this.state?auditDesk(this.state):null,error:rpcError??this.error};
+  return {signerAvailable:true,vault:this.vault.status(),telegram:this.telegram.status(this.state),entryStatus,wallet:{...this.direct.configure(),balanceSol,tokenBalances:{},swapReady:balanceSol!==null,unattendedSigning:true},ledger:this.state?{...this.state,pending:this.state.pending?{intent:this.state.pending.intent,signature:this.state.pending.signature,transaction:!!this.state.pending.transaction}:null}:null,audit:this.state?auditDesk(this.state):null,error:rpcError??this.error};
  }
  async execute(order,feed){
   const s=this.state;if(!s||!this.vault.keypair||s.pending)throw Error('Bộ ký chưa sẵn sàng hoặc còn lệnh chờ.');
@@ -99,7 +102,8 @@ export class OwnerAgent{
    if(s.pending){
     const pending=s.pending,result=await this.direct.reconcile({intent:pending.intent,transaction:pending.transaction});
     if(result.status==='pending')return;
-    applyOwnerReceipt(s,pending,result);
+    const applied=applyOwnerReceipt(s,pending,result);
+    if(applied&&this.telegram.enabled)enqueueTradeReport(s,pending,result);
     if(result.status==='confirmed'){if(pending.attemptKey)delete s.orderAttempts[pending.attemptKey];s.executionFailures=0;s.buyCircuitOpen=false;s.consecutiveFailures=0;if(s.lastExecutionLatency&&pending.timing?.broadcastStartedAt)s.lastExecutionLatency.confirmationMs=Date.now()-pending.timing.broadcastStartedAt;}else{
      s.consecutiveFailures=(s.consecutiveFailures??0)+1;this.error='Lệnh '+result.status+'; đã đối soát, không gửi lại giao dịch cũ.';
      if(pending.intent.side==='BUY')s.cooldowns[pending.intent.mint]=Date.now()+((s.orderAttempts?.[pending.attemptKey]??0)>=DEFAULTS.maxRetries+1?DEFAULTS.coarseCooldownMs:2000);

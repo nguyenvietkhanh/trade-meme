@@ -1,4 +1,4 @@
-import {TRADE_RULES as T} from './desk-rules.js';
+import {TRADE_RULES as T,TREND_RULES,ENTRY_EXCLUDED_MINTS} from './desk-rules.js';
 const finite=Number.isFinite,pct=v=>finite(v)&&v>=0&&v<=100;
 const clamp=v=>finite(v)?Math.max(0,Math.min(1,v)):0;
 const MAJOR_NAMES=new Set(['SOL','SOLANA','WSOL','USDC','USD COIN','USDT','TETHER','BONK','WIF','DOGWIFHAT','POPCAT']);
@@ -8,8 +8,9 @@ export function coarseMarket(m,s=T,now=Date.now()){
  const fail=(ok,code,text)=>{if(!ok){red_flags.push(code);reasons.push(text);}};
  const age=now-m.pairCreatedAt;
  fail(m.blacklisted!==true,'BLACKLISTED_MINT','Mint đã vào blacklist giả mạo token lớn');
+ fail(!ENTRY_EXCLUDED_MINTS.includes(m.mint),'OWNER_EXCLUDED_MINT','Mint chủ ví chỉ định tránh mua theo mẫu H4');
  fail(m.dexId==='pumpswap','UNSUPPORTED_DEX','Không phải pool PumpSwap');
- fail(finite(m.valuationUsd)&&m.valuationUsd>=s.minMarketCapUsd&&m.valuationUsd<=s.maxMarketCapUsd&&(['marketCap','pump-fdv'].includes(m.valuationSource)),'INVALID_MARKET_CAP','Vốn hóa ngoài $10k–$5m hoặc thiếu; FDV chỉ dùng mint đuôi pump');
+ fail(finite(m.valuationUsd)&&m.valuationUsd>=s.minMarketCapUsd&&m.valuationUsd<=s.maxMarketCapUsd&&(['marketCap','pump-fdv'].includes(m.valuationSource)),'INVALID_MARKET_CAP',`Vốn hóa ngoài $${s.minMarketCapUsd.toLocaleString('en-US')}–$${s.maxMarketCapUsd.toLocaleString('en-US')} hoặc thiếu; FDV chỉ dùng mint đuôi pump`);
  fail(m.valuationSource!=='pump-fdv'||String(m.mint??'').endsWith('pump'),'INVALID_FDV_FALLBACK','Không cho FDV thay market cap với mint khác đuôi pump');
  fail(finite(m.pairCreatedAt)&&age>=s.minPairAgeMs&&age<=s.maxPairAgeMs,'POOL_AGE','Tuổi pool ngoài 15 phút–24 giờ');
  fail(![m.symbol,m.name].some(x=>MAJOR_NAMES.has(String(x??'').normalize('NFKC').replace(/[\u200B-\u200D\uFEFF]/g,'').trim().toUpperCase())),'MAJOR_TOKEN_OR_IMPERSONATOR','Tên/symbol thuộc token lớn; không mua bản trùng tên trong tập low-cap');
@@ -32,6 +33,7 @@ export function rankMarket(m,s=T,now=Date.now()){
  const counts=[m.buys5m,m.sells5m,m.buys1h,m.sells1h];
  fail(counts.every(v=>Number.isSafeInteger(v)&&v>=0)&&m.buys5m>=8&&m.buys5m+m.sells5m>=15&&m.buys1h+m.sells1h>=80&&m.buys1h>=m.buys5m&&m.sells1h>=m.sells5m,'LOW_ACTIVITY','Cần ≥8 mua/5m, ≥15 lệnh/5m, ≥80 lệnh/1h, số liệu nhất quán');
  fail(finite(m.change1hPct)&&m.change1hPct<=150&&finite(m.change5mPct)&&m.change5mPct>=-8,'DUMP_OR_CHASE','Giá đang xả dưới −8%/5m hoặc tăng quá 150%/1h');
+ fail(finite(m.change5mPct)&&m.change5mPct>0&&finite(m.change1hPct)&&m.change1hPct>0,'NO_UPTREND','Chỉ mua khi M5 và H1 cùng tăng; không bắt nhịp hồi trong xu hướng giảm');
  const volumes=[m.volume5mUsd,m.volume1hUsd,m.volume24hUsd];
  fail(volumes.every(v=>v==null||finite(v)&&v>=0)&&!(finite(volumes[0])&&finite(volumes[1])&&volumes[0]>volumes[1])&&!(finite(volumes[1])&&finite(volumes[2])&&volumes[1]>volumes[2]),'INCONSISTENT_VOLUME','Volume âm hoặc mâu thuẫn');
  const roughEligible=reasons.length===0;
@@ -47,6 +49,10 @@ export function rankMarket(m,s=T,now=Date.now()){
  fail(e.devPct==null||pct(e.devPct)&&e.devPct<=5,'DEV_CONCENTRATION','Creator nắm quá 5% hoặc dữ liệu sai');
  fail(e.riskWarningsChecked===true&&Array.isArray(e.criticalWarnings)&&e.criticalWarnings.length===0,'RUG_WARNINGS','Thiếu RugCheck hoặc có rủi ro nghiêm trọng');
  fail(e.roundTripQuoteOk===true&&e.probeSol===.03&&finite(e.roundTripLossPct)&&e.roundTripLossPct>=0&&e.roundTripLossPct<=6&&pct(e.buyImpactPct)&&e.buyImpactPct<=2&&pct(e.sellImpactPct)&&e.sellImpactPct<=2,'ROUND_TRIP_UNVERIFIED','Jupiter quote vòng 0,03 SOL chưa đạt hao hụt ≤6%, impact mỗi chiều ≤2%');
+ const h4=e.h4Risk,h4Bound=h4&&typeof h4==='object'&&h4.mint===m.mint&&h4.pairAddress===m.pairAddress&&finite(h4.checkedAt)&&h4.checkedAt<=now;
+ const h4Known=h4Bound&&now-h4.checkedAt<=TREND_RULES.h4MaxAgeMs&&['clear','reject'].includes(h4.state);
+ const h4Rejected=h4Bound&&h4.state==='reject'&&now-h4.checkedAt<=TREND_RULES.h4RejectMemoryMs;
+ fail(!h4Rejected,'H4_DUMP_PATTERN','H4 đỏ mạnh/râu trên dài và giá tụt sâu sau nhịp tăng vọt; bỏ qua mua mới');
  const safetyReasons=reasons.slice(safetyStart);
  fail(m.signalConfirmed===true,'UNCONFIRMED_SIGNAL','Chờ 2 lần quét liên tiếp cách 10–15 giây');
  const acceleration=finite(m.volume5mUsd)&&finite(m.volume1hUsd)&&m.volume1hUsd>m.volume5mUsd?m.volume5mUsd/((m.volume1hUsd-m.volume5mUsd)/11):null;
@@ -65,11 +71,12 @@ export function rankMarket(m,s=T,now=Date.now()){
  const trades=m.buys5m+m.sells5m;
  const oddVolume=finite(m.volume5mUsd)&&trades>0&&trades<30&&m.volume5mUsd/trades>m.liquidityUsd*.25;
  const washPenalty=(oddVolume?5:0)+(ratio>4?5:0),boostPenalty=m.boosted?5:0;
- const score=Math.round(Math.max(0,Object.values(parts).reduce((a,b)=>a+b,0)-washPenalty-boostPenalty));
+ const h4Penalty=h4Known?0:5;
+ const score=Math.round(Math.max(0,Object.values(parts).reduce((a,b)=>a+b,0)-washPenalty-boostPenalty-h4Penalty));
  fail(score>=60,'LOW_SCORE','Điểm dưới 60/100');
  const blockingStage=!coarse.eligible?'discovery':!roughEligible?'market':safetyReasons.length?'safety':m.signalConfirmed!==true?'confirmation':score<60?'score':'ready';
  const primaryReasons=blockingStage==='discovery'?coarse.reasons:blockingStage==='market'?marketReasons:blockingStage==='safety'?safetyReasons:blockingStage==='confirmation'?['Chờ 2 lần quét liên tiếp cách 10–15 giây']:blockingStage==='score'?['Điểm dưới 60/100']:[];
- return {roughEligible,score,eligible:!reasons.length,reasons,primaryReasons,blockingStage,red_flags,scoreParts:parts,missingScoreData:missing,washPenalty,boostPenalty,volumeAcceleration:acceleration,buyShare:trades?m.buys5m/trades:0,orderSol:score>=75&&pct(e.devPct)?.03:.02,coarseRejected:!coarse.eligible};
+ return {roughEligible,score,eligible:!reasons.length,reasons,primaryReasons,blockingStage,red_flags,scoreParts:parts,missingScoreData:missing,washPenalty,boostPenalty,h4Penalty,h4Status:h4Rejected?'reject':h4Known?h4.state:'unknown',volumeAcceleration:acceleration,buyShare:trades?m.buys5m/trades:0,orderSol:score>=75&&pct(e.devPct)&&h4Known&&h4.state==='clear'?.03:.02,coarseRejected:!coarse.eligible};
 }
 export function decideMarket(m,s=T,now=Date.now()){
  const r=rankMarket(m,s,now);

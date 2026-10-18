@@ -5,7 +5,7 @@ import {observeMarkets} from '../src/signals.js';
 import {rankMarket} from '../src/strategy.js';
 import {freshState} from '../src/engine.js';
 const now=Date.UTC(2026,9,17,12);
-const market={mint:'test',pairAddress:'pool',priceUsd:1,liquidityUsd:100000,change5mPct:3,buys5m:40,sells5m:5};
+const market={mint:'test',pairAddress:'pool',priceUsd:1,liquidityUsd:100000,change5mPct:3,change1hPct:10,buys5m:40,sells5m:5};
 test('requires separated observations, rejects abrupt liquidity removal and does not create earlier confirmation',()=>{
  const s=freshState(now);assert.equal(observeMarkets(s,[market],now)[0].signalConfirmed,false);
  assert.equal(observeMarkets(s,[market],now+1000)[0].signalConfirmed,false);

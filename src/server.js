@@ -98,6 +98,9 @@ const server=http.createServer(async(req,res)=>{
         if(url.pathname==='/api/signer/import'){try{await ownerAgent.serial(()=>ownerAgent.vault.importKey(input.secret,input.password));}finally{input.secret='';input.password='';}}
         else if(url.pathname==='/api/signer/unlock'){try{await ownerAgent.serial(()=>ownerAgent.vault.unlock(input.password));}finally{input.password='';}}
         else if(url.pathname==='/api/signer/enable'){if(input.confirm!=='ENABLE OWNER SIGNER')throw Error('Thiếu xác nhận bật bộ ký.');await ownerAgent.enable();}
+        else if(url.pathname==='/api/signer/telegram-config'){try{await ownerAgent.serial(async()=>{await ownerAgent.telegram.configure(input.token,input.chatId,ownerAgent.vault.keypair);for(const m of ownerAgent.state?.telegramOutbox??[])if(m.status==='failed'){m.status='queued';m.attempts=0;m.nextAttemptAt=0;}await ownerAgent.save();});}finally{input.token='';}}
+        else if(url.pathname==='/api/signer/telegram-test')await ownerAgent.telegram.test(ownerAgent.vault.keypair);
+        else if(url.pathname==='/api/signer/telegram-disable')await ownerAgent.serial(()=>ownerAgent.telegram.disable());
         else if(url.pathname==='/api/signer/review-risk'){if(input.confirm!=='REVIEW DRAWDOWN')throw Error('Thiếu xác nhận xem lại drawdown.');await ownerAgent.reviewRisk(feed);}
         else if(url.pathname==='/api/signer/pause-buys')await ownerAgent.pauseBuys(input.paused!==false);
         else if(url.pathname==='/api/signer/pause')await ownerAgent.pause();
@@ -186,5 +189,6 @@ const host=process.env.HOST??(onRailway?'0.0.0.0':'127.0.0.1'),port=Number(proce
 server.listen(port,host,()=>{if(!auth.origin)auth.origin=`http://127.0.0.1:${server.address().port}`;console.log(`Meme Desk listening on ${host}:${server.address().port} — ${liveOnly?'MAINNET / OWNER AUTH REQUIRED':'PAPER TEST WORKSPACE'}`);refresh();});
 const timer=setInterval(refresh,SCAN_RULES.intervalMs);
 const agentTimer=ownerAgent?setInterval(()=>ownerAgent.tick(feed),2000):null;
-async function shutdown(){clearInterval(timer);if(agentTimer)clearInterval(agentTimer);server.close();if(ownerAgent)await ownerAgent.pause(true);await serial(async()=>{state.running=false;await save();});process.exit(0);}
+const telegramTimer=ownerAgent?setInterval(()=>ownerAgent.telegram.tick(ownerAgent),2000):null;
+async function shutdown(){clearInterval(timer);if(agentTimer)clearInterval(agentTimer);if(telegramTimer)clearInterval(telegramTimer);server.close();if(ownerAgent)await ownerAgent.pause(true);await serial(async()=>{state.running=false;await save();});process.exit(0);}
 process.on('SIGTERM',shutdown);process.on('SIGINT',shutdown);

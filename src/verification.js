@@ -1,6 +1,7 @@
 import {fetchStructure} from './candles.js';
 import {rankMarket} from './strategy.js';
 import {SCAN_RULES} from './scanner.js';
+import {TREND_RULES} from './desk-rules.js';
 // Provider messages can contain URLs/credentials. Expose only a fixed label and HTTP status.
 function providerFailure(provider,error){
  if(error?.code==='HOLDER_SCAN_UNAVAILABLE')return 'RPC không cung cấp được toàn bộ holder; chưa thể xác minh phân bổ, khóa BUY.';
@@ -24,7 +25,7 @@ export function rugEvidence(report,market,now=Date.now()){
  return out;
 }
 export class VerificationFeed{
- constructor(fetcher=globalThis.fetch,execution=null){this.fetcher=fetcher;this.execution=execution;this.cache=new Map();this.jobs=new Map();}
+ constructor(fetcher=globalThis.fetch,execution=null){this.fetcher=fetcher;this.execution=execution;this.cache=new Map();this.jobs=new Map();this.h4Memory=new Map();}
  async enrichCached(markets,tracked=[],now=Date.now()){
   // Rotate candidates by oldest check so two failing high-volume tokens cannot monopolize both jobs.
   const checkedAt=m=>this.cache.get(m.mint+':'+m.pairAddress)?.at??0;
@@ -49,10 +50,14 @@ export class VerificationFeed{
    try{const response=await this.fetcher('https://api.rugcheck.xyz/v1/tokens/'+encodeURIComponent(m.mint)+'/report',{signal:AbortSignal.timeout(2000)});if(!response.ok)throw Error('HTTP '+response.status);value={evidence:rugEvidence(await response.json(),m,now)};}
    catch(error){value={verificationError:providerFailure('RugCheck',error)};}
    if(this.execution)try{const structure=await fetchStructure(m,this.fetcher);value.evidence={...value.evidence,...structure};}catch{}
-   if(this.execution?.inspectMarket&&value.evidence?.riskWarningsChecked===true&&value.evidence?.criticalWarnings?.length===0&&value.evidence?.lpSecuredPct>=90)try{const chain=await this.execution.inspectMarket({...m,creatorAddress:value.evidence?.creatorAddress});value.evidence={...value.evidence,...chain,source:'rugcheck+solana-rpc+jupiter',mint:m.mint,pairAddress:m.pairAddress,checkedAt:now};}catch(error){value.verificationError=providerFailure('On-chain / quote Jupiter',error);}
+   const current=value.evidence?.h4Risk,previous=this.h4Memory.get(key);
+   if(current&&['clear','reject'].includes(current.state))this.h4Memory.set(key,current);
+   else if(previous?.state==='reject'&&Date.now()-previous.checkedAt<=TREND_RULES.h4RejectMemoryMs)value.evidence={...value.evidence,h4Risk:previous};
+   if(this.execution?.inspectMarket&&value.evidence?.riskWarningsChecked===true&&value.evidence?.criticalWarnings?.length===0&&value.evidence?.lpSecuredPct>=90)try{const chain=await this.execution.inspectMarket({...m,creatorAddress:value.evidence?.creatorAddress}),h4Risk=value.evidence?.h4Risk;value.evidence={...value.evidence,...chain,...(h4Risk?{h4Risk}:{}),source:'rugcheck+solana-rpc+jupiter',mint:m.mint,pairAddress:m.pairAddress,checkedAt:now};}catch(error){value.verificationError=providerFailure('On-chain / quote Jupiter',error);}
    this.cache.set(key,{at:now,value});results.set(key,value);
   }));
   for(const [k,v]of this.cache)if(now-v.at>300000)this.cache.delete(k);
+  for(const [k,v]of this.h4Memory)if(Date.now()-v.checkedAt>TREND_RULES.h4RejectMemoryMs)this.h4Memory.delete(k);
   return markets.map(m=>({...m,...results.get(m.mint+':'+m.pairAddress)}));
  }
 }

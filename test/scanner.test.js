@@ -12,7 +12,7 @@ import {createOwnerLedger,nextOwnerOrder,applyOwnerReceipt} from '../src/owner-l
 test('a token rejected on the previous scan can qualify five seconds later despite a legacy cooldown',()=>{
  const now=Date.now(),s=freshState(now),m=verifiedMarket({},now);
  s.coarseCooldowns={[m.mint]:now+1800000};
- const bad=scannerMarkets(s,[{...m,valuationUsd:9999,coarseCooldownUntil:now+1800000}])[0];
+ const bad=scannerMarkets(s,[{...m,valuationUsd:2999,coarseCooldownUntil:now+1800000}])[0];
  assert.ok(rankMarket(bad,undefined,now).red_flags.includes('INVALID_MARKET_CAP'));
  assert.equal(s.coarseCooldowns,undefined);assert.equal(bad.coarseCooldownUntil,undefined);
  const recovered=scannerMarkets(s,[verifiedMarket({coarseCooldownUntil:now+1800000},now+5000)])[0];
