@@ -1,4 +1,4 @@
-import {TRADE_RULES as DEFAULTS,positionLimitReached} from './desk-rules.js';
+import {TRADE_RULES as DEFAULTS,positionLimitReached,clearLegacyDailyHalt} from './desk-rules.js';
 import {rankMarket} from './strategy.js';
 import {recordEvaluation} from './scanner.js';
 export const SOL = 'So11111111111111111111111111111111111111112';
@@ -19,14 +19,12 @@ export function assertMarket(m,now,s,exit=false){
 export function riskCheck(state,markets,solUsd,now=Date.now()){
  if(!Number.isFinite(solUsd)||solUsd<=0)throw Error('Thiếu giá SOL.');
  const value=equity(state,markets,solUsd,now),day=new Date(now).toISOString().slice(0,10);
- if(day!==state.day){state.day=day;state.dayStartEquity=value;state.dailyLossBlocked=false;if(state.haltKind==='daily'){state.halted=null;state.haltKind=null;}}
+ clearLegacyDailyHalt(state);
+ if(day!==state.day){state.day=day;state.dayStartEquity=value;}
  state.peakEquity=Math.max(state.peakEquity,value);
  state.maxDrawdownObservedPct=Math.max(state.maxDrawdownObservedPct??0,(1-value/state.peakEquity)*100);
- const dailyHit=state.dayStartEquity-value>=state.settings.maxDailyLossSol-1e-12;if(dailyHit)state.dailyLossBlocked=true;
  if(value<=state.peakEquity*(1-state.settings.maxDrawdownPct/100)){
   state.halted='Drawdown ≥15%: đóng toàn bộ vị thế, khóa BUY; chờ bật lại thủ công.';state.haltKind='drawdown';state.liquidating=state.positions.length>0;if(!state.liquidating)state.running=false;
- }else if(dailyHit){
-  state.dailyLossBlocked=true;if(!state.halted){state.halted='Chạm giới hạn lỗ/ngày: khóa BUY đến 00:00 UTC; vẫn quản lý thoát lệnh.';state.haltKind='daily';}
  }
 
  return value;

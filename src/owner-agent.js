@@ -8,7 +8,7 @@ import {DEFAULT_OWNER} from './security.js';
 import {createOwnerLedger,nextOwnerOrder,applyOwnerReceipt,ownerExit,allocateOwnerCapital} from './owner-ledger.js';
 import {DEFAULTS,equity,event} from './engine.js';
 import {rankMarket} from './strategy.js';
-import {STRATEGY_VERSION} from './desk-rules.js';
+import {STRATEGY_VERSION,clearLegacyDailyHalt} from './desk-rules.js';
 import {auditDesk} from './auditor.js';
 import {diagnoseOwnerEntry} from './diagnostics.js';
 import {TelegramReporter,enqueueTradeReport} from './telegram.js';
@@ -30,6 +30,7 @@ function validatedState(s,owner){
   for(const p of s.positions)if(p.phase==='runner'&&p.entryPriceUsd>0){const filled=s.trades.filter(t=>t.mint===p.mint&&t.side==='SELL'&&t.reason==='runner-double'&&t.at>=p.openedAt).map(t=>t.priceUsd).filter(Number.isFinite);const anchor=Math.max(p.entryPriceUsd,...filled);p.nextTakeProfitPriceUsd=p.entryPriceUsd*2**Math.max(1,Math.floor(Math.log2(anchor/p.entryPriceUsd))+1);}
  }
  s.cooldowns??={};for(const t of s.trades)if(t.side==='SELL'&&t.reason==='stop-loss'&&t.closed&&Number.isFinite(t.at))s.cooldowns[t.mint]=Math.max(s.cooldowns[t.mint]??0,t.at+DEFAULTS.reentryMs);
+ clearLegacyDailyHalt(s);
  if(s.haltKind==='drawdown'&&s.positions.length)s.liquidating=true;
  return {...s,strategyVersion:STRATEGY_VERSION,withdrawnSol,payoutFeesSol,realizedNetSol,payouts:s.payouts??[],settings:{...DEFAULTS,initialSol:s.settings.initialSol},running:false};
 }
@@ -67,7 +68,8 @@ export class OwnerAgent{
   this.refreshInventory();
   if(!this.state){this.state=createOwnerLedger(this.owner,balance);event(this.state,'Bắt đầu sổ mới với ngân sách SOL hiện có; token ngoài sổ không tự động được quản lý.');}
   if(this.state.pending)throw Error('Đợi đối soát giao dịch đang chờ trước khi bật lại.');
-  if(this.state.halted&&this.state.haltKind!=='daily'&&!this.state.liquidating)throw Error(this.state.halted);
+  clearLegacyDailyHalt(this.state);
+  if(this.state.halted&&!this.state.liquidating)throw Error(this.state.halted);
   allocateOwnerCapital(this.state,balance);
   this.state.storageBlockedReason=this.storageBlockedReason;this.state.orderAttempts={};this.state.buyPaused=false;this.state.buyCircuitOpen=false;this.state.executionFailures=0;
   delete this.state.entryStatus;this.state.running=true;this.state.consecutiveFailures=0;this.lastDecisionFeed=null;this.error=null;event(this.state,'Bộ ký tự động đã bật: ký lệnh bằng ví chủ, không chờ trình duyệt.');try{await this.save();}catch(e){this.state.running=false;this.vault.lock();throw e;}
@@ -75,7 +77,7 @@ export class OwnerAgent{
  async reviewRisk(feed){return this.serial(async()=>{
   const s=this.state;if(!s||s.running||s.pending||s.haltKind!=='drawdown'||s.positions.length)throw Error('Chỉ xem lại khi đã dừng vì drawdown và không còn lệnh chờ.');
   if(feed.error||!Number.isFinite(feed.solUsd)||feed.solUsd<=0||!feed.updatedAt||Date.now()-feed.updatedAt>DEFAULTS.maxPriceAgeMs||feed.updatedAt>Date.now()||s.positions.some(p=>!feed.markets.some(m=>m.mint===p.mint&&Number.isFinite(m.priceUsd)&&m.priceUsd>0&&m.updatedAt<=Date.now()&&Date.now()-m.updatedAt<=DEFAULTS.maxPriceAgeMs)))throw Error('Cần giá mới cho toàn bộ vị thế trước khi xem lại.');
-  s.peakEquity=equity(s,feed.markets,feed.solUsd);s.haltKind=s.dailyLossBlocked?'daily':null;s.halted=s.dailyLossBlocked?'Đang khóa BUY do giới hạn lỗ/ngày đến 00:00 UTC.':null;
+  s.peakEquity=equity(s,feed.markets,feed.solUsd);clearLegacyDailyHalt(s);s.haltKind=null;s.halted=null;
   event(s,'Chủ ví đã xem lại drawdown và đặt mốc đỉnh vốn mới; chưa tự bật lại.');await this.save();
  });}
  async pauseBuys(paused=true){if(paused&&this.state)this.state.buyPaused=true;return this.serial(async()=>{if(this.state){this.state.buyPaused=paused;event(this.state,paused?'Đã tạm dừng BUY; tiếp tục quản lý SELL.':'Chủ đã tiếp tục BUY; các giới hạn lỗ và dữ liệu vẫn áp dụng.');await this.save();}});}

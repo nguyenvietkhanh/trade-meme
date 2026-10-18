@@ -98,7 +98,7 @@ test('pausing and resuming keeps a valid command epoch, and drawdown review neve
   await f.agent.enable();await f.agent.pause();assert.ok(Number.isSafeInteger(f.agent.commandEpoch));await f.agent.enable();await f.agent.tick(f.feed());assert.equal(f.sends,1);await f.agent.tick(f.feed());
   await f.agent.pause();Object.assign(f.agent.state,{haltKind:'drawdown',halted:'review-required',dailyLossBlocked:true});
   await assert.rejects(f.agent.enable(),/review-required/);
-  f.agent.state.positions=[];const market=f.feed().markets[0];await f.agent.reviewRisk({markets:[market],solUsd:100,updatedAt:Date.now()});assert.equal(f.agent.state.running,false);assert.equal(f.agent.state.haltKind,'daily');assert.equal(f.agent.state.pending,null);
+  f.agent.state.positions=[];const market=f.feed().markets[0];await f.agent.reviewRisk({markets:[market],solUsd:100,updatedAt:Date.now()});assert.equal(f.agent.state.running,false);assert.equal(f.agent.state.haltKind,null);assert.equal(f.agent.state.dailyLossBlocked,false);assert.equal(f.agent.state.pending,null);
  }finally{await f.cleanup();}
 });
 test('a failed preparation gets at most three retries and unknown signed outcomes never start another attempt',async()=>{

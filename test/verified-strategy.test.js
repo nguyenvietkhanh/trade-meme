@@ -36,8 +36,8 @@ test('time stop remembers whether the position ever exceeded 20%, and emergency 
  exitPlan(p,{...m,priceUsd:1.21},1,s.settings,now+1000);assert.equal(exitPlan(p,{...m,priceUsd:1.1},1,s.settings,now+2700000),null);
  for(const change of [{liquidityUsd:m.liquidityUsd*.599},{evidence:{sellSimulationOk:false}},{evidence:{lpWithdrawn:true}},{evidence:{largeHolderDump:true}}])assert.deepEqual(exitPlan(p,{...m,...change},1,s.settings,now),{reason:'emergency-risk',fraction:1});
 });
-test('daily BUY halt resets at UTC rollover; drawdown stops all automation and never clears itself',()=>{
- const s=freshState(now);s.peakEquity=.3;s.dayStartEquity=.3;s.cashSol=.27;s.running=true;riskCheck(s,[],150,now);assert.equal(s.haltKind,'daily');assert.equal(s.running,true);
+test('daily loss does not halt BUY; drawdown stops all automation and never clears itself',()=>{
+ const s=freshState(now);s.peakEquity=.3;s.dayStartEquity=.3;s.cashSol=.27;s.running=true;riskCheck(s,[],150,now);assert.equal(s.halted,null);assert.equal(s.dailyLossBlocked,false);assert.equal(s.running,true);
  riskCheck(s,[],150,now+86400000);assert.equal(s.halted,null);assert.equal(s.dayStartEquity,.27);
  s.cashSol=.254;s.running=true;riskCheck(s,[],150,now+86400001);assert.equal(s.haltKind,'drawdown');assert.equal(s.running,false);
  riskCheck(s,[],150,now+2*86400000);assert.equal(s.haltKind,'drawdown');
@@ -62,7 +62,7 @@ test('normal slippage caps stay separate from emergency exits, with no increase 
 test('stop loss includes SOL/USD opportunity cost and fees rather than testing token USD price alone',()=>{
  const s=freshState(now),m=verifiedMarket({priceUsd:1},now);recordBuy(s,m,100,{quantity:3,costSol:.0301,priceUsd:1},now);
  assert.equal(exitPlan(s.positions[0],m,150,s.settings,now)?.reason,'stop-loss');
- const d=freshState(now);d.peakEquity=.3;d.dayStartEquity=.3;d.cashSol=.254;riskCheck(d,[],150,now);assert.equal(d.haltKind,'drawdown');assert.equal(d.dailyLossBlocked,true);
+ const d=freshState(now);d.peakEquity=.3;d.dayStartEquity=.3;d.cashSol=.254;riskCheck(d,[],150,now);assert.equal(d.haltKind,'drawdown');assert.equal(d.dailyLossBlocked,false);
 });
 test('missing optional structure receives half points; abnormal volume/flow is penalized, not a hard veto',()=>{
  const m=verifiedMarket({},now),e={...m.evidence};delete e.higherLows;delete e.pullback30mPct;delete e.greenCandleConfirmed;

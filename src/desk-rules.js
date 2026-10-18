@@ -1,6 +1,6 @@
 // Shared policy for scanning, risk, exits and the auditor. No prompt can override these at runtime.
 // coarseCooldownMs is retained for post-close/exhausted-order risk limits only, never scanner gates.
-export const TRADE_RULES = Object.freeze({initialSol:1.19,reserveSol:0.05,orderSol:0.2,smallOrderSol:0.2,coarseCooldownMs:1800000,maxPositions:null,stopLossPct:20,takeProfitTriggerPct:80,takeProfitRecoveryPct:40,runnerMultiple:2,takeProfitSellFraction:.78,maxHoldMs:21600000,reentryMs:86400000,maxRetries:3,networkFailureLimit:3,maxPriorityAndTipSol:.002,runnerTrailingPct:30,timeStopMs:2700000,timeStopGainPct:20,lossStreakLimit:3,lossPauseMs:7200000,runnerSellFraction:0.5,dustUsd:0.25,minRunnerFraction:0.000001,maxDrawdownPct:15,maxDailyLossSol:0.03,slippageBps:150,buySlippageCapBps:400,sellSlippageCapBps:300,emergencySlippageCapBps:1000,maxRoundTripCostPct:6,minLiquiditySol:20,feeSol:0.0001,minLiquidityUsd:0,minVolume24hUsd:0,minMarketCapUsd:3000,maxMarketCapUsd:5000000,maxPriceAgeMs:30000});
+export const TRADE_RULES = Object.freeze({initialSol:1.19,reserveSol:0.05,orderSol:0.2,smallOrderSol:0.2,coarseCooldownMs:1800000,maxPositions:null,stopLossPct:20,takeProfitTriggerPct:80,takeProfitRecoveryPct:40,runnerMultiple:2,takeProfitSellFraction:.78,maxHoldMs:21600000,reentryMs:86400000,maxRetries:3,networkFailureLimit:3,maxPriorityAndTipSol:.002,runnerTrailingPct:30,timeStopMs:2700000,timeStopGainPct:20,lossStreakLimit:3,lossPauseMs:7200000,runnerSellFraction:0.5,dustUsd:0.25,minRunnerFraction:0.000001,maxDrawdownPct:15,maxDailyLossSol:null,slippageBps:150,buySlippageCapBps:400,sellSlippageCapBps:300,emergencySlippageCapBps:1000,maxRoundTripCostPct:6,minLiquiditySol:20,feeSol:0.0001,minLiquidityUsd:0,minVolume24hUsd:0,minMarketCapUsd:3000,maxMarketCapUsd:5000000,maxPriceAgeMs:30000});
 export const ENTRY_EXCLUDED_MINTS=Object.freeze(['6JVe4NQPab3NkKxE6vaKcEiJVsz8hpSZYvdHh54hpump']);
 export const TREND_RULES=Object.freeze({h4MaxAgeMs:60000,h4RejectMemoryMs:14400000,minHistoryMs:900000,minRedDropPct:20,minPumpPct:50,minPeakRetreatPct:35,minUpperWickFraction:.55,maxCloseLocation:.35});
 export const STRATEGY_VERSION='solana-six-stage-desk-v4';
@@ -27,4 +27,10 @@ export function executionSlippageBps(side,reason=''){return side==='BUY'?TRADE_R
 
 export function validatePriorityBudget(priorityLamports,tipLamports=0){
  if(!Number.isSafeInteger(priorityLamports)||!Number.isSafeInteger(tipLamports)||priorityLamports<0||tipLamports<0||priorityLamports+tipLamports>TRADE_RULES.maxPriorityAndTipSol*1e9)throw Error('Priority fee + Jito tip vượt 0,002 SOL mỗi chiều.');
+}
+
+// Retired policy: remove only the old daily-loss latch, preserving every other stop.
+export function clearLegacyDailyHalt(state){
+ state.dailyLossBlocked=false;
+ if(state.haltKind==='daily'){state.halted=null;state.haltKind=null;delete state.entryStatus;}
 }

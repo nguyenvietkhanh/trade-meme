@@ -34,7 +34,7 @@ test('the 0.2 SOL fixed size retains reserve and overhead at exact lamport bound
  assert.equal(canFundBuy(.255,.2,.05),true);assert.equal(canFundBuy(.254999999,.2,.05),false);
  assert.equal(canFundBuy(1.19,.2,.05),true);
  for(const balance of [NaN,Infinity,-1,.05])assert.equal(canFundBuy(balance,.2,.05),false);
- assert.equal(TRADE_RULES.maxDailyLossSol,.03);assert.equal(TRADE_RULES.maxDrawdownPct,15);assert.equal(TRADE_RULES.stopLossPct,20);
+ assert.equal(TRADE_RULES.maxDailyLossSol,null);assert.equal(TRADE_RULES.maxDrawdownPct,15);assert.equal(TRADE_RULES.stopLossPct,20);
 });
 test('the new 1.19 SOL principal cannot be paid as profit and the old payout cap stays 0.3 SOL',()=>{
  const s=createOwnerLedger('owner',.3);assert.equal(allocateOwnerCapital(s,1.19),.89);assert.equal(profitOrder(s,1.19),null);
