@@ -44,7 +44,7 @@ export function recordBuy(state,m,solUsd,fill,now=Date.now(),reason='manual',mod
  if(!(quantity>0&&cost>0&&priceUsd>0))throw Error('Fill mua không hợp lệ.');
  state.cashSol-=cost;
  state.positions.push({mint:m.mint,pairAddress:m.pairAddress,symbol:m.symbol,quantity,initialQuantity:quantity,costSol:cost,initialCostSol:cost,costUsd:cost*solUsd,initialCostUsd:cost*solUsd,entrySolUsd:solUsd,entryPriceUsd:priceUsd,lastPriceUsd:m.priceUsd,entryLiquidityUsd:m.liquidityUsd,entryVolume5mUsd:m.volume5mUsd,peakPriceUsd:priceUsd,maxGainPct:0,openedAt:now,phase:'initial',realizedPnlSol:0,recoveredUsd:0,runnerSteps:0,nextTakeProfitPriceUsd:null,rawQuantity:fill.rawQuantity,decimals:fill.decimals});
- state.trades.unshift({side:'BUY',mode,mint:m.mint,symbol:m.symbol,quantity,priceUsd,sol:cost,at:now,reason,signature:fill.signature,networkFeeSol:fill.networkFeeSol??null});state.trades=state.trades.slice(0,500);
+ state.trades.unshift({side:'BUY',mode,mint:m.mint,symbol:m.symbol,venue:m.venue??m.dexId??null,strategyVersion:state.strategyVersion??null,quantity,priceUsd,sol:cost,at:now,reason,signature:fill.signature,networkFeeSol:fill.networkFeeSol??null});state.trades=state.trades.slice(0,500);
  event(state,`${mode==='live'?'MAINNET':'MÔ PHỎNG'} • Mua ${m.symbol}: ${cost.toFixed(5)} SOL`,now);
 }
 export function netPositionUsd(p,m,solUsd,s){return Math.max(0,p.quantity*m.priceUsd*(1-s.slippageBps/10000)-s.feeSol*solUsd);}
@@ -128,7 +128,7 @@ export function recordSell(state,m,solUsd,fill,now=Date.now(),reason='manual',mo
   if(reason==='recover-capital')p.peakPriceSol=priceSol;
   p.nextTakeProfitPriceSol=p.entryPriceSol*2**Math.max(1,Math.floor(Math.log2(priceSol/p.entryPriceSol))+1);p.nextTakeProfitPriceUsd=null;p.peakPriceUsd=null;
  }
- state.trades.unshift({side:'SELL',mode,mint:p.mint,symbol:p.symbol,quantity,priceUsd:fill.priceUsd,sol:proceeds,pnlSol,at:now,reason,fraction,closed:fraction===1,positionPnlSol:fraction===1?p.realizedPnlSol:null,initialRiskSol:p.initialCostSol*state.settings.stopLossPct/100,networkFeeSol:fill.networkFeeSol??null,remainingQuantity:p.quantity,signature:fill.signature});state.trades=state.trades.slice(0,500);
+ state.trades.unshift({side:'SELL',mode,mint:p.mint,symbol:p.symbol,venue:m.venue??p.venue??null,strategyVersion:state.strategyVersion??null,quantity,priceUsd:fill.priceUsd,sol:proceeds,pnlSol,at:now,reason,fraction,closed:fraction===1,positionPnlSol:fraction===1?p.realizedPnlSol:null,initialRiskSol:p.initialCostSol*state.settings.stopLossPct/100,networkFeeSol:fill.networkFeeSol??null,remainingQuantity:p.quantity,signature:fill.signature});state.trades=state.trades.slice(0,500);
  state.decisions.unshift({at:now,mint:p.mint,symbol:p.symbol,score:null,action:'SELL',reason});state.decisions=state.decisions.slice(0,300);
  event(state,`${mode==='live'?'MAINNET':'MÔ PHỎNG'} • Bán ${(fraction*100).toFixed(2)}% ${p.symbol} (${reason}): P/L ${pnlSol.toFixed(5)} SOL`,now);
 }

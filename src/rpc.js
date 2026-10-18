@@ -1,5 +1,6 @@
 import {Connection} from '@solana/web3.js';
 import {retryAfterMs} from './provider-fetch.js';
+import {rpcScheduler} from './rpc-priority.js';
 
 export const PUBLIC_RPC_ENDPOINTS=Object.freeze(['https://api.mainnet-beta.solana.com','https://solana-rpc.publicnode.com']);
 // Full 32-byte genesis hash; the 32-character CAIP chain identifier is NOT a genesis hash.
@@ -12,7 +13,8 @@ export function keylessConnection(endpoints=PUBLIC_RPC_ENDPOINTS,{clock=Date.now
  if(!endpoints.length||endpoints.some(url=>new URL(url).protocol!=='https:'))throw Error('RPC cần HTTPS.');
  let active=0,lastFailures=[];const verified=new Map(),checking=new Map(),pending=new Map(),methods=new Map();
  const health=endpoints.map(()=>({failures:0,retryAt:0,epoch:0}));
- const request=(url,options)=>fetch(url,{...options,signal:AbortSignal.timeout(10000)});
+ const lanes=endpoints.map(()=>rpcScheduler());
+ const request=(url,options)=>lanes[endpoints.indexOf(url)](JSON.parse(options.body).method,()=>{if(health[endpoints.indexOf(url)].retryAt>clock())throw new RpcFailure('RPC tạm chờ hồi phục',{waiting:true});return fetch(url,{...options,signal:AbortSignal.timeout(10000)});});
  const httpError=response=>new RpcFailure('HTTP '+response.status,{status:response.status,retryAfter:retryAfterMs(response.headers.get('retry-after'),clock())});
  const check=async url=>{
   if(verified.has(url)&&clock()-verified.get(url)<60000)return;

@@ -47,9 +47,9 @@ test('the example mint is excluded from BUY without preventing management of an 
 
 test('two observations require positive M5/H1 and cannot confirm a falling spot price',()=>{
  const s=freshState(now),m=verifiedMarket({priceUsd:1},now);observeMarkets(s,[m],now);
- assert.equal(observeMarkets(s,[{...m,priceUsd:.99}],now+10000)[0].signalConfirmed,false);
- const other=freshState(now);observeMarkets(other,[m],now);observeMarkets(other,[{...m,change1hPct:-1}],now+5000);
- assert.equal(observeMarkets(other,[m],now+10000)[0].signalConfirmed,false);
+ assert.equal(observeMarkets(s,[{...m,updatedAt:now+10000,priceUsd:.99}],now+10000)[0].signalConfirmed,false);
+ const other=freshState(now);observeMarkets(other,[m],now);observeMarkets(other,[{...m,updatedAt:now+5000,change1hPct:-1}],now+5000);
+ assert.equal(observeMarkets(other,[{...m,updatedAt:now+10000}],now+10000)[0].signalConfirmed,false);
 });
 
 test('H4 adapter requests actual 4-hour candles for the same pool/base token',async t=>{

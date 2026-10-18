@@ -43,5 +43,5 @@ export async function buildPumpSwap(rpc,{owner,input,output,amount,poolAddress,s
  const block=await rpc.getLatestBlockhash('confirmed');
  validatePriorityBudget(15000,0);
  const tx=new VersionedTransaction(new TransactionMessage({payerKey:owner,recentBlockhash:block.blockhash,instructions:[ComputeBudgetProgram.setComputeUnitLimit({units:300000}),ComputeBudgetProgram.setComputeUnitPrice({microLamports:50000}),...instructions]}).compileToV0Message());
- return {tx,closedInputAccount,lastValidBlockHeight:block.lastValidBlockHeight,quote:{tokenProgram:state.baseTokenProgram.toBase58(),inputMint:input,outputMint:output,inAmount:String(amount),outAmount:out.toString(),otherAmountThreshold:minOut.toString(),swapMode:'ExactIn',priceImpactPct:value.muln(1000000).div(reserve).toNumber()/1000000,slippageBps,contextSlot:currentSlot,routePlan:[{swapInfo:{label:'PumpSwap',ammKey:poolAddress}}]}};
+ return {tx,closedInputAccount,lastValidBlockHeight:block.lastValidBlockHeight,quote:{quotedAt:started,tokenProgram:state.baseTokenProgram.toBase58(),inputMint:input,outputMint:output,inAmount:String(amount),outAmount:out.toString(),otherAmountThreshold:minOut.toString(),swapMode:'ExactIn',priceImpactPct:value.muln(1000000).div(reserve).toNumber()/1000000,slippageBps,contextSlot:currentSlot,routePlan:[{swapInfo:{label:'PumpSwap',ammKey:poolAddress}}]}};
 }

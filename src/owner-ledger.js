@@ -26,8 +26,12 @@ export function nextOwnerOrder(s,feed,walletBalance){
  if(s.pending)return null;
  const now=Date.now(),validSol=Number.isFinite(feed.solUsd)&&feed.solUsd>0;
  if(validSol&&(!feed.solUsdEstimated&&now-feed.updatedAt<=s.settings.maxPriceAgeMs||s.positions.length&&s.positions.every(p=>{const q=feed.markets.find(m=>m.mint===p.mint)?.exitQuote;return q?.mint===p.mint&&q.rawAmount===p.rawQuantity&&q.checkedAt<=now&&now-q.checkedAt<=s.settings.maxPriceAgeMs&&Number.isFinite(q.netSol);})))riskCheck(s,feed.markets,feed.solUsd);
- const exhausted=o=>(s.orderAttempts?.[o.side+':'+(o.mint??o.recipient)+':'+(o.amount??'fixed')]??0)>=s.settings.maxRetries+1;
- if(s.liquidating&&s.positions.length){for(const p of s.positions){const o=ownerExit(s,p.mint,1,'drawdown-close',feed.solUsd);if(!exhausted(o))return o;}s.running=false;return null;}
+ const exhausted=o=>{
+  const attempts=s.orderAttempts?.[o.side+':'+(o.mint??o.recipient)+':'+(o.amount??'fixed')]??0,blocked=attempts>=s.settings.maxRetries+1;
+  if(blocked&&o.side==='SELL'){const p=s.positions.find(p=>p.mint===o.mint);if(p&&!p.exitBlocked){p.exitBlocked={reason:'retry-exhausted',amount:o.amount,attempts,since:now};event(s,`EXIT BLOCKED • ${p.symbol}: đã hết lượt thử SELL; vị thế còn mở, dừng BUY và cần xem lại.`,now);}}
+  return blocked;
+ };
+ if(s.liquidating&&s.positions.length){for(const p of s.positions){const o=ownerExit(s,p.mint,1,'drawdown-close',feed.solUsd);if(!exhausted(o))return o;}return null;}
  for(const p of s.positions){
   const m=feed.markets.find(m=>m.mint===p.mint)??{mint:p.mint,priceUsd:p.lastPriceUsd};
   if(Number.isFinite(m.priceUsd)&&m.priceUsd>0)p.lastPriceUsd=m.priceUsd;
@@ -35,7 +39,7 @@ export function nextOwnerOrder(s,feed,walletBalance){
   const plan=exitPlan(p,m,validSol?feed.solUsd:p.entrySolUsd,{...s.settings,requireExecutableQuote:true},now);
   if(plan&&(fresh||['max-hold','time-stop','emergency-risk','stop-loss'].includes(plan.reason))){const o=ownerExit(s,p.mint,plan.fraction,plan.reason,feed.solUsd);if(!exhausted(o))return {...o,exitTrigger:plan.trigger};}
  }
- if(feed.error||!feed.updatedAt||now-feed.updatedAt>s.settings.maxPriceAgeMs||feed.updatedAt>now||!validSol||s.buyPaused||s.buyBlockedReason)return null;
+ if(s.positions.some(p=>p.exitBlocked)||feed.error||!feed.updatedAt||now-feed.updatedAt>s.settings.maxPriceAgeMs||feed.updatedAt>now||!validSol||s.buyPaused||s.buyBlockedReason)return null;
  const payout=s.recoveryRequired?null:profitOrder(s,walletBalance);if(payout)return payout;
  if(!walletOrderSol(walletBalance,CURVE_RULES.orderFraction)||s.halted||positionLimitReached(s.positions.length,s.settings)||s.positions.some(p=>!feed.markets.some(m=>m.mint===p.mint)))return null;
  const m=feed.markets.map(m=>({...m,...rankMarket(m,s.settings)})).filter(m=>m.eligible&&canFundBuy(s.cashSol,walletOrderSol(walletBalance,isPumpCurve(m)?CURVE_RULES.orderFraction:WALLET_ORDER_FRACTION),s.settings.reserveSol)&&walletOrderSol(walletBalance,isPumpCurve(m)?CURVE_RULES.orderFraction:WALLET_ORDER_FRACTION)>0&&!s.positions.some(p=>p.mint===m.mint)&&!(s.cooldowns[m.mint]>Date.now())&&!exhausted({side:'BUY',venue:isPumpCurve(m)?'pumpfun':'pumpswap',mint:m.mint})).sort((a,b)=>b.score-a.score)[0];
@@ -58,12 +62,12 @@ export function applyOwnerReceipt(s,pending,result){
  }else if(result.status==='confirmed'){
   const raw=BigInt(result.tokenDelta),quantity=Number(raw<0n?-raw:raw)/10**result.decimals,m={mint:intent.mint,symbol:intent.symbol,priceUsd:intent.priceUsd,liquidityUsd:intent.entryLiquidityUsd,volume5mUsd:intent.entryVolume5mUsd,pairAddress:intent.pairAddress};
   if(intent.side==='BUY'){
-   recordBuy(s,m,intent.solUsd,{quantity,costSol:-result.solDelta,priceUsd:Number(intent.amount??BUY_LAMPORTS)/1e9*intent.solUsd/quantity,rawQuantity:raw.toString(),decimals:result.decimals,signature:result.signature,networkFeeSol:result.feeSol??null},Date.now(),intent.reason,'live');
+   m.venue=intent.venue??'pumpswap';recordBuy(s,m,intent.solUsd,{quantity,costSol:-result.solDelta,priceUsd:Number(intent.amount??BUY_LAMPORTS)/1e9*intent.solUsd/quantity,rawQuantity:raw.toString(),decimals:result.decimals,signature:result.signature,networkFeeSol:result.feeSol??null},Date.now(),intent.reason,'live');
    trainingPosition=s.positions.find(p=>p.mint===intent.mint);trainingPosition.trainingEntry={signature:result.signature,features:intent.entryFeatures??null};trainingPosition.venue=intent.venue??'pumpswap';if(intent.venue==='pumpfun'){trainingPosition.priceBasis='sol';trainingPosition.entryPriceSol=-result.solDelta/quantity;trainingPosition.peakPriceSol=trainingPosition.entryPriceSol;trainingPosition.lastPriceSol=trainingPosition.entryPriceSol;trainingPosition.nextTakeProfitPriceSol=null;}
   }
   else{
    const p=s.positions.find(p=>p.mint===intent.mint);if(!p||raw>=0n||-raw>BigInt(p.rawQuantity))throw Error('Lượng bán không khớp sổ vị thế của ứng dụng.');
-   trainingPosition=p;const remaining=BigInt(p.rawQuantity)+raw;
+   trainingPosition=p;m.venue=intent.venue??p.venue??'pumpswap';delete p.exitBlocked;const remaining=BigInt(p.rawQuantity)+raw;
    recordSell(s,m,intent.solUsd,{quantity,proceedsSol:result.solDelta,priceUsd:result.solDelta*intent.solUsd/quantity,rawBalance:remaining.toString(),closed:remaining===0n,signature:result.signature,networkFeeSol:result.feeSol??null},Date.now(),intent.reason,'live');
   }
  }else if(result.status==='failed'){

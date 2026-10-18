@@ -10,7 +10,20 @@ import {OwnerAgent,signerRequestAllowed} from '../src/owner-agent.js';
 import {DirectWallet,verifyOwnerTransaction} from '../src/direct-wallet.js';
 import {TradePolicyError} from '../src/solana.js';
 import {PROFIT_RECIPIENT} from '../src/profit.js';
+import {nextOwnerOrder} from '../src/owner-ledger.js';
 const password='unit-fixture-password-123456';
+test('exhausted SELL remains visible, blocks BUY, alerts once and only an explicit owner review restores retries',async()=>{
+ const f=await fixture();try{
+  await f.agent.enable();await f.agent.tick(f.feed());await f.agent.tick(f.feed());const s=f.agent.state,p=s.positions[0];
+  f.execution.sellQuote=async()=>({mint:p.mint,rawAmount:p.rawQuantity,checkedAt:Date.now(),netSol:.025,provider:'fixture'});
+  s.liquidating=true;s.haltKind='drawdown';s.halted='Drawdown';s.orderAttempts={['SELL:'+p.mint+':'+p.rawQuantity]:4};
+  f.agent.telegram.enabled=true;await f.agent.tick(f.feed());assert.equal(s.running,true);assert.equal(s.positions.length,1);assert.equal(p.exitBlocked.reason,'retry-exhausted');assert.equal(s.entryStatus.phase,'exit-blocked');assert.equal(s.pending,null);assert.equal(f.sends,1);assert.equal(s.telegramOutbox.length,1);
+  await f.agent.tick(f.feed());assert.equal(s.telegramOutbox.length,1);s.orderAttempts['SELL:other:1']=4;
+  s.pending={};await assert.rejects(f.agent.reviewExit(p.mint),/giao dịch chờ/);s.pending=null;
+  await f.agent.reviewExit(p.mint);assert.equal(p.exitBlocked,undefined);assert.equal(s.orderAttempts['SELL:other:1'],4);assert.equal(s.haltKind,'drawdown');
+  const order=nextOwnerOrder(s,{...f.feed(),markets:[{...f.feed().markets[0],exitQuote:await f.execution.sellQuote()}]},s.cashSol);assert.equal(order.side,'SELL');assert.equal(order.reason,'drawdown-close');assert.equal(f.sends,1);
+ }finally{await f.cleanup();}
+});
 async function fixture(){
  const dir=await mkdtemp('/tmp/meme-owner-agent-'),kp=Keypair.generate(),owner=kp.publicKey.toBase58(),mint=Keypair.generate().publicKey.toBase58();let sends=0,balanceSol=.3,preparedSol=0,preparedBalance=0;
  const market=()=>verifiedMarket({mint,priceUsd:1,pairAddress:'11111111111111111111111111111112'});

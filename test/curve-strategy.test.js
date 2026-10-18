@@ -18,7 +18,7 @@ test('pre-migration entries use M1/M5 rather than nonexistent H1/H4, but still r
  const swap=verifiedMarket({change1hPct:null},now);assert.equal(rankMarket(swap,TRADE_RULES,now).eligible,false);assert.equal(TRADE_RULES.maxDailyLossSol,null);assert.equal(TRADE_RULES.lossPauseMs,0);
 });
 test('curve confirmation requires distinct observations and supports new coins with no H1 candles',()=>{
- const now=Date.now(),state={},m=curveMarket(now);assert.equal(observeMarkets(state,[m],now)[0].signalConfirmed,false);assert.equal(observeMarkets(state,[{...m,priceUsd:m.priceUsd*1.01}],now+10000)[0].signalConfirmed,true);
+ const now=Date.now(),state={},m=curveMarket(now,{activityWatermark:'slot:trade:0'});assert.equal(observeMarkets(state,[m],now)[0].signalConfirmed,false);assert.equal(observeMarkets(state,[{...m,updatedAt:now+10000,activityCheckedAt:now+10000,activityWatermark:'slot:new-trade:0',priceUsd:m.priceUsd*1.01}],now+10000)[0].signalConfirmed,true);
  assert.equal(observeMarkets(state,[{...m,change1mPct:-1}],now+15000)[0].signalConfirmed,false);
 });
 test('owner ledger sizes each venue independently and leaves old PumpSwap allocation at 20%',()=>{

@@ -42,3 +42,9 @@ test('trade-history 429 is separate from RPC success, survives skipped polls, re
  now+=10000;blocked=false;const good=await source.markets(100);assert.equal(good.diagnostics.status,'ready');assert.equal(good.diagnostics.freshMarkets,1);assert.equal(good.diagnostics.completeActivityMarkets,1);assert.equal(good.diagnostics.stages.activity.errorCode,null);assert.equal(good.warnings.length,0);
  now+=31000;const stale=source.diagnostics(good.markets);assert.equal(stale.freshMarkets,0);assert.equal(stale.status,'stale');assert.ok(stale.message.includes('đã cũ'));
 });
+test('promising curves receive a new trade read within 10 seconds without exceeding the two-history-request budget',async t=>{
+ let now=Date.now();t.mock.method(Date,'now',()=>now);const coins=Array.from({length:30},()=>({mint:Keypair.generate().publicKey.toBase58(),complete:false})),batches=[],history=[];
+ const execution={curveMarketData:async mints=>{batches.push(mints);return mints.map(mint=>({mint,venue:'pumpfun',updatedAt:now,liquidityQuoteSol:30,liquidityUsd:3000,valuationUsd:40000,creatorAddress:users[0],tokenSupplyRaw:1e15}));}};
+ const source=new PumpFunMarkets(execution,async url=>{if(!url.includes('/trades/'))return new Response(JSON.stringify(coins));const requested=url.split('/trades/all/')[1].split('?')[0];history.push(requested);return new Response(JSON.stringify(trades(now).map(t=>({...t,mint:requested}))));});
+ await source.markets(100);const first=history.slice();assert.equal(first.length,2);now+=5000;await source.markets(100);assert.equal(history.length,4);now+=5000;await source.markets(100);assert.equal(history.length,6);assert.deepEqual(history.slice(4),first);assert.ok(first.every(mint=>batches[2].includes(mint)));assert.ok(batches.every(b=>b.length<=8));
+});

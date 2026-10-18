@@ -5,11 +5,12 @@ const failureCode=e=>Number.isInteger(e?.status)?'HTTP_'+e.status:e?.name==='Tim
 export function curveActivity(rows,mint,now=Date.now(),limit=200){
  if(!Array.isArray(rows)||rows.some(t=>t.mint!==mint||typeof t.signature!=='string'||!t.signature||t.signature.length>128||!Number.isSafeInteger(number(t.slot))||number(t.slot)<0||typeof t.is_buy!=='boolean'||!MINT.test(t.user)||!Number.isSafeInteger(number(t.sol_amount))||number(t.sol_amount)<=0||!Number.isSafeInteger(number(t.token_amount))||number(t.token_amount)<=0||!Number.isSafeInteger(number(t.timestamp))||number(t.timestamp)*1000>now))throw Object.assign(Error('Lịch sử pump.fun thiếu dữ liệu giao dịch thực.'),{code:'INVALID_RESPONSE'});
  const unique=new Map(rows.map(t=>[t.signature+':'+(t.tx_index??'')+':'+t.user+':'+t.is_buy,{...t,slot:Number(t.slot),at:Number(t.timestamp)*1000,priceSol:Number(t.sol_amount)/1e9/(Number(t.token_amount)/1e6)}]));
- const all=[...unique.values()].sort((a,b)=>a.at-b.at),historyComplete=rows.length<limit||all[0]?.at<=now-300000;
+ const all=[...unique.values()].sort((a,b)=>a.at-b.at||a.slot-b.slot||Number(a.tx_index??0)-Number(b.tx_index??0)||a.signature.localeCompare(b.signature)),historyComplete=rows.length<limit||all[0]?.at<=now-300000;
  const window=ms=>all.filter(t=>t.at>=now-ms),m1=window(60000),m5=window(300000),h1=window(3600000),volume=a=>a.reduce((n,t)=>n+Number(t.sol_amount)/1e9,0),buys=a=>a.filter(t=>t.is_buy).length;
  const anchor=ms=>[...all].reverse().find(t=>t.at<=now-ms)??all[0];
  const change=ms=>{const a=anchor(ms),last=all.at(-1);return a&&last&&a.priceSol>0?(last.priceSol/a.priceSol-1)*100:null;};
- return {historyComplete,activityCheckedAt:now,buys1m:buys(m1),sells1m:m1.length-buys(m1),buys5m:buys(m5),sells5m:m5.length-buys(m5),buys1h:buys(h1),sells1h:h1.length-buys(h1),volume1mSol:volume(m1),volume5mSol:volume(m5),volume1hSol:volume(h1),change1mPct:change(60000),change5mPct:change(300000),change1hPct:change(3600000),uniqueBuyers5m:new Set(m5.filter(t=>t.is_buy).map(t=>t.user)).size,lastTradeAt:all.at(-1)?.at??null,trades:all};
+ const last=all.at(-1);
+ return {historyComplete,activityCheckedAt:now,activityWatermark:last?`${last.slot}:${last.signature}:${last.tx_index??0}`:null,buys1m:buys(m1),sells1m:m1.length-buys(m1),buys5m:buys(m5),sells5m:m5.length-buys(m5),buys1h:buys(h1),sells1h:h1.length-buys(h1),volume1mSol:volume(m1),volume5mSol:volume(m5),volume1hSol:volume(h1),change1mPct:change(60000),change5mPct:change(300000),change1hPct:change(3600000),uniqueBuyers5m:new Set(m5.filter(t=>t.is_buy).map(t=>t.user)).size,lastTradeAt:last?.at??null,trades:all};
 }
 export class PumpFunMarkets{
  constructor(execution,fetcher=globalThis.fetch){this.execution=execution;this.fetcher=backoffFetch(fetcher,{provider:'pump.fun'});this.coins=new Map();this.activities=new Map();this.prices=new Map();this.lastDiscoveryAt=0;this.lastTrades=new Map();this.cursor=0;this.stages={discovery:{status:'idle'},curveRpc:{status:'idle'},activity:{status:'idle'}};this.counts={verifiedCurves:0,liquidCurves:0};}
@@ -41,11 +42,14 @@ export class PumpFunMarkets{
   if(now-this.lastDiscoveryAt>=30000){this.lastDiscoveryAt=now;try{const rows=await this.json(ORIGIN+'/coins?offset=0&limit=50&sort=last_trade_timestamp&order=DESC&includeNsfw=false');if(!Array.isArray(rows))throw Object.assign(Error('Không có danh sách pump.fun.'),{code:'INVALID_RESPONSE'});for(const c of rows)if(MINT.test(c.mint)&&c.complete===false)this.coins.set(c.mint,c);else if(MINT.test(c.mint)&&c.complete===true)this.coins.delete(c.mint);for(const mint of [...this.coins.keys()].slice(0,Math.max(0,this.coins.size-300)))this.coins.delete(mint);this.note('discovery');}catch(error){this.note('discovery',error);}}
   for(const mint of this.prices.keys())if(!this.coins.has(mint)){this.prices.delete(mint);this.activities.delete(mint);this.lastTrades.delete(mint);}
   const mints=[...this.coins.keys()];if(!mints.length)return this.result();
-  const chosen=[...new Set([...tracked.filter(m=>this.coins.has(m)),...Array.from({length:Math.min(6,mints.length)},(_,i)=>mints[(this.cursor+i)%mints.length])])].slice(0,8);this.cursor=(this.cursor+6)%mints.length;
+  // Revisit at most two promising curves in the confirmation window; a full
+  // discovery rotation can otherwise take longer than the 10–15 second window.
+  const followups=[...this.activities].filter(([mint,a])=>this.coins.has(mint)&&now-a.activityCheckedAt>=10000&&now-a.activityCheckedAt<=15000&&a.change1mPct>0&&a.change5mPct>0&&a.buys5m>=8&&a.buys5m+a.sells5m>=15).slice(0,2).map(([mint])=>mint);
+  const chosen=[...new Set([...tracked.filter(m=>this.coins.has(m)),...followups,...Array.from({length:Math.min(6,mints.length)},(_,i)=>mints[(this.cursor+i)%mints.length])])].slice(0,8);this.cursor=(this.cursor+6)%mints.length;
   let slots;try{slots=await this.execution.curveMarketData(chosen,solUsd);this.note('curveRpc');this.counts.verifiedCurves=slots.length;}catch(error){this.note('curveRpc',error);return this.result();}
   for(const state of slots){const c=this.coins.get(state.mint);this.prices.set(state.mint,{...state,symbol:String(c.symbol??'?').slice(0,60),name:String(c.name??'').slice(0,120),pairCreatedAt:number(c.created_timestamp)>1e12?number(c.created_timestamp):number(c.created_timestamp)>1e9?number(c.created_timestamp)*1000:null,hasProfile:!!(c.website||c.twitter||c.telegram),boosted:false});}
   const liquid=slots.filter(m=>m.liquidityQuoteSol>=20&&m.valuationUsd>=3000&&m.valuationUsd<=5000000);this.counts.liquidCurves=liquid.length;
-  const targets=liquid.sort((a,b)=>(this.lastTrades.get(a.mint)??0)-(this.lastTrades.get(b.mint)??0)).slice(0,2).filter(m=>now-(this.lastTrades.get(m.mint)??0)>=10000);
+  const targets=liquid.sort((a,b)=>Number(followups.includes(b.mint))-Number(followups.includes(a.mint))||(this.lastTrades.get(a.mint)??0)-(this.lastTrades.get(b.mint)??0)).slice(0,2).filter(m=>now-(this.lastTrades.get(m.mint)??0)>=10000);
   const results=await Promise.allSettled(targets.map(async m=>{this.lastTrades.set(m.mint,now);this.activities.set(m.mint,await this.activity(m.mint));}));
   if(results.length)this.note('activity',results.find(r=>r.status==='rejected')?.reason);
   const markets=[];

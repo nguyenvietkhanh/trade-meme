@@ -15,6 +15,7 @@ import {diagnoseOwnerEntry} from './diagnostics.js';
 import {TelegramReporter,enqueueTradeReport} from './telegram.js';
 import {inventoryBalances,verifyPurchase,adoptPurchase} from './recovery.js';
 import {TrainingArchive,validReportRef} from './training-archive.js';
+import {withRpcPriority} from './rpc-priority.js';
 
 export function signerRequestAllowed(req,expectedOrigin,onRailway){
  if(onRailway)return typeof expectedOrigin==='string'&&expectedOrigin.startsWith('https://');
@@ -87,6 +88,11 @@ export class OwnerAgent{
   event(s,'Chủ ví đã xem lại drawdown và đặt mốc đỉnh vốn mới; chưa tự bật lại.');await this.save();
  });}
  async pauseBuys(paused=true){if(paused&&this.state)this.state.buyPaused=true;return this.serial(async()=>{if(this.state){this.state.buyPaused=paused;event(this.state,paused?'Đã tạm dừng BUY; tiếp tục quản lý SELL.':'Chủ đã tiếp tục BUY; các giới hạn lỗ và dữ liệu vẫn áp dụng.');await this.save();}});}
+ async reviewExit(mint){return this.serial(async()=>{
+  const s=this.state,p=s?.positions.find(p=>p.mint===mint);if(!p?.exitBlocked||s.pending||!this.vault.keypair)throw Error('Cần mở khóa, có vị thế bị chặn và không còn giao dịch chờ.');
+  for(const key of Object.keys(s.orderAttempts??{}))if(key.startsWith('SELL:'+mint+':'))delete s.orderAttempts[key];delete p.exitBlocked;
+  event(s,`Chủ ví đã xem lại lỗi SELL ${p.symbol} và cấp lại lượt thử; vẫn kiểm tra quote và mọi giới hạn trước khi gửi.`);await this.save();
+ });}
  async pause(lock=false){this.commandEpoch++;if(this.state)this.state.running=false;return this.serial(async()=>{if(this.state)this.state.running=false;try{await this.save();}finally{if(lock)this.vault.lock();}});}
  async status(){
   this.refreshInventory();
@@ -101,8 +107,9 @@ export class OwnerAgent{
   if(order.side==='PROFIT'&&this.payoutGuard())throw Error(this.payoutGuard());
   const key=order.side+':'+(order.mint??order.recipient)+':'+(order.amount??'fixed');s.orderAttempts??={};if((s.orderAttempts[key]??0)>=DEFAULTS.maxRetries+1)throw Error('Đã hết 3 lần retry cho lệnh này.');s.orderAttempts[key]=(s.orderAttempts[key]??0)+1;await this.save();
   let prepared;const epoch=this.commandEpoch,started=performance.now(),decisionAt=Date.now();
+  const attemptId=`${decisionAt}:${key}:${s.orderAttempts[key]}`;this.research?.execution('preparing',order,{attemptId});
   try{
-   prepared=await this.direct.prepare(order,feed);
+   prepared=await withRpcPriority(order.side==='SELL'?'exit':'normal',()=>this.direct.prepare(order,feed));
    if(order.side==='SELL'&&BigInt(prepared.intent.amount)>BigInt(s.positions.find(p=>p.mint===order.mint)?.rawQuantity??'0'))throw Error('Lệnh vượt số token ứng dụng quản lý.');
    const prepareMs=performance.now()-started;
    const tx=VersionedTransaction.deserialize(Buffer.from(prepared.transaction,'base64'));
@@ -112,13 +119,14 @@ export class OwnerAgent{
    if(epoch!==this.commandEpoch||!this.vault.keypair)throw Error('Đã dừng bộ ký; không ký lệnh mới.');
    if(order.side==='PROFIT'&&this.payoutGuard())throw Error(this.payoutGuard());
    const signStarted=performance.now();tx.sign([this.vault.keypair]);const signMs=performance.now()-signStarted;
-   s.pending={attemptKey:key,intent:prepared.intent,transaction:Buffer.from(tx.serialize()).toString('base64'),signature:bs58.encode(tx.signatures[0]),timing:{decisionAt,quoteAgeMs:feed.updatedAt?Math.max(0,decisionAt-feed.updatedAt):null,prepareMs,signMs}};
+   s.pending={attemptKey:key,intent:prepared.intent,transaction:Buffer.from(tx.serialize()).toString('base64'),signature:bs58.encode(tx.signatures[0]),timing:{decisionAt,feedAgeMs:feed.updatedAt?Math.max(0,decisionAt-feed.updatedAt):null,quoteAgeMs:prepared.intent.quoteBenchmark?.checkedAt?Math.max(0,Date.now()-prepared.intent.quoteBenchmark.checkedAt):null,prepareMs,signMs}};
+   this.research?.execution('signed',prepared.intent,{attemptId,signature:s.pending.signature,timing:s.pending.timing});
    await this.save(); // Durable signed journal BEFORE any broadcast, including an uncertain send.
    if(epoch!==this.commandEpoch)return;
    const sendStarted=performance.now();s.pending.timing.broadcastStartedAt=Date.now();
    const result=await this.direct.submit({id:prepared.intent.id,transaction:s.pending.transaction});
-   s.lastExecutionLatency={...s.pending.timing,broadcastRpcMs:performance.now()-sendStarted,submissionStatus:result.status,confirmationMs:null};await this.save();
-  }catch(e){if(prepared&&!s.pending)this.direct.cancel(prepared.intent.id);if(e.code==='BALANCE_CHANGED'&&!s.pending){s.orderAttempts[key]=Math.max(0,(s.orderAttempts[key]??1)-1);await this.save();}throw e;}
+   s.lastExecutionLatency={...s.pending.timing,broadcastRpcMs:performance.now()-sendStarted,submissionStatus:result.status,confirmationMs:null};this.research?.execution('broadcast',prepared.intent,{attemptId,signature:s.pending.signature,timing:s.lastExecutionLatency,result});await this.save();
+  }catch(e){this.research?.execution('error',prepared?.intent??order,{attemptId,error:e});if(prepared&&!s.pending)this.direct.cancel(prepared.intent.id);if(e.code==='BALANCE_CHANGED'&&!s.pending){s.orderAttempts[key]=Math.max(0,(s.orderAttempts[key]??1)-1);await this.save();}throw e;}
  }
  async close(mint,feed){return this.serial(async()=>{
   if(!this.state||!this.vault.keypair)throw Error('Mở khóa bộ ký trước khi bán.');
@@ -131,8 +139,9 @@ export class OwnerAgent{
   try{await this.serial(async()=>{
    const s=this.state;if(!s)return;
    if(s.pending){
-    const pending=s.pending,result=await this.direct.reconcile({intent:pending.intent,transaction:pending.transaction});
+    const pending=s.pending,result=await withRpcPriority('receipt',()=>this.direct.reconcile({intent:pending.intent,transaction:pending.transaction}));
     if(result.status==='pending')return;
+    this.research?.execution('receipt',pending.intent,{signature:pending.signature,result,timing:{...pending.timing,confirmationMs:pending.timing?.broadcastStartedAt?Date.now()-pending.timing.broadcastStartedAt:null}});
     const applied=applyOwnerReceipt(s,pending,result);
     if(applied&&this.telegram.enabled)enqueueTradeReport(s,pending,result);
     if(result.status==='confirmed'){if(pending.attemptKey)delete s.orderAttempts[pending.attemptKey];s.executionFailures=0;s.buyCircuitOpen=false;s.buyCircuitKind=null;s.consecutiveFailures=0;if(s.lastExecutionLatency&&pending.timing?.broadcastStartedAt)s.lastExecutionLatency.confirmationMs=Date.now()-pending.timing.broadcastStartedAt;}else{
@@ -153,7 +162,7 @@ export class OwnerAgent{
     if(!m){m={mint:p.mint,symbol:p.symbol,priceUsd:p.lastPriceUsd,pairAddress:p.pairAddress,updatedAt:0};working.markets.push(m);}
     m.pairAddress=p.pairAddress??m.pairAddress;m.venue=p.venue??m.venue;
     if(this.execution.sellQuote)try{
-     const q=await this.execution.sellQuote({ownerAddress:this.owner,mint:p.mint,amount:p.rawQuantity,poolAddress:m.pairAddress,venue:p.venue});m.exitQuote=q;if(Number.isFinite(q.netSol)&&q.netSol>=0&&working.solUsd>0){m.priceUsd=q.netSol*working.solUsd/p.quantity;m.updatedAt=q.checkedAt;}
+     const q=await withRpcPriority('exit',()=>this.execution.sellQuote({ownerAddress:this.owner,mint:p.mint,amount:p.rawQuantity,poolAddress:m.pairAddress,venue:p.venue}));m.exitQuote=q;if(Number.isFinite(q.netSol)&&q.netSol>=0&&working.solUsd>0){m.priceUsd=q.netSol*working.solUsd/p.quantity;m.updatedAt=q.checkedAt;}
      if(q.failed===true)m.evidence={...m.evidence,sellSimulationOk:false};
      if(q.jupiterUnavailable)networkError='Jupiter quote chưa khả dụng; dùng báo giá PumpSwap cho vị thế đang mở.';
     }catch(e){networkError=e.message;}
@@ -168,7 +177,9 @@ export class OwnerAgent{
    if(networkError)this.error=networkError;
    else if(!s.buyCircuitOpen&&networkFailure(this.error))this.error=null;
    if(!s.running||!this.vault.keypair)return;
-   const order=nextOwnerOrder(s,working,balance);s.entryStatus=diagnoseOwnerEntry(s,working,balance);s.curve.push({at:Date.now(),equitySol:equity(s,working.markets,working.solUsd)});s.curve=s.curve.slice(-1440);await this.save();
+   const order=nextOwnerOrder(s,working,balance);s.entryStatus=diagnoseOwnerEntry(s,working,balance);
+   for(const p of s.positions.filter(p=>p.exitBlocked&&!p.exitBlocked.notified))if(this.telegram.enabled){const b=p.exitBlocked,id=`exit-blocked:${p.mint}:${b.since}`;s.telegramOutbox??=[];if(!s.telegramOutbox.some(m=>m.id===id))s.telegramOutbox.push({id,text:`Meme Pilot · CẢNH BÁO THOÁT LỆNH\n${String(p.symbol).slice(0,60)} · ${p.mint}\nĐã hết lượt thử SELL. Token vẫn còn trong vị thế; BUY đang dừng. Mở website, kiểm tra lỗi và bấm cấp lại lượt thử SELL khi sẵn sàng.`,createdAt:Date.now(),attempts:0,nextAttemptAt:0,status:'queued'});b.notified=true;}
+   s.curve.push({at:Date.now(),equitySol:equity(s,working.markets,working.solUsd)});s.curve=s.curve.slice(-1440);await this.save();
    if(!order)return;
    try{await this.execute(order,working);if(!networkError)this.error=null;}
    catch(e){if(s.pending)throw e;this.error=e.message;if(networkFailure(e)){s.executionFailures=(s.executionFailures??0)+1;if(s.executionFailures>=DEFAULTS.networkFailureLimit&&!s.buyCircuitOpen){s.buyCircuitOpen=true;s.buyCircuitKind='network';s.buyCircuitOpenedAt=Date.now();s.networkHealthyScans=0;}}if(order.side==='BUY')s.cooldowns[order.mint]=Date.now()+((s.orderAttempts?.['BUY:'+order.mint+':fixed']??0)>=DEFAULTS.maxRetries+1?DEFAULTS.coarseCooldownMs:2000);event(s,'Chưa thực hiện '+order.side+' '+order.symbol+': '+e.message);await this.save();}

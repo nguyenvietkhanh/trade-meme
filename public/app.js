@@ -33,6 +33,8 @@ function render(){
   const pumpFun=f.sources?.pumpFun;
   $('pumpfun-status').textContent=pumpFun?.message??'pump.fun trước migrate: chưa có trạng thái nguồn.';
   if(pumpFun?.stages)$('pumpfun-status').textContent+=` Đã khám phá ${pumpFun.discoveredMints??0} token · đọc được ${pumpFun.verifiedCurves??0} curve ở lượt gần nhất · ${pumpFun.liquidCurves??0} qua lọc thanh khoản/vốn hóa · ${pumpFun.freshMarkets??0} có dữ liệu mới.`;
+  const study=s.research,paper=study?.paper;
+  $('research-status').textContent=paper?`Paper nghiên cứu · vốn ảo ${paper.initialSol} SOL mỗi bộ · ${paper.arms.map(a=>`${Math.round(a.fraction*100)}%: ${a.closed}/${paper.minimumClosedPerArm} vị thế đóng`).join(' · ')}. ${paper.pausedForLive?'Đang nhường kết nối cho bot thật.':'Kết quả theo quote mô hình, chưa đủ để tự đổi thuật toán thật.'} ${study.journal?.error??paper.error??''}`:'';
   $('build-revision').textContent='Bản chạy: '+s.buildRevision.slice(0,7);
   $('connection').textContent=fresh?'● Dữ liệu trực tuyến':'● Dữ liệu chưa sẵn sàng';
   $('feed-time').textContent=f.updatedAt?`Giá SOL ${money(f.solUsd)} · ${time(f.updatedAt)}`:'Đang lấy giá thật…';

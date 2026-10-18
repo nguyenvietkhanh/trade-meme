@@ -17,6 +17,9 @@ import {STRATEGY_VERSION} from './desk-rules.js';
 import {OwnerAgent,signerRequestAllowed} from './owner-agent.js';
 import {PumpFunMarkets} from './pump-fun-market.js';
 import {initializeStorage} from './storage.js';
+import {withRpcPriority} from './rpc-priority.js';
+import {ResearchJournal} from './research-journal.js';
+import {PaperResearch} from './paper-research.js';
 
 // Railway may use the Docker/npm entry point instead of the configured wrapper.
 // Mainnet is the default product. The paper engine is isolated to explicit test workspaces.
@@ -48,6 +51,8 @@ const direct=new DirectWallet(execution);
 const pumpFunMarkets=new PumpFunMarkets(execution);
 const ownerAgent=liveOnly&&process.env.SIGNER_MODE!=='disabled'?new OwnerAgent(dataDir,direct,execution,auth.owner,{storageMode:process.env.RAILWAY_VOLUME_MOUNT_PATH?'persistent-volume':onRailway?'ephemeral':'local-disk'}):null;
 await ownerAgent?.load();
+const research=new ResearchJournal(dataDir),paperResearch=new PaperResearch(dataDir,requests=>execution.paperCurveQuotes(requests),research);
+await paperResearch.load();if(ownerAgent)ownerAgent.research=research;
 let feed={markets:[],solUsd:null,updatedAt:null,error:null};
 const verification=new VerificationFeed(globalThis.fetch,execution);
 const discovery=new DiscoveryQueue(state.discovery);
@@ -59,15 +64,15 @@ function serial(fn){const task=pending.then(fn);pending=task.catch(()=>{});retur
 async function refresh(){
   if(refreshing)return;refreshing=true;
   try{
-    const latest=await loadMarkets([...new Set([...state.positions.map(p=>p.mint),...direct.watched,...(ownerAgent?.trackedMints()??[]),...state.watchlist])],Object.fromEntries((ownerAgent?.state?.positions??state.positions).filter(p=>p.pairAddress).map(p=>[p.mint,p.pairAddress])),discovery,pumpFunMarkets);
+    const latest=await withRpcPriority('background',()=>loadMarkets([...new Set([...state.positions.map(p=>p.mint),...direct.watched,...(ownerAgent?.trackedMints()??[]),...state.watchlist])],Object.fromEntries((ownerAgent?.state?.positions??state.positions).filter(p=>p.pairAddress).map(p=>[p.mint,p.pairAddress])),discovery,pumpFunMarkets));
     latest.markets=scannerMarkets(state,latest.markets);
-    latest.markets=await verification.enrichCached(latest.markets,ownerAgent?.trackedMints()??[]);
+    latest.markets=await withRpcPriority('background',()=>verification.enrichCached(latest.markets,ownerAgent?.trackedMints()??[]));
     await serial(async()=>{latest.markets=observeMarkets(state,latest.markets);feed={...latest,error:null};
       if(liveOnly){
         state.lastEvaluationAt=Date.now();
         for(const market of feed.markets){const rank=rankMarket(market,state.settings);recordEvaluation(state,{at:Date.now(),mint:market.mint,symbol:market.symbol,score:rank.score,blockingStage:rank.blockingStage,decision:decideMarket(market,state.settings),action:rank.eligible?'WATCH':'SKIP',reason:rank.eligible?'Đạt bộ lọc thị trường; còn kiểm tra on-chain, ví và giới hạn thực thi.':rank.primaryReasons.join('; ')});}
       }else{if(state.automationRequested&&state.haltKind!=='drawdown')state.running=true;tick(state,feed.markets,feed.solUsd);}
-      state.discovery=discovery.snapshot();await save();});
+      research.scan(feed);state.discovery=discovery.snapshot();await save();});
   }catch(e){feed.error=e.message;console.error('Market feed:',e.message);}
   finally{refreshing=false;}
 }
@@ -78,7 +83,7 @@ function snapshot(req){
   if(liveOnly){
     const authenticated=auth.authenticated(req);
     const diagnostics={...diagnose({...state,running:false},feed,rankings),phase:authenticated?'owner-wallet':'owner-required',message:authenticated?ownerAgent?'Mở khóa bộ ký để bot tự giao dịch trên server; không chờ ký từng lệnh.':'Ví chủ ký trực tiếp. Mỗi giao dịch cần xác nhận trong ví.':'Kết nối đúng ví chủ để đọc số dư và giao dịch trực tiếp.'};
-    return {mode:'live',walletMode:'owner',ownerAuthenticated:authenticated,readOnly:true,running:false,automationRequested:false,settings:{...DEFAULTS,initialSol:null,orderSol:null,smallOrderSol:null,orderFraction:.2,sizingVersion:'wallet-balance-v1'},rankings,diagnostics,feed,buildRevision:process.env.RAILWAY_GIT_COMMIT_SHA??'local',cashSol:null,equitySol:null,pnlSol:null,positions:[],trades:[],curve:[],events:[],watchlist:[],halted:null,peakEquity:null,maxDrawdownObservedPct:null,closedCount:0,winRate:null,decisionStats:state.decisionStats,decisions:state.decisions};
+    return {research:{journal:research.status(),paper:paperResearch.status()},mode:'live',walletMode:'owner',ownerAuthenticated:authenticated,readOnly:true,running:false,automationRequested:false,settings:{...DEFAULTS,initialSol:null,orderSol:null,smallOrderSol:null,orderFraction:.2,sizingVersion:'wallet-balance-v1'},rankings,diagnostics,feed,buildRevision:process.env.RAILWAY_GIT_COMMIT_SHA??'local',cashSol:null,equitySol:null,pnlSol:null,positions:[],trades:[],curve:[],events:[],watchlist:[],halted:null,peakEquity:null,maxDrawdownObservedPct:null,closedCount:0,winRate:null,decisionStats:state.decisionStats,decisions:state.decisions};
   }
   return {...state,rankings,diagnostics:diagnose(state,feed,rankings),buildRevision:process.env.RAILWAY_GIT_COMMIT_SHA??'local',mode:'paper',readOnly,feed,equitySol:feed.solUsd?value:null,pnlSol:feed.solUsd?value-state.settings.initialSol:null,winRate:closed.length?closed.filter(t=>(t.positionPnlSol??t.pnlSol)>0).length/closed.length:null,closedCount:closed.length};
 }
@@ -88,6 +93,15 @@ const assets={'/spider.js':['spider.js','text/javascript'],'/wallet.js':['wallet
 const server=http.createServer(async(req,res)=>{
   try{
     const url=new URL(req.url,'http://localhost');
+    if(url.pathname.startsWith('/api/research')){
+      if(!auth.authenticated(req))return json(res,401,{error:'Cần xác thực ví chủ để xuất log nghiên cứu.'});
+      if(req.method!=='GET')return json(res,405,{error:'Kho nghiên cứu chỉ đọc.'});
+      if(url.pathname==='/api/research')return json(res,200,{journal:research.status(),paper:paperResearch.status(),files:await research.files()});
+      if(url.pathname==='/api/research/file'){const name=url.searchParams.get('name'),content=await research.document(name);res.writeHead(200,{'Content-Type':'application/gzip','Content-Disposition':'attachment; filename="meme-pilot-research.jsonl.gz"','Cache-Control':'no-store'});return res.end(content);}
+      if(url.pathname==='/api/research/paper'){return json(res,200,{policy:'quote-shadow; not calibrated backtest',status:paperResearch.status(),state:paperResearch.state});}
+      if(url.pathname==='/api/research/export'){const day=url.searchParams.get('day')??new Date().toISOString().slice(0,10);if(!/^\d{4}-\d{2}-\d{2}$/.test(day))throw Error('Ngày không hợp lệ.');await research.flush();const files=(await research.files()).filter(n=>n.startsWith(day+'/'));if(!files.length)return json(res,404,{error:'Ngày này chưa có log nghiên cứu.'});const parts=[];let bytes=0;for(const name of files){const content=await research.document(name);bytes+=content.length;if(bytes>32*1024*1024)return json(res,413,{error:'Log ngày lớn hơn 32 MiB; tải từng phần qua danh mục /api/research.'});parts.push(content);}res.writeHead(200,{'Content-Type':'application/gzip','Content-Disposition':`attachment; filename="meme-pilot-research-${day}.jsonl.gz"`,'Cache-Control':'no-store'});return res.end(Buffer.concat(parts));}
+      return json(res,404,{error:'Không có tệp nghiên cứu.'});
+    }
     if(url.pathname.startsWith('/api/auth/')||url.pathname.startsWith('/api/live/')||url.pathname.startsWith('/api/direct/')||url.pathname.startsWith('/api/signer/')){
       if(req.method==='GET'&&url.pathname==='/api/auth/status')return json(res,200,{owner:auth.owner,authenticated:auth.authenticated(req),walletMode:'owner',signerAvailable:!!ownerAgent,signerLocation:onRailway?'Railway':'local'});
       if(url.pathname.startsWith('/api/signer/')){
@@ -104,6 +118,7 @@ const server=http.createServer(async(req,res)=>{
         else if(url.pathname==='/api/signer/telegram-test')await ownerAgent.telegram.test(ownerAgent.vault.keypair);
         else if(url.pathname==='/api/signer/telegram-disable')await ownerAgent.serial(()=>ownerAgent.telegram.disable());
         else if(url.pathname==='/api/signer/review-risk'){if(input.confirm!=='REVIEW DRAWDOWN')throw Error('Thiếu xác nhận xem lại drawdown.');await ownerAgent.reviewRisk(feed);}
+        else if(url.pathname==='/api/signer/review-exit'){if(input.confirm!=='REVIEW EXIT RETRIES')throw Error('Thiếu xác nhận xem lại SELL.');await ownerAgent.reviewExit(input.mint);}
         else if(url.pathname==='/api/signer/pause-buys')await ownerAgent.pauseBuys(input.paused!==false);
         else if(url.pathname==='/api/signer/pause')await ownerAgent.pause();
         else if(url.pathname==='/api/signer/lock')await ownerAgent.pause(true);
@@ -194,5 +209,6 @@ server.listen(port,host,()=>{if(!auth.origin)auth.origin=`http://127.0.0.1:${ser
 const timer=setInterval(refresh,SCAN_RULES.intervalMs);
 const agentTimer=ownerAgent?setInterval(()=>ownerAgent.tick(feed),2000):null;
 const telegramTimer=ownerAgent?setInterval(async()=>{await ownerAgent.training.tick(ownerAgent);await ownerAgent.telegram.tick(ownerAgent);},2000):null;
-async function shutdown(){clearInterval(timer);if(agentTimer)clearInterval(agentTimer);if(telegramTimer)clearInterval(telegramTimer);server.close();if(ownerAgent)await ownerAgent.pause(true);await serial(async()=>{state.running=false;await save();});process.exit(0);}
+const researchTimer=setInterval(()=>{research.flush();paperResearch.tick(feed,{liveBusy:!!ownerAgent&&(ownerAgent.busy||!!ownerAgent.state?.pending||(ownerAgent.state?.networkFailures??0)>0||!!ownerAgent.state?.positions.some(p=>p.exitBlocked))});},3100);
+async function shutdown(){clearInterval(timer);clearInterval(researchTimer);if(agentTimer)clearInterval(agentTimer);if(telegramTimer)clearInterval(telegramTimer);server.close();if(ownerAgent)await ownerAgent.pause(true);await serial(async()=>{state.running=false;await save();});await research.flush();process.exit(0);}
 process.on('SIGTERM',shutdown);process.on('SIGINT',shutdown);

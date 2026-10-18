@@ -27,6 +27,7 @@ export function diagnose(state,feed,rankings,now=Date.now()){
 export function diagnoseOwnerEntry(s,feed,balance,now=Date.now()){
  const result=(phase,message)=>({phase,message,at:now});
  if(s.pending)return result('pending','Đang đối soát giao dịch; chưa gửi lệnh mới.');
+ if(s.positions.some(p=>p.exitBlocked))return result('exit-blocked','Có vị thế hết lượt thử SELL và vẫn còn token. Dừng BUY; xem cảnh báo thoát lệnh để thử lại sau khi kiểm tra.');
  if(!s.running)return result('paused','Bot chưa bật; dữ liệu quét vẫn tiếp tục cập nhật.');
  if(s.halted)return result('risk-halt',s.halted);
  if(s.buyPaused)return result('buy-paused','BUY đang tạm dừng; vẫn quản lý SELL.');

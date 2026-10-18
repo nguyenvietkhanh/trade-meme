@@ -25,9 +25,9 @@ test('FDV fallback is limited to pump suffix, legacy scanner cooldown cannot blo
 test('two scans confirm in 10–15 seconds and an intervening dump resets confirmation',()=>{
  const s=freshState(now),m=verifiedMarket({},now);observeMarkets(s,[m],now);
  assert.equal(observeMarkets(s,[m],now+9000)[0].signalConfirmed,false);
- assert.equal(observeMarkets(s,[m],now+10000)[0].signalConfirmed,true);
- observeMarkets(s,[{...m,change5mPct:-9}],now+12000);
- assert.equal(observeMarkets(s,[m],now+20000)[0].signalConfirmed,false);
+ assert.equal(observeMarkets(s,[{...m,updatedAt:now+10000}],now+10000)[0].signalConfirmed,true);
+ observeMarkets(s,[{...m,updatedAt:now+12000,change5mPct:-9}],now+12000);
+ assert.equal(observeMarkets(s,[{...m,updatedAt:now+20000}],now+20000)[0].signalConfirmed,false);
 });
 function position(){const s=createOwnerLedger('owner',.3),m=verifiedMarket({priceUsd:1},now);recordBuy(s,m,100,{quantity:3,costSol:.03,priceUsd:1,rawQuantity:'3000000',decimals:6},now-1000,'fixture','live');return {s,m,p:s.positions[0]};}
 test('executable quote drives net-SOL stop even when DexScreener token price looks profitable',()=>{

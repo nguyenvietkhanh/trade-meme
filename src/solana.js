@@ -7,7 +7,7 @@ import {backoffFetch} from './provider-fetch.js';
 import {buildPumpSwap,PUMP_PROGRAM} from './pump-swap.js';
 import {SOL} from './engine.js';
 import {isPumpCurve} from './venues.js';
-import {curveState,curveRoundTrip,decodeCurve,bondingCurvePda,canonicalPumpPoolPda,buildPumpCurve,CURVE_PROGRAM} from './pump-curve.js';
+import {curveState,curveRoundTrip,quoteCurve,decodeCurve,bondingCurvePda,canonicalPumpPoolPda,buildPumpCurve,CURVE_PROGRAM} from './pump-curve.js';
 import {keylessConnection,PUBLIC_RPC_ENDPOINTS,MAINNET_GENESIS_HASH} from './rpc.js';
 import {PROFIT_RECIPIENT,PROFIT_RULES,TRADE_RULES,executionSlippageBps,walletOrderSol,validBuyLamports,WALLET_ORDER_FRACTION,CURVE_RULES} from './desk-rules.js';
 export const TOKEN=new PublicKey('TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA');
@@ -121,6 +121,14 @@ export class SolanaExecution{
   if(all.length>64)throw new TradePolicyError('Ví có quá nhiều tài khoản token để kiểm tra an toàn.');return all;
  }
  async roundTripQuote(mint,amount,market){if(isPumpCurve(market))return curveRoundTrip(await curveState(this.rpc,mint,market.pairAddress),amount);const q=await jupiterRoundTrip(mint,this.quoteFetch,Number(amount)/1e9),slot=await this.rpc.getSlot('confirmed');if(q.quoteContextSlot>slot+20||slot-q.quoteContextSlot>20)throw Error('Jupiter quote slot không còn mới.');return q;}
+ // Read-only SDK quotes for isolated shadow accounts. No transaction is built or signed.
+ async paperCurveQuotes(requests){
+  if(!Array.isArray(requests)||!requests.length||requests.length>2||requests.some(r=>r.mint!==requests[0].mint||r.poolAddress!==requests[0].poolAddress||!['BUY','SELL'].includes(r.side)||!/^\d{1,20}$/.test(r.amount)))throw Error('Yêu cầu paper quote không hợp lệ.');
+  const state=await curveState(this.rpc,requests[0].mint,requests[0].poolAddress);
+  return requests.map(r=>{try{const emergency=/stop-loss|emergency|trailing|drawdown/.test(r.reason??''),q=quoteCurve(state,r.side,r.amount,{maxReserveFraction:emergency?.1:.02}),proof=r.side==='BUY'?curveRoundTrip(state,r.amount):null;
+   return {id:r.id,mint:r.mint,side:r.side,amount:r.amount,outAmount:q.out.toString(),checkedAt:state.checkedAt,contextSlot:state.slot,spotPriceSol:state.curve.virtualQuoteReserves.toNumber()/1e9/(state.curve.virtualTokenReserves.toNumber()/1e6),roundTripLossPct:proof?.roundTripLossPct??null,impactPct:q.impact*100,failed:false};
+  }catch{return {id:r.id,mint:r.mint,side:r.side,amount:r.amount,failed:true};}});
+ }
  async entryQuote(mint,amount){const q=await jupiterEntryQuote(mint,amount,this.quoteFetch),slot=await this.rpc.getSlot('confirmed');if(q.contextSlot>slot+20||slot-q.contextSlot>20)throw Error('Jupiter entry quote slot đã cũ.');return q;}
  async prepare({keypair,ownerAddress,input,output,amount,poolAddress,reason='',closeEmptyInput=false,referenceMinOut,minContextSlot,venue,referencePriceSol}){
   if(input===SOL&&!validBuyLamports(String(amount)))throw new TradePolicyError('Cỡ lệnh SOL không hợp lệ.');
