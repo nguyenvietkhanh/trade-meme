@@ -8,7 +8,7 @@ globalThis.fetch=async url=>{
  let data;
  if(String(url).endsWith('/token-profiles/latest/v1'))data=[];
  else if(String(url).endsWith(sol)){data={pairs:[pair(sol,'SOL',150)]};cycle++;clock+=30000;}
- else data={pairs:[pair('TestMintForIsolatedTestsOnly','TEST',cycle<2?.01:.02)]};
+ else data={pairs:[pair('11111111111111111111111111111112','TEST',cycle<2?.01:.02)]};
  return new Response(JSON.stringify(data),{status:200,headers:{'Content-Type':'application/json'}});
 };
 const interval=globalThis.setInterval;

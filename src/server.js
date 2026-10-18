@@ -4,6 +4,7 @@ import {fileURLToPath} from 'node:url';
 import path from 'node:path';
 import {DEFAULTS,PROFILE,freshState,equity,event,buy,sell,tick} from './engine.js';
 import {loadMarkets} from './market.js';
+import {DiscoveryQueue} from './discovery.js';
 import {rankMarket,decideMarket} from './strategy.js';
 import {SCAN_RULES,initializeScanner,scannerMarkets,recordEvaluation} from './scanner.js';
 import {diagnose} from './diagnostics.js';
@@ -47,6 +48,7 @@ const ownerAgent=liveOnly&&process.env.SIGNER_MODE!=='disabled'?new OwnerAgent(d
 await ownerAgent?.load();
 let feed={markets:[],solUsd:null,updatedAt:null,error:null};
 const verification=new VerificationFeed(globalThis.fetch,execution);
+const discovery=new DiscoveryQueue(state.discovery);
 let refreshing=false;
 async function save(){await writeFile(statePath+'.tmp',JSON.stringify(state,null,2),{mode:0o600});await rename(statePath+'.tmp',statePath);}
 // Serialize market ticks and commands to prevent double-spend and overlapping writes.
@@ -55,22 +57,22 @@ function serial(fn){const task=pending.then(fn);pending=task.catch(()=>{});retur
 async function refresh(){
   if(refreshing)return;refreshing=true;
   try{
-    const latest=await loadMarkets([...new Set([...state.positions.map(p=>p.mint),...direct.watched,...(ownerAgent?.trackedMints()??[]),...state.watchlist])],Object.fromEntries((ownerAgent?.state?.positions??state.positions).filter(p=>p.pairAddress).map(p=>[p.mint,p.pairAddress])));
+    const latest=await loadMarkets([...new Set([...state.positions.map(p=>p.mint),...direct.watched,...(ownerAgent?.trackedMints()??[]),...state.watchlist])],Object.fromEntries((ownerAgent?.state?.positions??state.positions).filter(p=>p.pairAddress).map(p=>[p.mint,p.pairAddress])),discovery);
     latest.markets=scannerMarkets(state,latest.markets);
     latest.markets=await verification.enrichCached(latest.markets,ownerAgent?.trackedMints()??[]);
     await serial(async()=>{latest.markets=observeMarkets(state,latest.markets);feed={...latest,error:null};
       if(liveOnly){
         state.lastEvaluationAt=Date.now();
-        for(const market of feed.markets){const rank=rankMarket(market,state.settings);recordEvaluation(state,{at:Date.now(),mint:market.mint,symbol:market.symbol,score:rank.score,decision:decideMarket(market,state.settings),action:rank.eligible?'WATCH':'SKIP',reason:rank.eligible?'Đạt bộ lọc thị trường; còn kiểm tra on-chain, ví và giới hạn thực thi.':rank.reasons.join('; ')});}
+        for(const market of feed.markets){const rank=rankMarket(market,state.settings);recordEvaluation(state,{at:Date.now(),mint:market.mint,symbol:market.symbol,score:rank.score,blockingStage:rank.blockingStage,decision:decideMarket(market,state.settings),action:rank.eligible?'WATCH':'SKIP',reason:rank.eligible?'Đạt bộ lọc thị trường; còn kiểm tra on-chain, ví và giới hạn thực thi.':rank.primaryReasons.join('; ')});}
       }else{if(state.automationRequested&&state.haltKind!=='drawdown')state.running=true;tick(state,feed.markets,feed.solUsd);}
-      await save();});
+      state.discovery=discovery.snapshot();await save();});
   }catch(e){feed.error=e.message;console.error('Market feed:',e.message);}
   finally{refreshing=false;}
 }
 function snapshot(req){
   const value=feed.solUsd?equity(state,feed.markets,feed.solUsd):state.cashSol;
   const closed=state.trades.filter(t=>t.side==='SELL'&&t.closed);
-  const rankings=feed.markets.map(m=>({...m,...rankMarket(m,state.settings)})).sort((a,b)=>b.score-a.score);
+  const rankings=feed.markets.map(m=>({...m,...rankMarket(m,state.settings)})).sort((a,b)=>Number(b.eligible)-Number(a.eligible)||Number(b.roughEligible)-Number(a.roughEligible)||b.score-a.score);
   if(liveOnly){
     const authenticated=auth.authenticated(req);
     const diagnostics={...diagnose({...state,running:false},feed,rankings),phase:authenticated?'owner-wallet':'owner-required',message:authenticated?ownerAgent?'Mở khóa bộ ký để bot tự giao dịch trên server; không chờ ký từng lệnh.':'Ví chủ ký trực tiếp. Mỗi giao dịch cần xác nhận trong ví.':'Kết nối đúng ví chủ để đọc số dư và giao dịch trực tiếp.'};

@@ -10,6 +10,7 @@ import {DEFAULTS,equity,event} from './engine.js';
 import {rankMarket} from './strategy.js';
 import {STRATEGY_VERSION} from './desk-rules.js';
 import {auditDesk} from './auditor.js';
+import {diagnoseOwnerEntry} from './diagnostics.js';
 
 export function signerRequestAllowed(req,expectedOrigin,onRailway){
  if(onRailway)return typeof expectedOrigin==='string'&&expectedOrigin.startsWith('https://');
@@ -61,7 +62,8 @@ export class OwnerAgent{
  async pause(lock=false){this.commandEpoch++;if(this.state)this.state.running=false;return this.serial(async()=>{if(this.state)this.state.running=false;try{await this.save();}finally{if(lock)this.vault.lock();}});}
  async status(){
   let balanceSol=null,rpcError=null;try{balanceSol=await this.execution.balance(this.owner);}catch{const failures=this.execution.rpc?.rpcDiagnostics?.().failures??[];rpcError='Chưa đọc được số dư qua RPC. '+(failures.length?failures.map(r=>r.host+': '+r.reason).join(' · '):'RPC chưa trả số dư hợp lệ.');}
-  return {signerAvailable:true,vault:this.vault.status(),wallet:{...this.direct.configure(),balanceSol,tokenBalances:{},swapReady:balanceSol!==null,unattendedSigning:true},ledger:this.state?{...this.state,pending:this.state.pending?{intent:this.state.pending.intent,signature:this.state.pending.signature,transaction:!!this.state.pending.transaction}:null}:null,audit:this.state?auditDesk(this.state):null,error:rpcError??this.error};
+  const entryStatus=!this.vault.keypair?{phase:'locked',message:'Bộ ký đang khóa; quét token không đồng nghĩa bot đã được phép mua.'}:!this.state?.running?{phase:'paused',message:'Bot chưa bật; quét token vẫn tiếp tục.'}:rpcError?{phase:'rpc-unavailable',message:rpcError}:this.state.entryStatus??{phase:'checking',message:'Đang kiểm tra điều kiện vào lệnh.'};
+  return {signerAvailable:true,vault:this.vault.status(),entryStatus,wallet:{...this.direct.configure(),balanceSol,tokenBalances:{},swapReady:balanceSol!==null,unattendedSigning:true},ledger:this.state?{...this.state,pending:this.state.pending?{intent:this.state.pending.intent,signature:this.state.pending.signature,transaction:!!this.state.pending.transaction}:null}:null,audit:this.state?auditDesk(this.state):null,error:rpcError??this.error};
  }
  async execute(order,feed){
   const s=this.state;if(!s||!this.vault.keypair||s.pending)throw Error('Bộ ký chưa sẵn sàng hoặc còn lệnh chờ.');
@@ -127,7 +129,7 @@ export class OwnerAgent{
    s.buyBlockedReason=s.buyCircuitOpen||s.networkFailures>=DEFAULTS.networkFailureLimit?'API/RPC lỗi liên tiếp: dừng BUY, vẫn quản lý SELL.':null;
    if(networkError)this.error=networkError;
    if(!s.running||!this.vault.keypair)return;
-   const order=nextOwnerOrder(s,working,balance);s.curve.push({at:Date.now(),equitySol:equity(s,working.markets,working.solUsd)});s.curve=s.curve.slice(-1440);await this.save();
+   const order=nextOwnerOrder(s,working,balance);s.entryStatus=diagnoseOwnerEntry(s,working,balance);s.curve.push({at:Date.now(),equitySol:equity(s,working.markets,working.solUsd)});s.curve=s.curve.slice(-1440);await this.save();
    if(!order)return;
    try{await this.execute(order,working);if(!networkError)this.error=null;}
    catch(e){if(s.pending)throw e;this.error=e.message;if(/RPC|fetch|timeout|429|503/i.test(e.message)){s.executionFailures=(s.executionFailures??0)+1;if(s.executionFailures>=DEFAULTS.networkFailureLimit)s.buyCircuitOpen=true;}if(order.side==='BUY')s.cooldowns[order.mint]=Date.now()+((s.orderAttempts?.['BUY:'+order.mint+':fixed']??0)>=DEFAULTS.maxRetries+1?DEFAULTS.coarseCooldownMs:2000);event(s,'Chưa thực hiện '+order.side+' '+order.symbol+': '+e.message);await this.save();}

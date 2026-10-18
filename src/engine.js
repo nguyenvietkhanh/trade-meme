@@ -108,7 +108,7 @@ export function tick(state,markets,solUsd,now=Date.now()){
   state.lastEvaluationAt=now;
   const candidates=markets.map(m=>({market:m,rank:rankMarket(m,state.settings,now)})).sort((a,b)=>b.rank.score-a.rank.score);
   for(const {market:m,rank} of candidates){
-   let action='SKIP',reason=rank.reasons.join('; ');
+   let action='SKIP',reason=rank.primaryReasons.join('; ');
    if(rank.eligible){try{buy(state,m,solUsd,now,`auto-score:${rank.score}`);action='BUY';reason=`Điểm ${rank.score}/100 · momentum +${m.change5mPct}% · mua/bán ${m.buys5m}/${m.sells5m}`;state.decisionStats.bought++;}catch(e){reason=e.message;}}
    recordEvaluation(state,{at:now,mint:m.mint,symbol:m.symbol,score:rank.score,action,reason});
   }

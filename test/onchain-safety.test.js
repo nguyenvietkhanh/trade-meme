@@ -12,9 +12,9 @@ test('irreversible authority facts cache once; supply/holder scans remain comple
  f.rpc.getParsedAccountInfo=async()=>{mintReads++;return {value:{owner:TOKEN,data:{space:82,parsed:{type:'mint',info:{mintAuthority:null,freezeAuthority:null,decimals:6,supply:'1000000000000000'}}}}};};
  const holders=Array.from({length:10},()=>({pubkey:Keypair.generate().publicKey,account:f.token(f.mint,Keypair.generate().publicKey,30000000000000n)}));
  holders.push({pubkey:f.pool.poolBaseTokenAccount,account:f.token(f.mint,f.poolKey,700000000000000n)});
- f.rpc.getTokenLargestAccounts=async()=>({value:[]});f.rpc.getTokenSupply=async()=>({value:{amount:'1000000000000000'}});f.rpc.getProgramAccounts=async()=>{scans++;return holders.map(a=>({...a,account:{...a.account,data:a.account.data.subarray(0,72)}}));};
+ f.rpc.getTokenLargestAccounts=async()=>{throw Error('Redundant request must not block the complete holder scan');};f.rpc.getTokenSupply=async()=>({value:{amount:'1000000000000000'}});f.rpc.getProgramAccounts=async()=>{scans++;return holders.map(a=>({...a,account:{...a.account,data:a.account.data.subarray(0,72)}}));};
  const m={mint:f.mint.toBase58(),pairAddress:f.poolKey.toBase58(),creatorAddress:f.pool.coinCreator.toBase58()};const first=await e.inspectMarket(m);assert.equal(first.top10Pct,30);assert.equal(first.largestHolderPct,3);assert.equal(first.holderCount,10);assert.equal(first.devPct,0);assert.equal(first.roundTripQuoteOk,true);
- await e.inspectMarket(m);assert.equal(mintReads,1);assert.equal(scans,2);
+ assert.equal(first.quoteReserveSol,30);await e.inspectMarket(m);assert.equal(mintReads,1);assert.equal(scans,2);
  holders.pop();await assert.rejects(e.inspectMarket(m),/không đầy đủ/);
 });
 test('Token-2022 risky or unknown extensions are rejected; passive metadata is accepted',async()=>{

@@ -25,8 +25,8 @@ function render(){
   $('closed').textContent=`${s.closedCount} lệnh đã đóng`;
   $('status').textContent=s.mode==='live'?(!s.ownerAuthenticated?'● ĐĂNG NHẬP VÍ':s.running?(s.signingMode==='owner-agent'?'● AUTO · VÍ CHỦ':'● THEO DÕI · KÝ BẰNG VÍ'):'● VÍ CHỦ · CHỜ BẬT'):(s.running?'● AUTO · PAPER':'● TẠM DỪNG');
   const d=s.diagnostics;
-  $('activity-message').textContent=s.walletMode==='owner'&&ownerState?(s.halted|| (s.running?(s.signingMode==='owner-agent'?'Bot tự ký mua/bán trên server; không cần giữ tab mở.':'Đang theo dõi. Bot đề xuất lệnh; bạn xác nhận bằng ví chủ.'):'Đã kết nối ví chủ. Bật theo dõi để chọn tín hiệu.')):d.message;
-  $('scan-counts').textContent=`${d.candidates} token trong tập quét · ${d.eligible} đạt bộ lọc · ${s.positions.length} vị thế đang theo dõi`;
+  $('activity-message').textContent=s.walletMode==='owner'&&ownerState?(s.halted||s.entryStatus?.message|| (s.running?(s.signingMode==='owner-agent'?'Bot tự ký mua/bán trên server; không cần giữ tab mở.':'Đang theo dõi. Bot đề xuất lệnh; bạn xác nhận bằng ví chủ.'):'Đã kết nối ví chủ. Bật theo dõi để chọn tín hiệu.')):d.message;
+  $('scan-counts').textContent=`${d.candidates} token trong tập quét · ${d.eligible} đạt bộ lọc · ${s.positions.length} vị thế đang theo dõi`+(d.stages?` · Bị chặn: nguồn ${d.stages.discovery}, thị trường ${d.stages.market}, an toàn ${d.stages.safety}, xác nhận ${d.stages.confirmation}, điểm ${d.stages.score}`:'');
   $('last-evaluation').textContent=(d.lastEvaluationAt?'Đánh giá gần nhất '+time(d.lastEvaluationAt):'Chưa có vòng đánh giá tự động')+` · Mục tiêu ${(d.scanIntervalMs??5000)/1000} giây/lần`;
   $('scan-blockers').innerHTML=d.topBlockers.map(b=>`<span class="blocker">${b.count} token: ${escape(b.reason)}</span>`).join('');
   $('feed-warnings').textContent=(f.warnings??[]).join(' ');

@@ -1,16 +1,18 @@
 import {SOL} from './engine.js';
-export async function fetchJson(url,options={}) {
-  const response=await fetch(url,{...options,signal:AbortSignal.timeout(12000)});
+import {coarseMarket,rankMarket} from './strategy.js';
+export async function fetchJson(url,{timeoutMs=12000,...options}={}) {
+  const response=await fetch(url,{...options,signal:AbortSignal.timeout(timeoutMs)});
   if(!response.ok) throw Error(`Dịch vụ bên ngoài trả HTTP ${response.status}`);
   return response.json();
 }
-export async function loadMarkets(extraMints=[],preferredPools={}) {
+export async function loadMarkets(extraMints=[],preferredPools={},discovery=null) {
   const queries=['pumpswap','pump','solana'];
-  const discoveries=await Promise.allSettled([
+  const discover=()=>Promise.allSettled([
     ...queries.map(q=>fetchJson('https://api.dexscreener.com/latest/dex/search?q='+q)),
     fetchJson('https://api.dexscreener.com/token-profiles/latest/v1'),
     fetchJson('https://api.geckoterminal.com/api/v2/networks/solana/new_pools')
   ]);
+  const discoveries=discovery?await discovery.discover(discover):await discover();
   const good=discoveries.slice(0,queries.length).filter(r=>r.status==='fulfilled');
   const warnings=[];
   let pairs=good.flatMap(r=>r.value.pairs??[]);
@@ -20,10 +22,17 @@ export async function loadMarkets(extraMints=[],preferredPools={}) {
   const profileMints=[...new Set(profiles.filter(p=>p.chainId==='solana'&&/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(p.tokenAddress)).map(p=>p.tokenAddress))].slice(0,30);
   const newPoolMints=newPoolResult.status==='fulfilled'&&Array.isArray(newPoolResult.value.data)?newPoolResult.value.data.filter(p=>p.relationships?.dex?.data?.id==='pumpswap').map(p=>String(p.relationships?.base_token?.data?.id??'').replace(/^solana_/,'' )).filter(m=>/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(m)).slice(0,20):[];
   if(newPoolResult.status==='rejected')warnings.push('Nguồn pool mới chưa khả dụng; tiếp tục tìm PumpSwap qua DexScreener.');
-  const mints=[...new Set([...extraMints,...newPoolMints,...profileMints])];
+  discovery?.remember(pairs.filter(p=>p.chainId==='solana'&&p.dexId==='pumpswap').map(p=>({mint:p.baseToken?.address,pairCreatedAt:p.pairCreatedAt})));
+  discovery?.remember([...newPoolMints,...profileMints].map(mint=>({mint})));
+  // Cached discovery identifies mints only. Never relabel cached search prices as fresh prices.
+  const searchMints=discovery?[...new Set(pairs.filter(p=>p.chainId==='solana'&&p.baseToken?.address!==SOL&&/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(p.baseToken?.address)).map(p=>p.baseToken.address))].slice(0,90):[];
+  const current=[...new Set([...extraMints,...newPoolMints,...profileMints,...searchMints])];
+  const revisited=discovery?.nextBatch(current)??[];
+  const mints=[...new Set([...current,...revisited])];discovery?.queried(mints);
+  if(discovery)pairs=[];
   const batches=[];
   for(let i=0;i<mints.length;i+=30)batches.push(mints.slice(i,i+30));
-  const tokenResults=await Promise.allSettled(batches.map(batch=>fetchJson(`https://api.dexscreener.com/latest/dex/tokens/${batch.join(',')}`)));
+  const tokenResults=await Promise.allSettled(batches.map(batch=>fetchJson(`https://api.dexscreener.com/latest/dex/tokens/${batch.join(',')}`,{timeoutMs:4000})));
   for(let i=0;i<tokenResults.length;i++){
     const result=tokenResults[i];
     if(result.status==='fulfilled')pairs.push(...(result.value.pairs??[]));
@@ -31,7 +40,7 @@ export async function loadMarkets(extraMints=[],preferredPools={}) {
     else warnings.push('Không lấy được giá một nhóm token mới; nhóm này không được xét mua.');
   }
   if(!good.length&&!tokenResults.some(r=>r.status==='fulfilled'))throw Error('Không truy cập được DexScreener. Kiểm tra mạng, proxy và allowlist api.dexscreener.com.');
-  const solData=await fetchJson(`https://api.dexscreener.com/latest/dex/tokens/${SOL}`);
+  const solData=await fetchJson(`https://api.dexscreener.com/latest/dex/tokens/${SOL}`,{timeoutMs:4000});
   const solPair=(solData.pairs??[]).filter(p=>p.chainId==='solana'&&p.baseToken?.address===SOL&&Number.isFinite(Number(p.priceUsd))&&Number(p.priceUsd)>0).sort((a,b)=>(b.liquidity?.usd??0)-(a.liquidity?.usd??0))[0];
   const solUsd=Number(solPair?.priceUsd);if(!Number.isFinite(solUsd)||solUsd<=0) throw Error('Không lấy được giá SOL/USD.');
   const seen=new Map();
@@ -42,5 +51,8 @@ export async function loadMarkets(extraMints=[],preferredPools={}) {
     const prior=seen.get(m.mint);
     if(!prior||(m.dexId==='pumpswap'&&prior.dexId!=='pumpswap')||((m.dexId==='pumpswap')===(prior.dexId==='pumpswap')&&prior.liquidityUsd<m.liquidityUsd))seen.set(m.mint,m);
   }
-  return {solUsd,markets:[...seen.values()].sort((a,b)=>b.liquidityUsd-a.liquidityUsd).filter((m,i)=>i<60||extraMints.includes(m.mint)),updatedAt:Date.now(),warnings,sources:{searches:good.length,newSolanaProfiles:profileMints.length,newPumpSwapPools:newPoolMints.length}};
+  const all=[...seen.values()];discovery?.remember(all.filter(m=>m.dexId==='pumpswap'));
+  const priority=new Map(all.map(m=>[m,rankMarket(m).roughEligible?2:coarseMarket(m).eligible?1:0]));
+  const markets=all.sort((a,b)=>priority.get(b)-priority.get(a)||b.liquidityUsd-a.liquidityUsd).filter((m,i)=>i<60||extraMints.includes(m.mint));
+  return {solUsd,markets,updatedAt:Date.now(),warnings,sources:{searches:good.length,newSolanaProfiles:profileMints.length,newPumpSwapPools:newPoolMints.length,revisitedTokens:revisited.length,discoveryQueue:discovery?.entries.size??0,discoveredCandidates:all.length,shortlistedCandidates:markets.length}};
 }

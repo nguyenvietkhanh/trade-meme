@@ -3,6 +3,7 @@ import {rankMarket} from './strategy.js';
 import {SCAN_RULES} from './scanner.js';
 // Provider messages can contain URLs/credentials. Expose only a fixed label and HTTP status.
 function providerFailure(provider,error){
+ if(error?.code==='HOLDER_SCAN_UNAVAILABLE')return 'RPC không cung cấp được toàn bộ holder; chưa thể xác minh phân bổ, khóa BUY.';
  const status=String(error?.message??'').match(/\bHTTP\s+(\d{3})\b/)?.[1];
  const detail=status?'HTTP '+status:['TimeoutError','AbortError'].includes(error?.name)?'hết thời gian chờ':'dữ liệu chưa xác minh';
  return `${provider}: ${detail}; khóa BUY, thử lại ở vòng quét sau.`;

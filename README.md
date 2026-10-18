@@ -19,6 +19,8 @@ Chỉ SOL native khả dụng hiển thị trong số dư ví. P&L/đường v�
 
 Quét DexScreener mục tiêu mỗi **5 giây**, bộ điều phối mỗi **2 giây** và chỉ đánh giá giá mới; thời gian API/RPC có thể làm vòng quét lâu hơn. Không còn thời gian chờ người ký. Giao diện đo riêng thời gian chuẩn bị, ký, phản hồi gửi RPC và xác nhận của lệnh gần nhất; không dùng thời gian ký để quảng cáo thời gian khớp. Đây **chưa phải hạ tầng mili giây**: chưa tích hợp feed gRPC/shred/WebSocket pool, colocation hay Jito. Không hứa latency hoặc khả năng khớp trước đối thủ. Muốn tiến tới mục tiêu đó cần dữ liệu on-chain, RPC chuyên dụng và đo tín hiệu → gửi → xác nhận; không thể suy ra từ thời gian ký cục bộ.
 
+Khám phá tìm kiếm/profiles/pool mới chạy nền mỗi 30 giây sau lần khởi tạo đầu, để nguồn phụ chậm không giữ vòng giá. Giá token và giá SOL vẫn được lấy lại mỗi vòng, deadline 4 giây mỗi đợt; không dùng giá tìm kiếm đã lưu làm giá mới. Danh sách nhớ tối đa 600 mint, lưu cùng trạng thái quét: token chưa đủ 15 phút được giữ lại và tái xét khi đủ tuổi. Mỗi vòng thêm tối đa 30 mint cũ theo lượt; đây không phải cam kết cập nhật cả 600 mint mỗi 5 giây. Ưu tiên token đạt tầng vốn hóa/tuổi/DEX trước khi cắt danh sách 60 token, luôn giữ token vị thế đang theo dõi.
+
 ## Kết nối không dùng key
 
 Server dùng `https://api.mainnet-beta.solana.com` và `https://solana-rpc.publicnode.com`. Trước dùng một RPC, kiểm tra genesis mainnet. RPC đọc lỗi/quá tải có thể chuyển sang nguồn dự phòng. Lệnh gửi không tự chuyển endpoint khi chưa rõ kết quả: giữ signature để đối soát, không gửi lệnh thay thế. Cả hai RPC vẫn có thể cùng lỗi hoặc rate-limit; không bảo đảm kết nối miễn phí luôn khả dụng.
@@ -32,6 +34,7 @@ Bản `solana-six-stage-desk-v4`; chi tiết và giới hạn: [DESK_RULES.md](D
 - Khám phá pool PumpSwap mới qua GeckoTerminal, DexScreener và profiles. Tầng nhanh lọc vốn hóa $10k–$5m, tuổi 15 phút–24 giờ, quote reserve ≥20 SOL, tổng liquidity/cap ≥3%, nhịp giao dịch và blacklist tên token lớn. FDV chỉ thay cap khi mint kết thúc `pump`. Đánh giá lại mỗi 5 giây, không nghỉ token 30 phút vì trượt tầng lọc; thời hạn cũ được xóa khi cập nhật. API chậm có thể kéo dài vòng quét, không chạy chồng yêu cầu.
 - Mỗi 10.000 lượt đánh giá, xóa danh sách đánh giá và đặt bộ đếm vòng về 0 rồi tiếp tục quét. Đây là lượt đánh giá, có thể lặp cùng token. Giữ tổng lượt toàn thời gian, số vòng, blacklist, tín hiệu xác nhận, lịch sử khớp lệnh, vị thế, lệnh đang chờ và mọi giới hạn rủi ro. Lỗi kiểm chứng dịch vụ được ghi rõ nguồn/trạng thái HTTP và có thể thử lại từ vòng quét sau; không bỏ kiểm chứng để ép mua.
 - On-chain/RugCheck/Jupiter bắt buộc xác minh authority, Token-2022 extensions, LP ≥90%, top 10 trừ vault/curve ≤35%, mỗi ví ≤8%, rủi ro nghiêm trọng và quote vòng 0,03 SOL hao hụt ≤6%, impact mỗi chiều ≤2%. Không đủ kiểm chứng → SKIP. Creator không rõ → chỉ lệnh nhỏ, không tự đặt tỷ lệ bằng 0.
+- DexScreener thiếu trường `liquidity.quote` thì vẫn đưa token tới bước đọc pool on-chain; BUY chỉ qua khi số dư quote SOL thực được xác minh ≥20 SOL, đúng mint/pool và còn mới. Không dùng tổng USD để suy ra số dư. RPC không có chỉ mục tài khoản sẽ thử nguồn đọc dự phòng; nếu cả hai không đọc đủ holder thì vẫn khóa BUY và ghi đúng lý do.
 - Điểm 25/20/20/15/10/5/5. Thiếu dữ liệu chấm điểm nhận nửa điểm thành phần; an toàn bắt buộc vẫn không được bỏ qua. Hai lần quét cách 10–15 giây. ≥75 điểm vào 0,03 SOL; 60–74 vào 0,02 SOL; creator chưa rõ tối đa 0,02 SOL. Vốn tối đa 0,3 SOL, hai vị thế, giữ dự phòng 0,05 SOL.
 - Stop −20% theo quote bán ròng; +80% bán 78%; moonbag bán nửa tại 2×/4×/8× giá vào. Trailing −30%, siết −25% từ 4×, −20% từ 8×. Time-stop 45 phút chưa từng đạt +20%; giữ tối đa sáu giờ; volume suy kiệt dưới 30% lúc vào và giá dưới entry thì thoát. Token đã stop-loss khóa 24 giờ.
 - Lỗ/ngày 0,03 SOL khóa BUY đến 00:00 UTC. Drawdown 15% đóng hết vị thế rồi dừng, cần bật lại thủ công. Thua ba vị thế sau phí nghỉ BUY hai giờ. Dữ liệu cũ >30 giây hoặc lỗi liên tiếp khóa BUY nhưng vẫn quản lý SELL. Có nút pause BUY riêng và dừng/khóa toàn bộ bộ ký.
@@ -39,7 +42,9 @@ Bản `solana-six-stage-desk-v4`; chi tiết và giới hạn: [DESK_RULES.md](D
 
 Jupiter chỉ cung cấp báo giá và mức nhận tối thiểu; SDK PumpSwap dựng và mô phỏng giao dịch trên pool. Token cổ điển và Token-2022 với extension thụ động được hỗ trợ; fee/hook/permanentDelegate và extension chưa hiểu bị từ chối. Quote chưa phải giá khớp thật. Cấu trúc nến lấy OHLCV 1 phút; nếu không đủ nến hợp lệ thì chỉ nhận nửa điểm, không dựng nến từ snapshot.
 
-**Chưa xác nhận trực tiếp mainnet/Railway:** API/RPC có thể bị chặn hoặc rate-limit; truy vấn Jupiter từ cloud hiện trả HTTP 403. Khi dữ liệu an toàn không có, bot không mua. Nguồn HTTP không bảo đảm bắt đủ mọi pool migrate hoặc tốc độ mili giây. Chưa có bằng chứng sinh lợi thực tế.
+Giao diện đếm riêng số token bị chặn ở tầng nguồn, thị trường, an toàn, xác nhận và điểm. Lý do chính không tính các kiểm chứng chưa được yêu cầu cho token đã bị loại ở tầng trước. Ví chủ có trạng thái riêng cho bộ ký khóa/chưa bật, pause BUY, RPC lỗi, hạn mức vốn, cooldown và hết retry. Quét tăng không chứng minh đã bật thực thi.
+
+**Chưa xác nhận trực tiếp mainnet/Railway:** API/RPC có thể bị chặn hoặc rate-limit. Môi trường Codex từng trả `CONNECT 403` từ proxy Envoy trước khi tới Railway/DexScreener/RugCheck/Jupiter; điều này không chứng minh dịch vụ trên Railway trả 403. Khi dữ liệu an toàn không có, bot không mua. Nguồn HTTP không bảo đảm bắt đủ mọi pool migrate hoặc tốc độ mili giây. Chưa có bằng chứng sinh lợi thực tế.
 
 ## Chuyển lãi
 

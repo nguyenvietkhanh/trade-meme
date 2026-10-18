@@ -27,6 +27,7 @@ export function keylessConnection(endpoints=PUBLIC_RPC_ENDPOINTS){
     await check(url);const response=await request(url,options);
     if(!response.ok)throw new RpcFailure('HTTP '+response.status);
     const data=await response.clone().json();
+    if(!write&&[-32010,-32601].includes(data.error?.code))throw new RpcFailure('RPC không hỗ trợ truy vấn/chỉ mục ('+data.error.code+')');
     if([-32005,-32429,-32004].includes(data.error?.code)||data.error?.code===429)throw new RpcFailure('RPC quá tải ('+data.error.code+')');
     active=index;lastFailures=[];return response;
    }catch(e){verified.delete(url);failures.push({host:new URL(url).hostname,reason:e instanceof RpcFailure?e.message:e.name==='TimeoutError'?'Hết thời gian chờ':'Không kết nối được HTTPS'});lastFailures=failures;if(write)throw Error('Chưa rõ kết quả gửi giao dịch. Giữ signature để đối soát.');}

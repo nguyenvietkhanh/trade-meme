@@ -68,9 +68,10 @@ export class SolanaExecution{
   if(!pool.baseMint.equals(mint)||pool.quoteMint.toBase58()!==SOL||!poolPda(pool.index,pool.creator,pool.baseMint,pool.quoteMint).equals(poolKey))throw Error('Pool không khớp mint/PDA.');
   const curve=PublicKey.findProgramAddressSync([Buffer.from('bonding-curve'),mint.toBuffer()],PUMP_PROGRAM_ID)[0].toBase58();
   const excluded=new Set([poolKey.toBase58(),curve]),program=facts.tokenProgram==='spl-token'?TOKEN:TOKEN2022;
-  await this.rpc.getTokenLargestAccounts(mint); // Read fresh RPC distribution; owner aggregation below prevents split-account undercount.
+  // Full owner aggregation below already includes every large account; a redundant largest-accounts
+  // request adds latency and can reject an otherwise supported indexed RPC.
   const supply=atomic((await this.rpc.getTokenSupply(mint)).value.amount);
-  const accounts=await this.rpc.getProgramAccounts(program,{commitment:'confirmed',filters:[{memcmp:{offset:0,bytes:m.mint}},...(program.equals(TOKEN)?[{dataSize:165}]:[])],dataSlice:{offset:0,length:72}});
+  let accounts;try{accounts=await this.rpc.getProgramAccounts(program,{commitment:'confirmed',filters:[{memcmp:{offset:0,bytes:m.mint}},...(program.equals(TOKEN)?[{dataSize:165}]:[])],dataSlice:{offset:0,length:72}});}catch{throw Object.assign(Error('Không đọc được toàn bộ holder qua RPC.'),{code:'HOLDER_SCAN_UNAVAILABLE'});}
   if(!Array.isArray(accounts)||accounts.length>25000)throw Error('Không lấy được toàn bộ tài khoản holder.');
   const owners=new Map();let total=0n;
   for(const a of accounts){const d=a.account.data;if(!a.account.owner.equals(program)||d.length!==72||!new PublicKey(d.subarray(0,32)).equals(mint))throw Error('Dữ liệu holder không khớp.');const amount=d.readBigUInt64LE(64),owner=new PublicKey(d.subarray(32,64)).toBase58();total+=amount;if(!excluded.has(owner)&&!a.pubkey.equals(pool.poolBaseTokenAccount)&&amount>0n)owners.set(owner,(owners.get(owner)??0n)+amount);}
@@ -78,7 +79,7 @@ export class SolanaExecution{
   const distribution=[...owners.values()].sort((a,b)=>a>b?-1:a<b?1:0),percent=n=>Number(n*100000000n/supply)/1000000;
   const creator=m.creatorAddress?new PublicKey(m.creatorAddress).toBase58():null,devPct=creator&&!excluded.has(creator)&&creator!==PublicKey.default.toBase58()?percent(owners.get(creator)??0n):undefined;
   const roundTrip=await jupiterRoundTrip(m.mint),slot=await this.rpc.getSlot('confirmed');if(roundTrip.quoteContextSlot>slot+20||slot-roundTrip.quoteContextSlot>20)throw Error('Jupiter quote slot không còn mới.');
-  return {...facts,...roundTrip,holderCount:owners.size,top10ExcludesPool:true,top10Pct:percent(distribution.slice(0,10).reduce((a,b)=>a+b,0n)),largestHolderPct:percent(distribution[0]??0n),devPct};
+  return {...facts,...roundTrip,quoteReserveSol:Number(state.poolQuoteAmount.toString())/1e9,holderCount:owners.size,top10ExcludesPool:true,top10Pct:percent(distribution.slice(0,10).reduce((a,b)=>a+b,0n)),largestHolderPct:percent(distribution[0]??0n),devPct};
  }
  async holdings(owner){
   const key=new PublicKey(owner),all=[];

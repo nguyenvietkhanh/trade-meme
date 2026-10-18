@@ -33,3 +33,14 @@ test('connection diagnostics distinguish a wrong genesis from HTTP rejection wit
   assert.deepEqual(rpc.rpcDiagnostics().failures,[{host:'wrong.example',reason:'Genesis không đúng Solana mainnet'},{host:'blocked.example',reason:'HTTP 403'}]);assert.ok(!JSON.stringify(rpc.rpcDiagnostics()).includes('do-not-show'));
  }finally{globalThis.fetch=original;}
 });
+
+test('a read unavailable on an unindexed RPC retries the other verified mainnet endpoint',async t=>{
+ const calls=[];
+ t.mock.method(globalThis,'fetch',async(url,options)=>{
+  const r=JSON.parse(options.body);calls.push([url,r.method]);if(r.method==='getGenesisHash')return reply(r,GENESIS);
+  if(url===PUBLIC_RPC_ENDPOINTS[0])return new Response(JSON.stringify({jsonrpc:'2.0',id:r.id,error:{code:-32010,message:'Token program excluded from account secondary indexes'}}));
+  return reply(r,[]);
+ });
+ const result=await keylessConnection().getProgramAccounts(Keypair.generate().publicKey);
+ assert.deepEqual(result,[]);assert.deepEqual(calls.filter(x=>x[1]==='getProgramAccounts').map(x=>x[0]),[...PUBLIC_RPC_ENDPOINTS]);
+});
