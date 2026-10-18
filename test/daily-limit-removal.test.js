@@ -15,12 +15,12 @@ test('loss above the retired daily threshold permits an eligible BUY even with o
  assert.equal(order.side,'BUY');assert.equal(order.orderSol,.2);assert.equal(s.halted,null);assert.equal(s.haltKind,null);assert.equal(s.dailyLossBlocked,false);assert.equal(s.running,true);
  assert.equal(s.cashSol,1.15);assert.equal(s.dayStartEquity,before.dayStartEquity);assert.equal(s.peakEquity,before.peakEquity);
 });
-test('removing daily limits preserves drawdown, manual halt, pause and loss-streak protections',()=>{
+test('removing daily limits preserves drawdown, manual halt and manual pause protections',()=>{
  const now=Date.now(),s=freshState(now);Object.assign(s,{cashSol:1,running:true,halted:'daily',haltKind:'daily',dailyLossBlocked:true});
  riskCheck(s,[],150,now);assert.equal(s.haltKind,'drawdown');assert.equal(s.running,false);riskCheck(s,[],150,now+86400000);assert.equal(s.haltKind,'drawdown');
  const manual=freshState(now);Object.assign(manual,{halted:'manual halt',haltKind:'manual',buyPaused:true,lossPauseUntil:now+7200000,dailyLossBlocked:true});
- riskCheck(manual,[],150,now);assert.equal(manual.halted,'manual halt');assert.equal(manual.haltKind,'manual');assert.equal(manual.buyPaused,true);assert.equal(manual.lossPauseUntil,now+7200000);
- assert.equal(TRADE_RULES.maxDailyLossSol,null);assert.equal(TRADE_RULES.stopLossPct,20);assert.equal(TRADE_RULES.maxDrawdownPct,15);assert.equal(TRADE_RULES.lossStreakLimit,3);assert.equal(TRADE_RULES.reserveSol,.05);
+ riskCheck(manual,[],150,now);assert.equal(manual.halted,'manual halt');assert.equal(manual.haltKind,'manual');assert.equal(manual.buyPaused,true);assert.equal(manual.lossPauseUntil,0);
+ assert.equal(TRADE_RULES.maxDailyLossSol,null);assert.equal(TRADE_RULES.stopLossPct,20);assert.equal(TRADE_RULES.maxDrawdownPct,15);assert.equal(TRADE_RULES.lossStreakLimit,null);assert.equal(TRADE_RULES.reserveSol,.05);
 });
 test('restoring a saved daily halt clears only that obsolete latch and retains pending receipts and history',async()=>{
  const dir=await mkdtemp('/tmp/meme-no-daily-');try{

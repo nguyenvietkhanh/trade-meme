@@ -32,7 +32,6 @@ export function diagnoseOwnerEntry(s,feed,balance,now=Date.now()){
  if(s.buyBlockedReason||s.buyCircuitOpen)return result('execution-blocked',s.buyBlockedReason??'BUY bị khóa do lỗi thực thi liên tiếp; kiểm tra lỗi rồi bật lại thủ công.');
  if(feed.error||!feed.updatedAt||feed.updatedAt>now||now-feed.updatedAt>s.settings.maxPriceAgeMs||!(feed.solUsd>0))return result('waiting-data','Chưa đủ dữ liệu thị trường mới để mua.');
  if(!Number.isFinite(balance))return result('rpc-unavailable','RPC chưa đọc được số dư ví; không thể kiểm tra ngân sách mua.');
- if(s.lossPauseUntil>now)return result('loss-pause','Đang nghỉ BUY sau chuỗi lệnh thua.');
  if(positionLimitReached(s.positions.length,s.settings))return result('position-limit','Đã đủ số vị thế; tiếp tục theo dõi điều kiện bán.');
  const eligible=feed.markets.map(m=>({...m,...rankMarket(m,s.settings,now)})).filter(m=>m.eligible);
  if(!eligible.length)return result('waiting-signal','Chưa có token qua hết các tầng; xem số lượng bị chặn và lý do phía dưới.');

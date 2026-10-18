@@ -32,7 +32,7 @@ export function nextOwnerOrder(s,feed,walletBalance){
  }
  if(feed.error||!feed.updatedAt||now-feed.updatedAt>s.settings.maxPriceAgeMs||feed.updatedAt>now||!validSol||s.buyPaused||s.buyBlockedReason)return null;
  const payout=s.recoveryRequired?null:profitOrder(s,walletBalance);if(payout)return payout;
- if(!Number.isFinite(walletBalance)||s.halted||s.lossPauseUntil>Date.now()||positionLimitReached(s.positions.length,s.settings)||!canFundBuy(s.cashSol,s.settings.orderSol,s.settings.reserveSol)||!canFundBuy(walletBalance,s.settings.orderSol,s.settings.reserveSol)||s.positions.some(p=>!feed.markets.some(m=>m.mint===p.mint)))return null;
+ if(!Number.isFinite(walletBalance)||s.halted||positionLimitReached(s.positions.length,s.settings)||!canFundBuy(s.cashSol,s.settings.orderSol,s.settings.reserveSol)||!canFundBuy(walletBalance,s.settings.orderSol,s.settings.reserveSol)||s.positions.some(p=>!feed.markets.some(m=>m.mint===p.mint)))return null;
  const m=feed.markets.map(m=>({...m,...rankMarket(m,s.settings)})).filter(m=>m.eligible&&canFundBuy(s.cashSol,m.orderSol,s.settings.reserveSol)&&canFundBuy(walletBalance,m.orderSol,s.settings.reserveSol)&&!s.positions.some(p=>p.mint===m.mint)&&!(s.cooldowns[m.mint]>Date.now())&&!exhausted({side:'BUY',mint:m.mint})).sort((a,b)=>b.score-a.score)[0];
  return m?{side:'BUY',mint:m.mint,symbol:m.symbol,reason:'autonomous-low-cap',orderSol:m.orderSol,strategyVersion:STRATEGY_VERSION,riskSol:m.orderSol*s.settings.stopLossPct/100}:null;
 }

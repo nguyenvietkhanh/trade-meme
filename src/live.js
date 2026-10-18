@@ -1,4 +1,4 @@
-import {positionLimitReached,canFundBuy,BUY_LAMPORTS,TRADE_RULES,clearLegacyDailyHalt} from './desk-rules.js';
+import {positionLimitReached,canFundBuy,BUY_LAMPORTS,TRADE_RULES,clearLegacyDailyHalt,clearLegacyLossPause} from './desk-rules.js';
 import {readFile} from 'node:fs/promises';
 import path from 'node:path';
 import {PublicKey} from '@solana/web3.js';
@@ -10,7 +10,7 @@ import {DEFAULT_OWNER} from './security.js';
 export class LiveTrader{
  constructor(dir,vault,execution){this.file=path.join(dir,'live-state.json');this.vault=vault;this.execution=execution;this.state={...freshState(),cashSol:0,peakEquity:0,dayStartEquity:0,withdrawnSol:0,enabled:false,funded:false,pending:null,journal:[],lastError:null,lastSyncAt:null};this.queue=Promise.resolve();}
  serial(fn){const task=this.queue.then(fn);this.queue=task.catch(()=>{});return task;}
- async load(){try{const s=JSON.parse(await readFile(this.file,'utf8'));if(s.version!==2||!Array.isArray(s.journal))throw Error('schema');this.state={...s,settings:{...s.settings,...TRADE_RULES,initialSol:s.settings.initialSol}};clearLegacyDailyHalt(this.state);}catch(e){if(e.code!=='ENOENT')throw Error('Sổ mainnet không hợp lệ; không tự tạo đè.');}}
+ async load(){try{const s=JSON.parse(await readFile(this.file,'utf8'));if(s.version!==2||!Array.isArray(s.journal))throw Error('schema');this.state={...s,settings:{...s.settings,...TRADE_RULES,initialSol:s.settings.initialSol}};clearLegacyDailyHalt(this.state);clearLegacyLossPause(this.state);}catch(e){if(e.code!=='ENOENT')throw Error('Sổ mainnet không hợp lệ; không tự tạo đè.');}}
  async save(){await writeDurable(this.file,this.state);}
  status(){const s=this.state;return {mode:'live',...this.vault.status(),enabled:s.enabled,funded:s.funded,balanceSol:s.observedBalanceSol??s.cashSol,positions:s.positions,trades:s.trades.slice(0,50),pending:s.pending?{signature:s.pending.signature,status:s.pending.status}:null,halted:s.halted,error:s.lastError,entryBlockedReason:s.entryBlockedReason??null,lastSyncAt:s.lastSyncAt,settings:s.settings,events:s.events.slice(0,30),needsUnlock:!!(this.vault.exists&&!this.vault.keypair)};}
  key(){const kp=this.vault.keypair;if(!kp)throw Error('Két ví đang khóa. Mở khóa trước khi ký.');return kp;}
@@ -19,7 +19,7 @@ export class LiveTrader{
   this.key();await this.execution.network();const balance=await this.execution.balance(this.vault.publicKey);
   if(!this.state.funded){if(balance>LIVE_LIMITS.budgetSol+.00000001)throw Error('Ví bot khởi đầu chỉ được giữ tối đa 1,19 SOL.');if(!canFundBuy(balance,LIVE_LIMITS.orderSol,LIVE_LIMITS.reserveSol))throw Error('Chưa đủ SOL để giữ dự phòng và vào lệnh.');this.state.settings.initialSol=balance;this.state.cashSol=balance;this.state.dayStartEquity=balance;this.state.peakEquity=balance;this.state.funded=true;}
   if(balance<.055&&!this.state.positions.length)throw Error('Chưa đủ SOL để giữ dự phòng.');
-  clearLegacyDailyHalt(this.state);
+  clearLegacyDailyHalt(this.state);clearLegacyLossPause(this.state);
   if(this.state.halted)throw Error(this.state.halted);
   this.state.observedBalanceSol=balance;this.state.lastSyncAt=Date.now();this.state.enabled=true;this.state.running=true;this.state.lastError=null;event(this.state,'Đã bật ký lệnh mainnet trong giới hạn 0,2 SOL/lệnh.');await this.save();return this.status();
  });}

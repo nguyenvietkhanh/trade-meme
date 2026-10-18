@@ -37,5 +37,5 @@ test('diagnostics report the first failing stage instead of counting unrequested
 test('owner entry diagnosis distinguishes risk, RPC, pause, reserve and retry blocks without changing any state',()=>{
  const s=createOwnerLedger('owner',.3);s.running=true;const feed={markets:[verifiedMarket({},now)],solUsd:150,updatedAt:now};
  const initial=structuredClone(s);assert.equal(diagnoseOwnerEntry(s,feed,.3,now).phase,'ready');assert.deepEqual(s,initial);
- for(const [changes,balance,phase]of [[{buyPaused:true},.3,'buy-paused'],[{buyBlockedReason:'API unavailable'},.3,'execution-blocked'],[{halted:'daily limit'},.3,'risk-halt'],[{},NaN,'rpc-unavailable'],[{cashSol:.05},.3,'reserve'],[{lossPauseUntil:now+1000},.3,'loss-pause'],[{orderAttempts:{'BUY:test-mint:fixed':4}},.3,'retry-limit']])assert.equal(diagnoseOwnerEntry({...s,...changes},feed,balance,now).phase,phase);
+ for(const [changes,balance,phase]of [[{buyPaused:true},.3,'buy-paused'],[{buyBlockedReason:'API unavailable'},.3,'execution-blocked'],[{halted:'daily limit'},.3,'risk-halt'],[{},NaN,'rpc-unavailable'],[{cashSol:.05},.3,'reserve'],[{orderAttempts:{'BUY:test-mint:fixed':4}},.3,'retry-limit']])assert.equal(diagnoseOwnerEntry({...s,...changes},feed,balance,now).phase,phase);
 });

@@ -5,7 +5,7 @@ import {createOwnerLedger,nextOwnerOrder,ownerExit,applyOwnerReceipt} from './ow
 import {DEFAULTS,equity,event} from './engine.js';
 import {profitOrder,PROFIT_RECIPIENT} from './profit.js';
 import {auditDesk} from './auditor.js';
-import {clearLegacyDailyHalt} from './desk-rules.js';
+import {clearLegacyDailyHalt,clearLegacyLossPause} from './desk-rules.js';
 const $=id=>document.getElementById(id);
 let provider=null,owner=null,ledger=null,wallet=null,feed=null,proposal=null,refreshing=false,signing=false,signerAvailable=false,signerStatus=null,recoveryProof=null;
 async function api(path,body){const r=await fetch(path,{method:body?'POST':'GET',headers:body?{'Content-Type':'application/json','X-Requested-With':'meme-desk'}:{},body:body?JSON.stringify(body):undefined});const data=await r.json();if(!r.ok)throw Error(data.error||'Yêu cầu thất bại.');return data;}
@@ -19,7 +19,7 @@ function validateLedger(value){
  const realizedNetSol=value.realizedNetSol??value.cashSol+value.positions.reduce((sum,p)=>sum+p.costSol,0)+withdrawnSol+payoutFeesSol-value.settings.initialSol;
  if(!Number.isFinite(realizedNetSol))throw Error('Không xác minh được lãi đã chốt.');
  for(const p of value.payouts??[])if(p.recipient!==PROFIT_RECIPIENT||!Number.isFinite(p.amountSol)||p.amountSol<=0||!Number.isFinite(p.feeSol)||p.feeSol<0)throw Error('Lịch sử nhận lãi không hợp lệ.');
- clearLegacyDailyHalt(value);
+ clearLegacyDailyHalt(value);clearLegacyLossPause(value);
  return {...value,realizedNetSol,withdrawnSol,payoutFeesSol,payouts:value.payouts??[],settings:{...DEFAULTS,initialSol:value.settings.initialSol},running:false};
 }
 function save(){

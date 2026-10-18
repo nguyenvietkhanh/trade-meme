@@ -1,4 +1,4 @@
-import {TRADE_RULES as DEFAULTS,positionLimitReached,clearLegacyDailyHalt} from './desk-rules.js';
+import {TRADE_RULES as DEFAULTS,positionLimitReached,clearLegacyDailyHalt,clearLegacyLossPause} from './desk-rules.js';
 import {rankMarket} from './strategy.js';
 import {recordEvaluation} from './scanner.js';
 export const SOL = 'So11111111111111111111111111111111111111112';
@@ -19,7 +19,7 @@ export function assertMarket(m,now,s,exit=false){
 export function riskCheck(state,markets,solUsd,now=Date.now()){
  if(!Number.isFinite(solUsd)||solUsd<=0)throw Error('Thiếu giá SOL.');
  const value=equity(state,markets,solUsd,now),day=new Date(now).toISOString().slice(0,10);
- clearLegacyDailyHalt(state);
+ clearLegacyDailyHalt(state);clearLegacyLossPause(state);
  if(day!==state.day){state.day=day;state.dayStartEquity=value;}
  state.peakEquity=Math.max(state.peakEquity,value);
  state.maxDrawdownObservedPct=Math.max(state.maxDrawdownObservedPct??0,(1-value/state.peakEquity)*100);
@@ -30,7 +30,7 @@ export function riskCheck(state,markets,solUsd,now=Date.now()){
  return value;
 }
 export function buy(state,m,solUsd,now=Date.now(),source='manual'){
- riskCheck(state,[m],solUsd,now);if(state.halted)throw Error(state.halted);if(state.lossPauseUntil>now)throw Error('Nghỉ 2 giờ sau 3 lệnh thua.');assertMarket(m,now,state.settings);
+ riskCheck(state,[m],solUsd,now);if(state.halted)throw Error(state.halted);assertMarket(m,now,state.settings);
  const s=state.settings,size=source.startsWith('auto-score:')?rankMarket(m,s,now).orderSol:s.orderSol,cost=size+s.feeSol;
  if(positionLimitReached(state.positions.length,s))throw Error('Đã đủ số vị thế cho phép.');
  if(state.positions.some(p=>p.mint===m.mint))throw Error('Đã có vị thế token này.');
@@ -92,13 +92,14 @@ export function sell(state,m,solUsd,now=Date.now(),reason='manual',fraction=1){
  recordSell(state,m,solUsd,{quantity,proceedsSol:proceeds,priceUsd:fill,closed:fraction===1},now,reason);
 }
 export function recordSell(state,m,solUsd,fill,now=Date.now(),reason='manual',mode='paper'){
+ clearLegacyLossPause(state);
  const p=state.positions.find(p=>p.mint===m.mint);if(!p)throw Error('Không có vị thế cho fill.');
  const fraction=fill.closed?1:Math.min(1,fill.quantity/p.quantity),quantity=p.quantity*fraction,proceeds=fill.proceedsSol,allocatedCost=p.costSol*fraction,allocatedUsd=p.costUsd*fraction;
  if(!(fraction>0&&fraction<=1&&proceeds>=0))throw Error('Fill bán không hợp lệ.');
  const pnlSol=proceeds-allocatedCost;
  state.realizedNetSol=(state.realizedNetSol??0)+pnlSol;state.cashSol+=proceeds;p.quantity-=quantity;p.costSol-=allocatedCost;p.costUsd-=allocatedUsd;p.realizedPnlSol+=pnlSol;p.recoveredUsd+=proceeds*solUsd;
  if(fill.rawBalance!==undefined){p.rawQuantity=fill.rawBalance;p.quantity=Number(fill.rawBalance)/10**p.decimals;}
- if(fraction===1){state.lossStreak=p.realizedPnlSol<0?(state.lossStreak??0)+1:0;if(state.lossStreak>=state.settings.lossStreakLimit){state.lossPauseUntil=now+state.settings.lossPauseMs;state.lossStreak=0;event(state,'Nghỉ BUY 2 giờ sau 3 vị thế thua liên tiếp; vẫn quản lý thoát lệnh.',now);}state.positions=state.positions.filter(x=>x!==p);state.cooldowns[p.mint]=now+(reason==='stop-loss'?state.settings.reentryMs:state.settings.coarseCooldownMs);}
+ if(fraction===1){state.lossStreak=p.realizedPnlSol<0?(state.lossStreak??0)+1:0;state.positions=state.positions.filter(x=>x!==p);state.cooldowns[p.mint]=now+(reason==='stop-loss'?state.settings.reentryMs:state.settings.coarseCooldownMs);}
  else if(reason==='recover-capital'){p.phase='runner';p.peakPriceUsd=m.priceUsd;p.nextTakeProfitPriceUsd=p.entryPriceUsd*2**Math.max(1,Math.floor(Math.log2(m.priceUsd/p.entryPriceUsd))+1);}
  else if(reason==='runner-double'){p.runnerSteps++;p.nextTakeProfitPriceUsd=p.entryPriceUsd*2**Math.max(1,Math.floor(Math.log2(m.priceUsd/p.entryPriceUsd))+1);}
  if(p.priceBasis==='sol'&&fraction<1&&['recover-capital','runner-double'].includes(reason)){
@@ -118,7 +119,7 @@ export function tick(state,markets,solUsd,now=Date.now()){
   p.lastPriceUsd=m.priceUsd;
   if(state.running){const plan=state.liquidating?{reason:'drawdown-close',fraction:1}:exitPlan(p,m,solUsd,state.settings,now);if(plan)sell(state,m,solUsd,now,plan.reason,plan.fraction);}
  }
- if(state.running&&!state.halted&&!(state.lossPauseUntil>now)){
+ if(state.running&&!state.halted){
   state.lastEvaluationAt=now;
   const candidates=markets.map(m=>({market:m,rank:rankMarket(m,state.settings,now)})).sort((a,b)=>b.rank.score-a.rank.score);
   for(const {market:m,rank} of candidates){

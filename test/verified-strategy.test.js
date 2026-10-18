@@ -42,10 +42,10 @@ test('daily loss does not halt BUY; drawdown stops all automation and never clea
  s.cashSol=.254;s.running=true;riskCheck(s,[],150,now+86400001);assert.equal(s.haltKind,'drawdown');assert.equal(s.running,false);
  riskCheck(s,[],150,now+2*86400000);assert.equal(s.haltKind,'drawdown');
 });
-test('three closed losing positions pause BUY for two hours, not each partial sell',()=>{
+test('closed losing positions update the streak without pausing BUY; partial sells do not count twice',()=>{
  const s=freshState(now),m=verifiedMarket({},now);
- for(let i=0;i<3;i++){recordBuy(s,m,150,{quantity:10,costSol:.03,priceUsd:.45},now);recordSell(s,m,150,{quantity:5,proceedsSol:.01,priceUsd:.3},now,'partial');assert.equal(s.lossPauseUntil,undefined);recordSell(s,m,150,{quantity:5,proceedsSol:.01,priceUsd:.3,closed:true},now,'close');}
- assert.equal(s.lossPauseUntil,now+7200000);assert.equal(s.lossStreak,0);
+ for(let i=0;i<3;i++){recordBuy(s,m,150,{quantity:10,costSol:.03,priceUsd:.45},now);recordSell(s,m,150,{quantity:5,proceedsSol:.01,priceUsd:.3},now,'partial');assert.equal(s.lossPauseUntil,0);recordSell(s,m,150,{quantity:5,proceedsSol:.01,priceUsd:.3,closed:true},now,'close');}
+ assert.equal(s.lossPauseUntil,0);assert.equal(s.lossStreak,3);
 });
 test('position decisions are pure, reject mismatched tokens, and never require BUY eligibility to SELL',()=>{
  const {s,p,m}=account(),before=structuredClone(p);
