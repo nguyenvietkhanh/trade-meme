@@ -15,6 +15,7 @@ import {DirectWallet} from './direct-wallet.js';
 import {VerificationFeed} from './verification.js';
 import {STRATEGY_VERSION} from './desk-rules.js';
 import {OwnerAgent,signerRequestAllowed} from './owner-agent.js';
+import {PumpFunMarkets} from './pump-fun-market.js';
 import {initializeStorage} from './storage.js';
 
 // Railway may use the Docker/npm entry point instead of the configured wrapper.
@@ -44,6 +45,7 @@ const expectedOrigin=process.env.PUBLIC_ORIGIN??(onRailway?'https://'+(process.e
 const auth=new OwnerAuth({owner:DEFAULT_OWNER,origin:expectedOrigin});
 const execution=new SolanaExecution();
 const direct=new DirectWallet(execution);
+const pumpFunMarkets=new PumpFunMarkets(execution);
 const ownerAgent=liveOnly&&process.env.SIGNER_MODE!=='disabled'?new OwnerAgent(dataDir,direct,execution,auth.owner,{storageMode:process.env.RAILWAY_VOLUME_MOUNT_PATH?'persistent-volume':onRailway?'ephemeral':'local-disk'}):null;
 await ownerAgent?.load();
 let feed={markets:[],solUsd:null,updatedAt:null,error:null};
@@ -57,7 +59,7 @@ function serial(fn){const task=pending.then(fn);pending=task.catch(()=>{});retur
 async function refresh(){
   if(refreshing)return;refreshing=true;
   try{
-    const latest=await loadMarkets([...new Set([...state.positions.map(p=>p.mint),...direct.watched,...(ownerAgent?.trackedMints()??[]),...state.watchlist])],Object.fromEntries((ownerAgent?.state?.positions??state.positions).filter(p=>p.pairAddress).map(p=>[p.mint,p.pairAddress])),discovery);
+    const latest=await loadMarkets([...new Set([...state.positions.map(p=>p.mint),...direct.watched,...(ownerAgent?.trackedMints()??[]),...state.watchlist])],Object.fromEntries((ownerAgent?.state?.positions??state.positions).filter(p=>p.pairAddress).map(p=>[p.mint,p.pairAddress])),discovery,pumpFunMarkets);
     latest.markets=scannerMarkets(state,latest.markets);
     latest.markets=await verification.enrichCached(latest.markets,ownerAgent?.trackedMints()??[]);
     await serial(async()=>{latest.markets=observeMarkets(state,latest.markets);feed={...latest,error:null};
@@ -144,7 +146,7 @@ const server=http.createServer(async(req,res)=>{
       return json(res,404,{error:'Không tìm thấy thao tác ví.'});
     }
     if(req.method==='GET'&&url.pathname==='/api/state')return json(res,200,snapshot(req));
-    if(req.method==='GET'&&url.pathname==='/api/health')return json(res,200,{status:'ok',mode:liveOnly?'live':'paper',rpcMode:'keyless',apiKeyRequired:false,unattendedSigningAvailable:!!ownerAgent,strategyVersion:STRATEGY_VERSION,swapProvider:liveOnly?'PumpSwap':null,signingMode:ownerAgent?'owner-agent':liveOnly?'owner-wallet':null,buildRevision:process.env.RAILWAY_GIT_COMMIT_SHA??'local',running:liveOnly?false:state.running,readOnly,marketReady:!!feed.updatedAt,marketFresh:!!feed.updatedAt&&!feed.error&&Date.now()-feed.updatedAt<DEFAULTS.maxPriceAgeMs});
+    if(req.method==='GET'&&url.pathname==='/api/health')return json(res,200,{status:'ok',mode:liveOnly?'live':'paper',rpcMode:'keyless',apiKeyRequired:false,unattendedSigningAvailable:!!ownerAgent,strategyVersion:STRATEGY_VERSION,swapProvider:liveOnly?'PumpSwap + pump.fun':null,signingMode:ownerAgent?'owner-agent':liveOnly?'owner-wallet':null,buildRevision:process.env.RAILWAY_GIT_COMMIT_SHA??'local',running:liveOnly?false:state.running,readOnly,marketReady:!!feed.updatedAt,marketFresh:!!feed.updatedAt&&!feed.error&&Date.now()-feed.updatedAt<DEFAULTS.maxPriceAgeMs});
     if(req.method==='GET'&&url.pathname==='/api/export'){
       if(liveOnly){if(!auth.authenticated(req))return json(res,401,{error:'Cần xác thực bằng ví chủ.'});return json(res,200,{mode:'live',walletMode:'owner',message:'Xuất lịch sử trong phần ví chủ trên trình duyệt đang giao dịch.'});}
       res.writeHead(200,{'Content-Type':'application/json','Content-Disposition':'attachment; filename="paper-trades.json"','Cache-Control':'no-store'});return res.end(JSON.stringify({mode:'paper',exportedAt:new Date().toISOString(),settings:state.settings,trades:state.trades},null,2));

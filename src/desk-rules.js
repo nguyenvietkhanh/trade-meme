@@ -3,7 +3,8 @@
 export const TRADE_RULES = Object.freeze({initialSol:1.19,reserveSol:0.05,orderSol:0.2,smallOrderSol:0.2,coarseCooldownMs:1800000,maxPositions:null,stopLossPct:20,takeProfitTriggerPct:80,takeProfitRecoveryPct:40,runnerMultiple:2,takeProfitSellFraction:.78,maxHoldMs:21600000,reentryMs:86400000,maxRetries:3,networkFailureLimit:3,maxPriorityAndTipSol:.002,runnerTrailingPct:30,timeStopMs:2700000,timeStopGainPct:20,lossStreakLimit:null,lossPauseMs:0,runnerSellFraction:0.5,dustUsd:0.25,minRunnerFraction:0.000001,maxDrawdownPct:15,maxDailyLossSol:null,slippageBps:150,buySlippageCapBps:400,sellSlippageCapBps:300,emergencySlippageCapBps:1000,maxRoundTripCostPct:6,minLiquiditySol:20,feeSol:0.0001,minLiquidityUsd:0,minVolume24hUsd:0,minMarketCapUsd:3000,maxMarketCapUsd:5000000,maxPriceAgeMs:30000});
 export const ENTRY_EXCLUDED_MINTS=Object.freeze(['6JVe4NQPab3NkKxE6vaKcEiJVsz8hpSZYvdHh54hpump']);
 export const TREND_RULES=Object.freeze({h4MaxAgeMs:60000,h4RejectMemoryMs:14400000,minHistoryMs:900000,minRedDropPct:20,minPumpPct:50,minPeakRetreatPct:35,minUpperWickFraction:.55,maxCloseLocation:.35});
-export const STRATEGY_VERSION='solana-six-stage-desk-v4';
+export const STRATEGY_VERSION='solana-dual-venue-desk-v5';
+export const CURVE_RULES=Object.freeze({orderFraction:.05,minTokenAgeMs:180000,maxQuoteAgeMs:5000,minUniqueBuyers5m:8,minUniqueBuyerRatio:.3,minHolderCount:30,timeStopMs:900000,timeStopGainPct:20,maxHoldMs:3600000,earlyTakeProfitPct:35,earlySellFraction:.25,maxPriorityFraction:.02});
 export const SCREENER_RULES=Object.freeze({minMomentumPct:1,maxMomentumPct:12,minBuys:10,minBuySellRatio:1.3,minVolume5mUsd:1000,minAcceleration:1.2,maxHourGainPct:150,minSixHourChangePct:-30,maxDayGainPct:500,minScore:60});
 export const AUDIT_RULES=Object.freeze({minClosedTrades:40,minWinRate:.33,minExpectancyR:.4,maxDrawdownPct:TRADE_RULES.maxDrawdownPct,stalePositionMs:72*3600000});
 export const PROFIT_RECIPIENT='5uYdJyFmZkvZT5S3A7iq1kLx2aLwcMgVXMfxjdGf5qVZ';
@@ -26,14 +27,15 @@ export const HISTORICAL_BUY_LAMPORTS=Object.freeze(['20000000','30000000',BUY_LA
 export const WALLET_ORDER_FRACTION=.2;
 export const WALLET_SIZING_VERSION='wallet-balance-v1';
 // initialSol/orderSol in TRADE_RULES seed the isolated paper engine only. Mainnet has no capital cap.
-export function walletOrderSol(balanceSol){
+export function walletOrderSol(balanceSol,fraction=WALLET_ORDER_FRACTION){
  if(!Number.isFinite(balanceSol)||balanceSol<0)return 0;
  const balance=Math.floor(balanceSol*1e9+1e-6);if(!Number.isSafeInteger(balance))return 0;
- const order=Number(BigInt(balance)/5n)/1e9;
+ const divisor=fraction===WALLET_ORDER_FRACTION?5n:fraction===CURVE_RULES.orderFraction?20n:null;if(!divisor)return 0;
+ const order=Number(BigInt(balance)/divisor)/1e9;
  return order>0&&canFundBuy(balanceSol,order,TRADE_RULES.reserveSol)?order:0;
 }
 export function validBuyLamports(amount){return typeof amount==='string'&&/^[1-9]\d{0,15}$/.test(amount)&&Number.isSafeInteger(Number(amount));}
-export function validHistoricalBuy(intent){return intent.sizingVersion==null?HISTORICAL_BUY_LAMPORTS.includes(intent.amount):validBuyLamports(intent.amount)&&intent.sizingVersion===WALLET_SIZING_VERSION&&Number.isSafeInteger(intent.walletBalanceLamports)&&String(Math.round(walletOrderSol(intent.walletBalanceLamports/1e9)*1e9))===intent.amount;}
+export function validHistoricalBuy(intent){return intent.sizingVersion==null?HISTORICAL_BUY_LAMPORTS.includes(intent.amount):validBuyLamports(intent.amount)&&intent.sizingVersion===WALLET_SIZING_VERSION&&Number.isSafeInteger(intent.walletBalanceLamports)&&String(Math.round(walletOrderSol(intent.walletBalanceLamports/1e9,intent.venue==='pumpfun'?CURVE_RULES.orderFraction:WALLET_ORDER_FRACTION)*1e9))===intent.amount;}
 
 export function executionSlippageBps(side,reason=''){return side==='BUY'?TRADE_RULES.buySlippageCapBps:/^(stop-loss|emergency-|runner-trailing|drawdown-close)/.test(reason)?TRADE_RULES.emergencySlippageCapBps:TRADE_RULES.sellSlippageCapBps;}
 

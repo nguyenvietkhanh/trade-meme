@@ -1,4 +1,4 @@
-import {TRADE_RULES as DEFAULTS,positionLimitReached,clearLegacyDailyHalt,clearLegacyLossPause} from './desk-rules.js';
+import {TRADE_RULES as DEFAULTS,positionLimitReached,clearLegacyDailyHalt,clearLegacyLossPause,CURVE_RULES} from './desk-rules.js';
 import {rankMarket} from './strategy.js';
 import {recordEvaluation} from './scanner.js';
 export const SOL = 'So11111111111111111111111111111111111111112';
@@ -49,6 +49,7 @@ export function recordBuy(state,m,solUsd,fill,now=Date.now(),reason='manual',mod
 }
 export function netPositionUsd(p,m,solUsd,s){return Math.max(0,p.quantity*m.priceUsd*(1-s.slippageBps/10000)-s.feeSol*solUsd);}
 export function exitPlan(p,m,solUsd,s,now=Date.now()){
+ if(p.venue==='pumpfun')return curveExitPlan(p,m,now);
  if(p.priceBasis==='sol'){
   // A receipt contains SOL cost, not historical SOL/USD. Keep recovered positions in SOL.
   const q=m.exitQuote,fresh=q?.mint===p.mint&&q.rawAmount===p.rawQuantity&&Number.isFinite(q.netSol)&&q.netSol>=0&&q.checkedAt<=now&&now-q.checkedAt<=s.maxPriceAgeMs;
@@ -81,6 +82,25 @@ export function exitPlan(p,m,solUsd,s,now=Date.now()){
  }
  return null;
 }
+export function curveExitPlan(p,m,now=Date.now()){
+ const q=m.exitQuote,fresh=q?.mint===p.mint&&q.rawAmount===p.rawQuantity&&Number.isFinite(q.netSol)&&q.netSol>=0&&q.checkedAt<=now&&now-q.checkedAt<=CURVE_RULES.maxQuoteAgeMs;
+ if(fresh){p.lastQuoteAt=q.checkedAt;p.lastPriceSol=q.netSol/p.quantity;p.peakPriceSol=Math.max(p.peakPriceSol??p.entryPriceSol,p.lastPriceSol);p.maxGainPct=Math.max(p.maxGainPct??0,(p.lastPriceSol/p.entryPriceSol-1)*100);}
+ p.peakLiquidityUsd=Math.max(p.peakLiquidityUsd??p.entryLiquidityUsd??0,Number.isFinite(m.liquidityUsd)?m.liquidityUsd:0);
+ const plan=(reason,fraction)=>({reason,fraction,...(fresh?{trigger:{at:now,quoteCheckedAt:q.checkedAt,expectedNetSol:q.netSol*fraction,remainingRaw:p.rawQuantity,provider:q.provider??null}}:{})});
+ if(Number.isFinite(m.liquidityUsd)&&m.liquidityUsd<p.peakLiquidityUsd*.6||m.creatorSoldRecently===true||m.evidence?.largeHolderDump===true||m.evidence?.sellSimulationOk===false)return plan('emergency-risk',1);
+ if(fresh&&q.netSol<=p.costSol*.8)return plan('stop-loss',1);
+ if(now-p.openedAt>=CURVE_RULES.maxHoldMs)return plan('max-hold',1);
+ if(now-p.openedAt>=CURVE_RULES.timeStopMs&&(p.maxGainPct??0)<CURVE_RULES.timeStopGainPct)return plan('time-stop',1);
+ if(!fresh)return null;
+ const multiple=p.lastPriceSol/p.entryPriceSol,trailing=p.peakPriceSol/p.entryPriceSol>=8?20:p.peakPriceSol/p.entryPriceSol>=4?25:30;
+ if(p.phase==='runner'&&p.lastPriceSol<=p.peakPriceSol*(1-trailing/100))return plan('runner-trailing',1);
+ if(Number.isFinite(p.entryVolume5mUsd)&&Number.isFinite(m.volume5mUsd)&&m.volume5mUsd<p.entryVolume5mUsd*.3&&multiple<1)return plan('volume-exhaustion',1);
+ if(p.phase==='initial'&&!p.earlyProfitTaken&&multiple>=1+CURVE_RULES.earlyTakeProfitPct/100)return plan('curve-early-profit',CURVE_RULES.earlySellFraction);
+ if(p.phase==='initial'&&multiple>=1.8){const recovered=p.initialCostSol-p.costSol+p.realizedPnlSol,target=Math.max(0,p.initialCostSol*1.4-recovered);return plan('recover-capital',Math.min(1,Math.max(.000001,target/q.netSol)));}
+ if(p.phase==='runner'&&p.quantity<=p.initialQuantity*DEFAULTS.minRunnerFraction)return plan('dust-close',1);
+ if(p.phase==='runner'&&p.lastPriceSol>=p.nextTakeProfitPriceSol)return plan('runner-double',.5);
+ return null;
+}
 export function sell(state,m,solUsd,now=Date.now(),reason='manual',fraction=1){
  if(!Number.isFinite(solUsd)||solUsd<=0)throw Error('Thiếu giá SOL.');assertMarket(m,now,state.settings,true);
  const p=state.positions.find(p=>p.mint===m.mint);if(!p)throw Error('Không có vị thế.');
@@ -99,6 +119,7 @@ export function recordSell(state,m,solUsd,fill,now=Date.now(),reason='manual',mo
  const pnlSol=proceeds-allocatedCost;
  state.realizedNetSol=(state.realizedNetSol??0)+pnlSol;state.cashSol+=proceeds;p.quantity-=quantity;p.costSol-=allocatedCost;p.costUsd-=allocatedUsd;p.realizedPnlSol+=pnlSol;p.recoveredUsd+=proceeds*solUsd;
  if(fill.rawBalance!==undefined){p.rawQuantity=fill.rawBalance;p.quantity=Number(fill.rawBalance)/10**p.decimals;}
+ if(reason==='curve-early-profit')p.earlyProfitTaken=true;
  if(fraction===1){state.lossStreak=p.realizedPnlSol<0?(state.lossStreak??0)+1:0;state.positions=state.positions.filter(x=>x!==p);state.cooldowns[p.mint]=now+(reason==='stop-loss'?state.settings.reentryMs:state.settings.coarseCooldownMs);}
  else if(reason==='recover-capital'){p.phase='runner';p.peakPriceUsd=m.priceUsd;p.nextTakeProfitPriceUsd=p.entryPriceUsd*2**Math.max(1,Math.floor(Math.log2(m.priceUsd/p.entryPriceUsd))+1);}
  else if(reason==='runner-double'){p.runnerSteps++;p.nextTakeProfitPriceUsd=p.entryPriceUsd*2**Math.max(1,Math.floor(Math.log2(m.priceUsd/p.entryPriceUsd))+1);}

@@ -1,3 +1,4 @@
+import {isPumpCurve} from './venues.js';
 import {fetchStructure} from './candles.js';
 import {rankMarket} from './strategy.js';
 import {SCAN_RULES} from './scanner.js';
@@ -48,6 +49,10 @@ export class VerificationFeed{
    const key=m.mint+':'+m.pairAddress,cached=this.cache.get(key);
    if(reusable(cached,now)){results.set(key,cached.value);return;}
    let value;
+   if(isPumpCurve(m)){
+    try{if(!this.execution?.inspectCurveMarket)throw Error('Chưa có verifier curve.');const evidence=await this.execution.inspectCurveMarket(m);value={evidence:{...evidence,mint:m.mint,pairAddress:m.pairAddress,checkedAt:Date.now(),source:'pumpfun-onchain-curve'}};}catch(error){value={verificationError:providerFailure('Bonding curve on-chain',error)};}
+    this.cache.set(key,{at:now,value});results.set(key,value);return;
+   }
    try{const response=await this.reportFetch('https://api.rugcheck.xyz/v1/tokens/'+encodeURIComponent(m.mint)+'/report',{signal:AbortSignal.timeout(2000)});if(!response.ok)throw Error('HTTP '+response.status);value={evidence:rugEvidence(await response.json(),m,now)};}
    catch(error){value={verificationError:providerFailure('RugCheck',error)};}
    if(this.execution&&value.evidence)try{const structure=await fetchStructure(m,this.fetcher);value.evidence={...value.evidence,...structure};}catch{}

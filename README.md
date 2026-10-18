@@ -1,6 +1,6 @@
 # Meme Pilot — Solana spot
 
-Bot chọn token PumpSwap và tự ký từ ví chủ **7JePGU7MFtRo9z5jMh2486UniD4EB4PpRd8tv2Jhqpsy**. Không cần Helius/Jupiter API key, không tạo ví phụ.
+Bot chọn token PumpSwap và pump.fun trước migrate, tự ký từ ví chủ **7JePGU7MFtRo9z5jMh2486UniD4EB4PpRd8tv2Jhqpsy**. Không cần Helius/Jupiter API key, không tạo ví phụ.
 
 **Kết nối ví chỉ xác thực chủ.** Muốn tự giao dịch không chờ ký, chủ nhập private key của đúng ví một lần qua giao diện đã đăng nhập trên Railway HTTPS hoặc localhost 127.0.0.1. Két AES-256-GCM/scrypt giữ bản mã hóa; mở khóa nạp khóa ký vào RAM. Không nhập seed phrase, không gửi khóa/mật khẩu trong chat hoặc Git. Private key có quyền với toàn bộ ví; cỡ lệnh 20% số dư SOL và dự phòng gas do phần mềm thực thi, không phải hạn mức on-chain. Không dùng ví này giữ tài sản vượt mức chấp nhận rủi ro của bạn.
 
@@ -116,8 +116,24 @@ npm test
 npm start
 ```
 
-Railway auto-deploy nhánh `codex/meme-pilot-railway` bằng Dockerfile/railway.json; một replica. Không dùng Docker secret mounts vì builder Railway hiện chỉ hỗ trợ cache mounts. Volume lưu sổ và két của bộ ký; thiếu Volume chỉ cảnh báo dữ liệu có thể mất, không khóa BUY. `PUBLIC_ORIGIN` cần đúng HTTPS origin khi dùng domain riêng. Egress: api.dexscreener.com, api.geckoterminal.com, api.rugcheck.xyz, lite-api.jup.ag và hai RPC trên; không cần Helius/Jupiter. Install scripts tắt; SDK transitive TOML/BigInt dùng các bản override đã kiểm tra.
+Railway auto-deploy nhánh `codex/meme-pilot-railway` bằng Dockerfile/railway.json; một replica. Không dùng Docker secret mounts vì builder Railway hiện chỉ hỗ trợ cache mounts. Volume lưu sổ và két của bộ ký; thiếu Volume chỉ cảnh báo dữ liệu có thể mất, không khóa BUY. `PUBLIC_ORIGIN` cần đúng HTTPS origin khi dùng domain riêng. Egress: frontend-api-v3.pump.fun, api.dexscreener.com, api.geckoterminal.com, api.rugcheck.xyz, lite-api.jup.ag và hai RPC trên; không cần Helius/Jupiter. Install scripts tắt; SDK transitive TOML/BigInt dùng các bản override đã kiểm tra.
 
 `/api/health`: `mode=live`, `rpcMode=keyless`, `signingMode=owner-agent` và `unattendedSigningAvailable=true`, `strategyVersion=solana-six-stage-desk-v4`. Đây là HTTP/feed readiness, không chứng minh giao dịch/lợi nhuận. `/api/direct/status` cần đăng nhập chủ.
 
 Kiểm thử dùng fixture, chữ ký ví thử và RPC giả lập. Chưa gửi giao dịch SOL thật, chưa kiểm chứng hiệu quả thị trường hoặc trạng thái Railway Online từ môi trường này.
+
+## pump.fun trước migrate
+
+Nhánh `pumpfun` độc lập với PumpSwap. Nguồn metadata/lịch sử trade công khai là `frontend-api-v3.pump.fun`; worker chạy nền, timeout/backoff riêng, lưu tối đa 300 mint và không giữ vòng quét DexScreener chờ. Khi API không trả đúng cấu trúc hoặc lịch sử bị cắt trước đủ cửa sổ 5 phút (phân trang tối đa 1.000 trade), ứng viên không được BUY. Không tạo số liệu thay thế hay tự gán đủ số ví. Chưa xác minh trực tiếp endpoint này từ môi trường triển khai vì mạng kiểm tra bị chặn. API frontend không phải cam kết dữ liệu ổn định; có thể cần thay nguồn khi pump.fun đổi hợp đồng API.
+
+- Dùng **5% native SOL hiện tại/lệnh** (PumpSwap vẫn 20%), nguyên lamport, vẫn giữ 0,05 SOL và dự tính phí. Không bật lại giới hạn lỗ/ngày hoặc thời gian nghỉ sau chuỗi thua theo lựa chọn chủ ví. Drawdown 15% toàn tài khoản, quyền chủ, pending journal và cách đối soát giữ nguyên.
+- Tuổi token ≥3 phút; M1/M5 cùng dương, ≥8 BUY và ≥15 trade/5m, ≥8 ví mua khác nhau, ví mua/trade mua ≥30%. Không yêu cầu H1/H4. Tăng tốc volume dùng 1 phút so với 4 phút trước; thiếu nến/structure vẫn nhận nửa điểm, không dựng OHLCV giả. Lịch sử đầy đủ trong cửa sổ là bắt buộc; giá giao dịch SOL/token từ API chỉ phục vụ tín hiệu, giá dựng lệnh lấy lại từ curve on-chain.
+- Vốn hóa $3k–$5m lấy supply × giá curve; **SOL thực ≥20**, SOL thực × SOL/USD / vốn hóa ≥3%. Không lấy virtual SOL làm khả năng thoát. Chuẩn pump.fun đã xác minh PDA/owner, global/fee config, mint supply/authority, ATA/vault; chỉ curve SOL depth 0, không mayhem/cashback/quote lồng nhau. Mint/freeze phải revoke, Token-2022 chỉ extension đã hiểu.
+- Top 10 trừ vault/curve ≤35%, từng ví ≤8%, ≥30 holder; creator holdings xác minh ≤5%. Dev có bán trong 5 phút hoặc ≥3 ví mua cùng slot với tổng >5% supply thì từ chối. Kiểm tra đồng slot là heuristic, **không chứng minh không có bundle**; chưa có dịch vụ lịch sử rug/funding-cluster của creator, ghi `unknown` trong snapshot, không gán là sạch.
+- Trước migrate **không tồn tại LP AMM**, không giả LP lock/burn 90%; thay bằng kiểm tra curve và SOL thực. Nhánh này không dùng RugCheck LP/Jupiter; PumpSwap vẫn bắt buộc các kiểm chứng cũ. Curve quote bằng SDK chính thức `@pump-fun/pump-sdk@4.1.0`, có phí động theo cấu hình on-chain, hao hụt vòng ≤6%, impact mỗi chiều ≤2%, không mua xuyên điểm hoàn tất. Quote không phải bảo đảm có thể thoát nếu giá/rút thanh khoản biến động sau đó.
+- `buy_exact_sol_in` từ IDL chính thức dùng đúng ngân sách, minimum token out và partial fill false; chỉ có signer ví chủ. Dựng lại quote đúng số lượng, giá curve lệch tín hiệu >2% hoặc quote quá 5 giây sau mô phỏng/trước ký thì hủy chuẩn bị. Mọi thay đổi SOL/token và giới hạn dự phòng vẫn được mô phỏng. Priority ≤2% giá trị lệnh và không vượt cap cũ, không Jito tip; tổng chi phí khứ hồi gồm overhead không hoàn lại từ simulation >8% lệnh thì từ chối (không tính ATA rent dự kiến thu hồi khi bán hết).
+- Cắt lỗ theo quote bán ròng −20%; **không bảo đảm khớp tại −20%**. +35% bán 25%; +80% bán đủ phần cần để tổng tiền nhận xấp xỉ 1,4× vốn ban đầu, trừ phần đã bán trước. Moonbag 2×/4×/8× bán nửa, trailing 30/25/20%; time-stop 15 phút chưa từng vượt +20%, giữ tối đa 1 giờ. Vị thế curve tính bằng SOL từ giá vốn thực, không chuyển nhầm sang USD.
+- Khi complete: không BUY dựa trên tín hiệu curve cũ. SELL đợi canonical PumpSwap pool đúng PDA/program/mint; chưa có pool thì báo đang migrate, không tự gửi lệnh sang pool bất kỳ. Vị thế và chữ ký pending vẫn giữ nguyên.
+- Nhật ký training ghi venue, snapshot đầu vào, trigger SELL và chênh lệch thực nhận so với dự kiến (bao gồm tác động phí/rent, không gọi là riêng trượt giá thị trường). Báo cáo Telegram 23h giữ lịch cũ. Lệnh PumpSwap cũ không đổi quy tắc thoát hay kích thước.
+
+Khôi phục theo một chữ ký mua đơn lẻ vẫn chỉ hỗ trợ PumpSwap; với vị thế curve cần giữ/nhập bản xuất sổ owner đầy đủ. Volume và bản sao nhật ký vẫn là cách bảo toàn giá vốn/pending sau redeploy.

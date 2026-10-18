@@ -4,7 +4,8 @@ import bs58 from 'bs58';
 import {DEFAULT_OWNER} from './security.js';
 import {SOL,DEFAULTS} from './engine.js';
 import {rankMarket} from './strategy.js';
-import {walletOrderSol,validHistoricalBuy,WALLET_SIZING_VERSION} from './desk-rules.js';
+import {walletOrderSol,validHistoricalBuy,WALLET_SIZING_VERSION,CURVE_RULES,WALLET_ORDER_FRACTION} from './desk-rules.js';
+import {isPumpCurve} from './venues.js';
 import {entryFeatures} from './training-records.js';
 import {availableProfitLamports,PROFIT_RECIPIENT} from './profit.js';
 
@@ -22,7 +23,7 @@ export function verifyOwnerTransaction(encoded,owner=DEFAULT_OWNER){
 // This service never possesses a wallet key or signs. The owner's wallet signs in the browser.
 export class DirectWallet{
  constructor(execution){this.execution=execution;this.owner=DEFAULT_OWNER;this.intent=null;this.watched=[];}
- configure(){return {walletMode:'owner',rpcProvider:this.execution.provider,swapProvider:'PumpSwap',swapReady:true,signingMode:'owner-wallet',unattendedSigning:false,profitRecipient:PROFIT_RECIPIENT};}
+ configure(){return {walletMode:'owner',rpcProvider:this.execution.provider,swapProvider:'PumpSwap + pump.fun',swapReady:true,signingMode:'owner-wallet',unattendedSigning:false,profitRecipient:PROFIT_RECIPIENT};}
  async status(minContextSlot){
   try{await this.execution.network();const balanceSol=await this.execution.balance(this.owner,minContextSlot),tokenBalances={};
    if(this.watched.length)for(const a of await this.execution.holdings(this.owner)){const d=a.account.data;if(d.length>=165){const mint=new PublicKey(d.subarray(0,32)).toBase58();if(this.watched.includes(mint))tokenBalances[mint]=(BigInt(tokenBalances[mint]??'0')+d.readBigUInt64LE(64)).toString();}}
@@ -43,14 +44,14 @@ export class DirectWallet{
   const market=feed.markets.find(m=>m.mint===input.mint);if(!market)throw Error('Token chưa có dữ liệu trong tập quét.');
   const holdings=await this.execution.holdings(this.owner,market.mint);
   let held=0n;for(const a of holdings){const d=a.account.data;if(d.length>=165&&new PublicKey(d.subarray(0,32)).toBase58()===market.mint)held+=d.readBigUInt64LE(64);}
-  let amount,sizing={};
+  const curve=isPumpCurve(market)||input.venue==='pumpfun';let amount,sizing={};
   if(side==='BUY'){
    const rank=rankMarket({...market,solUsd:feed.solUsd},DEFAULTS);if(!rank.eligible)throw Error('Token chưa đạt toàn bộ bộ lọc.');
    if(held>0n)throw Error('Ví đã giữ token này; không trộn với tài sản có sẵn.');
-   const balance=await this.execution.balance(this.owner,input.minContextSlot),size=walletOrderSol(balance);if(!size)throw Error('Chưa đủ SOL ngoài khoản dự phòng 0,05 SOL và phí.');
-   if(input.orderSol!=null&&Math.round(input.orderSol*1e9)!==Math.round(size*1e9))throw Object.assign(Error('Số dư đã đổi; tính lại cỡ lệnh 20% và quote.'),{code:'BALANCE_CHANGED'});
+   const balance=await this.execution.balance(this.owner,input.minContextSlot),size=walletOrderSol(balance,curve?CURVE_RULES.orderFraction:WALLET_ORDER_FRACTION);if(!size)throw Error('Chưa đủ SOL ngoài khoản dự phòng 0,05 SOL và phí.');
+   if(input.orderSol!=null&&Math.round(input.orderSol*1e9)!==Math.round(size*1e9))throw Object.assign(Error('Số dư đã đổi; tính lại cỡ lệnh theo thị trường và quote.'),{code:'BALANCE_CHANGED'});
    amount=String(Math.round(size*1e9));
-   const proof=this.execution.roundTripQuote?await this.execution.roundTripQuote(market.mint,amount):market.evidence;
+   const proof=!curve&&this.execution.roundTripQuote?await this.execution.roundTripQuote(market.mint,amount,market):market.evidence;
    if(!proof||proof.probeSol!==size||!rankMarket({...market,evidence:{...market.evidence,...proof},solUsd:feed.solUsd},DEFAULTS).eligible)throw Error('Quote vòng chưa đạt cho cỡ lệnh thực tế.');
    sizing={sizingVersion:WALLET_SIZING_VERSION,walletBalanceLamports:Math.floor(balance*1e9+1e-6),entryQuoteProof:proof,entryFeatures:entryFeatures(market,feed.solUsd,proof)};
    await this.execution.mintCheck(market.mint);
@@ -58,11 +59,12 @@ export class DirectWallet{
    if(typeof input.amount!=='string'||!/^\d{1,20}$/.test(input.amount)||BigInt(input.amount)<=0n||BigInt(input.amount)>held)throw Error('Lượng bán vượt số token đang có.');
    amount=input.amount;
   }
-  const reference=side==='BUY'&&this.execution.entryQuote?await this.execution.entryQuote(market.mint,amount):null;
-  const request={minContextSlot:input.minContextSlot,...(reference?{referenceMinOut:reference.minOut}:{}),ownerAddress:this.owner,poolAddress:market.pairAddress,closeEmptyInput:side==='SELL'&&input.closeEmptyInput===true,input:side==='BUY'?SOL:market.mint,output:side==='BUY'?market.mint:SOL,amount,reason:String(input.reason??'')};
+  const reference=side==='BUY'&&!curve&&this.execution.entryQuote?await this.execution.entryQuote(market.mint,amount):null;
+  const request={venue:curve?'pumpfun':'pumpswap',referencePriceSol:market.priceUsd/feed.solUsd,minContextSlot:input.minContextSlot,...(reference?{referenceMinOut:reference.minOut}:{}),ownerAddress:this.owner,poolAddress:market.pairAddress,closeEmptyInput:side==='SELL'&&input.closeEmptyInput===true,input:side==='BUY'?SOL:market.mint,output:side==='BUY'?market.mint:SOL,amount,reason:String(input.reason??'')};
   let prepared=await this.execution.prepare(request);
+  if(side==='BUY'&&curve){if(!prepared.entryQuoteProof||prepared.entryQuoteProof.probeSol!==Number(amount)/1e9||Date.now()-prepared.entryQuoteProof.quoteCheckedAt>CURVE_RULES.maxQuoteAgeMs)throw Error('Thiếu quote curve mới theo cỡ lệnh thực tế.');sizing.entryQuoteProof=prepared.entryQuoteProof;sizing.entryFeatures=entryFeatures(market,feed.solUsd,prepared.entryQuoteProof);}
   const tx=VersionedTransaction.deserialize(prepared.bytes);
-  this.intent={...sizing,id:randomBytes(16).toString('hex'),owner:this.owner,side,mint:market.mint,symbol:market.symbol,priceUsd:market.priceUsd,solUsd:feed.solUsd,entryLiquidityUsd:market.liquidityUsd,entryVolume5mUsd:market.volume5mUsd,pairAddress:market.pairAddress,amount,closeEmptyInput:prepared.closedInputAccount??null,reason:side==='BUY'?'autonomous-low-cap':String(input.reason??'owner-exit').slice(0,50),lastValidBlockHeight:prepared.lastValidBlockHeight,messageHash:hash(tx),at:Date.now()};
+  this.intent={...sizing,venue:prepared.venue??(curve?'pumpfun':'pumpswap'),id:randomBytes(16).toString('hex'),owner:this.owner,side,mint:market.mint,symbol:market.symbol,priceUsd:market.priceUsd,solUsd:feed.solUsd,entryLiquidityUsd:market.liquidityUsd,entryVolume5mUsd:market.volume5mUsd,pairAddress:prepared.poolAddress??market.pairAddress,exitTrigger:side==='SELL'?input.exitTrigger??null:null,amount,closeEmptyInput:prepared.closedInputAccount??null,reason:side==='BUY'?'autonomous-low-cap':String(input.reason??'owner-exit').slice(0,50),lastValidBlockHeight:prepared.lastValidBlockHeight,messageHash:hash(tx),at:Date.now()};
   return {intent:this.intent,transaction:Buffer.from(prepared.bytes).toString('base64')};
  }
  async submit({id,transaction}){

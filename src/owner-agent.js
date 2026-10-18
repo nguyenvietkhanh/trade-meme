@@ -9,6 +9,7 @@ import {createOwnerLedger,nextOwnerOrder,applyOwnerReceipt,ownerExit,allocateOwn
 import {DEFAULTS,equity,event} from './engine.js';
 import {rankMarket} from './strategy.js';
 import {STRATEGY_VERSION,clearLegacyDailyHalt,clearLegacyLossPause,walletOrderSol,WALLET_SIZING_VERSION,WALLET_ORDER_FRACTION} from './desk-rules.js';
+import {CURVE_RULES} from './desk-rules.js';
 import {auditDesk} from './auditor.js';
 import {diagnoseOwnerEntry} from './diagnostics.js';
 import {TelegramReporter,enqueueTradeReport} from './telegram.js';
@@ -106,6 +107,7 @@ export class OwnerAgent{
    const prepareMs=performance.now()-started;
    const tx=VersionedTransaction.deserialize(Buffer.from(prepared.transaction,'base64'));
    if(tx.message.header.numRequiredSignatures!==1||tx.message.staticAccountKeys[0].toBase58()!==this.owner)throw Error('Sai người ký tự động.');
+   if(order.side==='BUY'&&prepared.intent.venue==='pumpfun'&&Date.now()-prepared.intent.entryQuoteProof?.quoteCheckedAt>CURVE_RULES.maxQuoteAgeMs)throw Error('Quote curve đã quá 5 giây, không ký.');
    if(order.side==='BUY'&&(s.buyPaused||s.buyCircuitOpen||Date.now()-feed.updatedAt>DEFAULTS.maxPriceAgeMs||!rankMarket({...feed.markets.find(m=>m.mint===order.mint),evidence:{...feed.markets.find(m=>m.mint===order.mint)?.evidence,...prepared.intent.entryQuoteProof},solUsd:feed.solUsd},DEFAULTS).eligible))throw Error('Dữ liệu BUY đã quá 30 giây hoặc kiểm chứng hết hạn; không ký.');
    if(epoch!==this.commandEpoch||!this.vault.keypair)throw Error('Đã dừng bộ ký; không ký lệnh mới.');
    if(order.side==='PROFIT'&&this.payoutGuard())throw Error(this.payoutGuard());
@@ -121,7 +123,7 @@ export class OwnerAgent{
  async close(mint,feed){return this.serial(async()=>{
   if(!this.state||!this.vault.keypair)throw Error('Mở khóa bộ ký trước khi bán.');
   const p=this.state.positions.find(p=>p.mint===mint);if(!p)throw Error('Không có vị thế.');
-  feed={...feed,solUsd:feed.solUsd>0?feed.solUsd:p.entrySolUsd,markets:[...feed.markets.filter(m=>m.mint!==mint),{...(feed.markets.find(m=>m.mint===mint)??{}),mint,symbol:p.symbol,priceUsd:p.lastPriceUsd,pairAddress:p.pairAddress??feed.markets.find(m=>m.mint===mint)?.pairAddress}]};
+  feed={...feed,solUsd:feed.solUsd>0?feed.solUsd:p.entrySolUsd,markets:[...feed.markets.filter(m=>m.mint!==mint),{...(feed.markets.find(m=>m.mint===mint)??{}),mint,symbol:p.symbol,priceUsd:p.lastPriceUsd,venue:p.venue,pairAddress:p.pairAddress??feed.markets.find(m=>m.mint===mint)?.pairAddress}]};
   const order=ownerExit(this.state,mint,1,'owner-exit',feed.solUsd);await this.execute(order,feed);
  });}
  async tick(feed){
@@ -149,9 +151,9 @@ export class OwnerAgent{
    for(const p of s.positions){
     let m=working.markets.find(m=>m.mint===p.mint);
     if(!m){m={mint:p.mint,symbol:p.symbol,priceUsd:p.lastPriceUsd,pairAddress:p.pairAddress,updatedAt:0};working.markets.push(m);}
-    m.pairAddress=p.pairAddress??m.pairAddress;
+    m.pairAddress=p.pairAddress??m.pairAddress;m.venue=p.venue??m.venue;
     if(this.execution.sellQuote)try{
-     const q=await this.execution.sellQuote({ownerAddress:this.owner,mint:p.mint,amount:p.rawQuantity,poolAddress:m.pairAddress});m.exitQuote=q;if(Number.isFinite(q.netSol)&&q.netSol>=0&&working.solUsd>0){m.priceUsd=q.netSol*working.solUsd/p.quantity;m.updatedAt=q.checkedAt;}
+     const q=await this.execution.sellQuote({ownerAddress:this.owner,mint:p.mint,amount:p.rawQuantity,poolAddress:m.pairAddress,venue:p.venue});m.exitQuote=q;if(Number.isFinite(q.netSol)&&q.netSol>=0&&working.solUsd>0){m.priceUsd=q.netSol*working.solUsd/p.quantity;m.updatedAt=q.checkedAt;}
      if(q.failed===true)m.evidence={...m.evidence,sellSimulationOk:false};
      if(q.jupiterUnavailable)networkError='Jupiter quote chưa khả dụng; dùng báo giá PumpSwap cho vị thế đang mở.';
     }catch(e){networkError=e.message;}

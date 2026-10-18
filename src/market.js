@@ -5,7 +5,7 @@ export async function fetchJson(url,{timeoutMs=12000,...options}={}) {
   if(!response.ok) throw Error(`Dịch vụ bên ngoài trả HTTP ${response.status}`);
   return response.json();
 }
-export async function loadMarkets(extraMints=[],preferredPools={},discovery=null) {
+export async function loadMarkets(extraMints=[],preferredPools={},discovery=null,pumpFun=null) {
   const queries=['pumpswap','pump','solana'];
   const discover=()=>Promise.allSettled([
     ...queries.map(q=>fetchJson('https://api.dexscreener.com/latest/dex/search?q='+q)),
@@ -51,8 +51,9 @@ export async function loadMarkets(extraMints=[],preferredPools={},discovery=null
     const prior=seen.get(m.mint);
     if(!prior||(m.dexId==='pumpswap'&&prior.dexId!=='pumpswap')||((m.dexId==='pumpswap')===(prior.dexId==='pumpswap')&&prior.liquidityUsd<m.liquidityUsd))seen.set(m.mint,m);
   }
+  if(pumpFun)try{const pre=pumpFun.cachedMarkets?pumpFun.cachedMarkets(solUsd,extraMints):await pumpFun.markets(solUsd,extraMints);warnings.push(...pre.warnings);for(const m of pre.markets)if(!seen.has(m.mint))seen.set(m.mint,m);}catch{warnings.push('Nguồn bonding curve chưa xác minh được; nhánh PumpSwap vẫn quét bình thường.');}
   const all=[...seen.values()];discovery?.remember(all.filter(m=>m.dexId==='pumpswap'));
   const priority=new Map(all.map(m=>[m,rankMarket(m).roughEligible?2:coarseMarket(m).eligible?1:0]));
   const markets=all.sort((a,b)=>priority.get(b)-priority.get(a)||b.liquidityUsd-a.liquidityUsd).filter((m,i)=>i<60||extraMints.includes(m.mint));
-  return {solUsd,markets,updatedAt:Date.now(),warnings,sources:{searches:good.length,newSolanaProfiles:profileMints.length,newPumpSwapPools:newPoolMints.length,revisitedTokens:revisited.length,discoveryQueue:discovery?.entries.size??0,discoveredCandidates:all.length,shortlistedCandidates:markets.length}};
+  return {solUsd,markets,updatedAt:Date.now(),warnings,sources:{searches:good.length,newSolanaProfiles:profileMints.length,newPumpSwapPools:newPoolMints.length,revisitedTokens:revisited.length,discoveryQueue:discovery?.entries.size??0,preMigrationCandidates:all.filter(m=>m.venue==='pumpfun').length,discoveredCandidates:all.length,shortlistedCandidates:markets.length}};
 }

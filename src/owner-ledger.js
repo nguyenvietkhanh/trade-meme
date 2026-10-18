@@ -1,7 +1,8 @@
 import {freshState,recordBuy,recordSell,riskCheck,exitPlan,event} from './engine.js';
 import {rankMarket} from './strategy.js';
 import {profitOrder,PROFIT_RECIPIENT} from './profit.js';
-import {STRATEGY_VERSION,positionLimitReached,canFundBuy,BUY_LAMPORTS,walletOrderSol,WALLET_SIZING_VERSION,WALLET_ORDER_FRACTION} from './desk-rules.js';
+import {STRATEGY_VERSION,positionLimitReached,canFundBuy,BUY_LAMPORTS,walletOrderSol,WALLET_SIZING_VERSION,WALLET_ORDER_FRACTION,CURVE_RULES} from './desk-rules.js';
+import {isPumpCurve} from './venues.js';
 import {enqueueTrainingRecord} from './training-records.js';
 
 export function createOwnerLedger(owner,balance){
@@ -32,20 +33,20 @@ export function nextOwnerOrder(s,feed,walletBalance){
   if(Number.isFinite(m.priceUsd)&&m.priceUsd>0)p.lastPriceUsd=m.priceUsd;
   const fresh=m.updatedAt<=now&&now-m.updatedAt<=s.settings.maxPriceAgeMs;
   const plan=exitPlan(p,m,validSol?feed.solUsd:p.entrySolUsd,{...s.settings,requireExecutableQuote:true},now);
-  if(plan&&(fresh||['max-hold','time-stop','emergency-risk','stop-loss'].includes(plan.reason))){const o=ownerExit(s,p.mint,plan.fraction,plan.reason,feed.solUsd);if(!exhausted(o))return o;}
+  if(plan&&(fresh||['max-hold','time-stop','emergency-risk','stop-loss'].includes(plan.reason))){const o=ownerExit(s,p.mint,plan.fraction,plan.reason,feed.solUsd);if(!exhausted(o))return {...o,exitTrigger:plan.trigger};}
  }
  if(feed.error||!feed.updatedAt||now-feed.updatedAt>s.settings.maxPriceAgeMs||feed.updatedAt>now||!validSol||s.buyPaused||s.buyBlockedReason)return null;
  const payout=s.recoveryRequired?null:profitOrder(s,walletBalance);if(payout)return payout;
- const size=walletOrderSol(walletBalance);
- if(!size||s.halted||positionLimitReached(s.positions.length,s.settings)||!canFundBuy(s.cashSol,size,s.settings.reserveSol)||s.positions.some(p=>!feed.markets.some(m=>m.mint===p.mint)))return null;
- const m=feed.markets.map(m=>({...m,...rankMarket(m,s.settings)})).filter(m=>m.eligible&&!s.positions.some(p=>p.mint===m.mint)&&!(s.cooldowns[m.mint]>Date.now())&&!exhausted({side:'BUY',mint:m.mint})).sort((a,b)=>b.score-a.score)[0];
- return m?{side:'BUY',mint:m.mint,symbol:m.symbol,reason:'autonomous-low-cap',orderSol:size,minContextSlot:s.lastReceiptSlot,strategyVersion:STRATEGY_VERSION,riskSol:size*s.settings.stopLossPct/100}:null;
+ if(!walletOrderSol(walletBalance,CURVE_RULES.orderFraction)||s.halted||positionLimitReached(s.positions.length,s.settings)||s.positions.some(p=>!feed.markets.some(m=>m.mint===p.mint)))return null;
+ const m=feed.markets.map(m=>({...m,...rankMarket(m,s.settings)})).filter(m=>m.eligible&&canFundBuy(s.cashSol,walletOrderSol(walletBalance,isPumpCurve(m)?CURVE_RULES.orderFraction:WALLET_ORDER_FRACTION),s.settings.reserveSol)&&walletOrderSol(walletBalance,isPumpCurve(m)?CURVE_RULES.orderFraction:WALLET_ORDER_FRACTION)>0&&!s.positions.some(p=>p.mint===m.mint)&&!(s.cooldowns[m.mint]>Date.now())&&!exhausted({side:'BUY',venue:isPumpCurve(m)?'pumpfun':'pumpswap',mint:m.mint})).sort((a,b)=>b.score-a.score)[0];
+ const size=m?walletOrderSol(walletBalance,isPumpCurve(m)?CURVE_RULES.orderFraction:WALLET_ORDER_FRACTION):0;
+ return m?{side:'BUY',venue:isPumpCurve(m)?'pumpfun':'pumpswap',mint:m.mint,symbol:m.symbol,reason:'autonomous-low-cap',orderSol:size,minContextSlot:s.lastReceiptSlot,strategyVersion:STRATEGY_VERSION,riskSol:size*s.settings.stopLossPct/100}:null;
 }
 export function ownerExit(s,mint,fraction=1,reason='owner-exit',solUsd){
  const p=s.positions.find(p=>p.mint===mint);if(!p)throw Error('Không có vị thế do ứng dụng quản lý.');
  const raw=BigInt(p.rawQuantity),amount=fraction>=1?raw:raw*BigInt(Math.floor(fraction*1e9))/1000000000n;
  if(amount<=0n)throw Error('Lượng bán quá nhỏ.');
- return {side:'SELL',mint,symbol:p.symbol,amount:amount.toString(),closeEmptyInput:amount===raw,reason};
+ return {side:'SELL',venue:p.venue,mint,symbol:p.symbol,amount:amount.toString(),closeEmptyInput:amount===raw,reason};
 }
 export function applyOwnerReceipt(s,pending,result){
  if(s.recordedSignatures.includes(result.signature)){s.pending=null;return false;}
@@ -58,7 +59,7 @@ export function applyOwnerReceipt(s,pending,result){
   const raw=BigInt(result.tokenDelta),quantity=Number(raw<0n?-raw:raw)/10**result.decimals,m={mint:intent.mint,symbol:intent.symbol,priceUsd:intent.priceUsd,liquidityUsd:intent.entryLiquidityUsd,volume5mUsd:intent.entryVolume5mUsd,pairAddress:intent.pairAddress};
   if(intent.side==='BUY'){
    recordBuy(s,m,intent.solUsd,{quantity,costSol:-result.solDelta,priceUsd:Number(intent.amount??BUY_LAMPORTS)/1e9*intent.solUsd/quantity,rawQuantity:raw.toString(),decimals:result.decimals,signature:result.signature,networkFeeSol:result.feeSol??null},Date.now(),intent.reason,'live');
-   trainingPosition=s.positions.find(p=>p.mint===intent.mint);trainingPosition.trainingEntry={signature:result.signature,features:intent.entryFeatures??null};
+   trainingPosition=s.positions.find(p=>p.mint===intent.mint);trainingPosition.trainingEntry={signature:result.signature,features:intent.entryFeatures??null};trainingPosition.venue=intent.venue??'pumpswap';if(intent.venue==='pumpfun'){trainingPosition.priceBasis='sol';trainingPosition.entryPriceSol=-result.solDelta/quantity;trainingPosition.peakPriceSol=trainingPosition.entryPriceSol;trainingPosition.lastPriceSol=trainingPosition.entryPriceSol;trainingPosition.nextTakeProfitPriceSol=null;}
   }
   else{
    const p=s.positions.find(p=>p.mint===intent.mint);if(!p||raw>=0n||-raw>BigInt(p.rawQuantity))throw Error('Lượng bán không khớp sổ vị thế của ứng dụng.');
