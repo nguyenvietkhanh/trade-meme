@@ -7,13 +7,13 @@ import {backoffFetch} from './provider-fetch.js';
 import {buildPumpSwap,PUMP_PROGRAM} from './pump-swap.js';
 import {SOL} from './engine.js';
 import {keylessConnection,PUBLIC_RPC_ENDPOINTS,MAINNET_GENESIS_HASH} from './rpc.js';
-import {PROFIT_RECIPIENT,PROFIT_RULES,TRADE_RULES,BUY_LAMPORTS,executionSlippageBps} from './desk-rules.js';
+import {PROFIT_RECIPIENT,PROFIT_RULES,TRADE_RULES,executionSlippageBps,walletOrderSol,validBuyLamports,WALLET_ORDER_FRACTION} from './desk-rules.js';
 export const TOKEN=new PublicKey('TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA');
 export const TOKEN2022=new PublicKey('TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb');
 const ATA=new PublicKey('ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL');
 const PROGRAMS=new Set(['11111111111111111111111111111111','ComputeBudget111111111111111111111111111111',TOKEN.toBase58(),TOKEN2022.toBase58(),ATA.toBase58(),PUMP_PROGRAM.toBase58()]);
 export class TradePolicyError extends Error{}
-export const LIVE_LIMITS=Object.freeze({budgetSol:TRADE_RULES.initialSol,orderSol:TRADE_RULES.orderSol,reserveSol:TRADE_RULES.reserveSol,maxPositions:TRADE_RULES.maxPositions,maxDailyLossSol:TRADE_RULES.maxDailyLossSol,maxOverheadLamports:5000000,maxPriorityLamports:20000,maxPriceImpact:.02,slippageBps:TRADE_RULES.slippageBps});
+export const LIVE_LIMITS=Object.freeze({budgetSol:null,orderSol:null,orderFraction:WALLET_ORDER_FRACTION,reserveSol:TRADE_RULES.reserveSol,maxPositions:TRADE_RULES.maxPositions,maxDailyLossSol:TRADE_RULES.maxDailyLossSol,maxOverheadLamports:5000000,maxPriorityLamports:20000,maxPriceImpact:.02,slippageBps:TRADE_RULES.slippageBps});
 const atomic=s=>{if(!/^\d+$/.test(String(s)))throw new TradePolicyError('Số lượng token không hợp lệ.');return BigInt(s);};
 export function validateQuote(q,input,output,amount,maxSlippageBps=LIVE_LIMITS.slippageBps,maxImpact=LIVE_LIMITS.maxPriceImpact){
  if(q.inputMint!==input||q.outputMint!==output||q.swapMode!=='ExactIn'||atomic(q.inAmount)!==atomic(amount)||atomic(q.outAmount)<=0n||atomic(q.otherAmountThreshold)<=0n||atomic(q.otherAmountThreshold)>atomic(q.outAmount))throw new TradePolicyError('Báo giá không khớp lệnh đã cho phép.');
@@ -25,6 +25,7 @@ export function validateSimulation({beforeSol,afterSol,before,after,input,output
  if(!Number.isSafeInteger(beforeSol)||!Number.isSafeInteger(afterSol))throw new TradePolicyError('Không xác minh được thay đổi SOL.');
  const spend=beforeSol-afterSol;
  if(input===SOL&&spend>Number(amount)+LIVE_LIMITS.maxOverheadLamports)throw new TradePolicyError('Giao dịch có thể chi SOL quá giới hạn.');
+ if(input===SOL&&afterSol<TRADE_RULES.reserveSol*1e9)throw new TradePolicyError('Mô phỏng mua dùng vào khoản SOL dự phòng gas.');
  if(input!==SOL&&afterSol-beforeSol<Number(minOut)-LIVE_LIMITS.maxOverheadLamports)throw new TradePolicyError('SOL nhận sau phí thấp hơn giới hạn.');
  let outputChange=0n,inputChange=0n;
  for(let i=0;i<after.length;i++){
@@ -79,7 +80,7 @@ export class SolanaExecution{
   if(supply<=0n||total!==supply)throw Error('Phân bổ holder không đầy đủ so với cung on-chain.');
   const distribution=[...owners.values()].sort((a,b)=>a>b?-1:a<b?1:0),percent=n=>Number(n*100000000n/supply)/1000000;
   const creator=m.creatorAddress?new PublicKey(m.creatorAddress).toBase58():null,devPct=creator&&!excluded.has(creator)&&creator!==PublicKey.default.toBase58()?percent(owners.get(creator)??0n):undefined;
-  const roundTrip=await jupiterRoundTrip(m.mint,this.quoteFetch),slot=await this.rpc.getSlot('confirmed');if(roundTrip.quoteContextSlot>slot+20||slot-roundTrip.quoteContextSlot>20)throw Error('Jupiter quote slot không còn mới.');
+  const roundTrip=await this.roundTripQuote(m.mint,String(Math.round(walletOrderSol(await this.balance(DEFAULT_OWNER))*1e9)));
   return {...facts,...roundTrip,quoteReserveSol:Number(state.poolQuoteAmount.toString())/1e9,holderCount:owners.size,top10ExcludesPool:true,top10Pct:percent(distribution.slice(0,10).reduce((a,b)=>a+b,0n)),largestHolderPct:percent(distribution[0]??0n),devPct};
  }
  async holdings(owner,mint=null){
@@ -89,10 +90,12 @@ export class SolanaExecution{
   if(mint&&all.some(a=>!Buffer.isBuffer(a.account.data)||a.account.data.length<165||new PublicKey(a.account.data.subarray(0,32)).toBase58()!==mint||!new PublicKey(a.account.data.subarray(32,64)).equals(key)))throw new TradePolicyError('Số dư token trả về không khớp lệnh/ví chủ.');
   if(all.length>64)throw new TradePolicyError('Ví có quá nhiều tài khoản token để kiểm tra an toàn.');return all;
  }
+ async roundTripQuote(mint,amount){const q=await jupiterRoundTrip(mint,this.quoteFetch,Number(amount)/1e9),slot=await this.rpc.getSlot('confirmed');if(q.quoteContextSlot>slot+20||slot-q.quoteContextSlot>20)throw Error('Jupiter quote slot không còn mới.');return q;}
  async entryQuote(mint,amount){const q=await jupiterEntryQuote(mint,amount,this.quoteFetch),slot=await this.rpc.getSlot('confirmed');if(q.contextSlot>slot+20||slot-q.contextSlot>20)throw Error('Jupiter entry quote slot đã cũ.');return q;}
- async prepare({keypair,ownerAddress,input,output,amount,poolAddress,reason='',closeEmptyInput=false,referenceMinOut}){
-  if(input===SOL&&String(amount)!==BUY_LAMPORTS)throw new TradePolicyError('Chỉ cho lệnh mua 0,2 SOL.');
+ async prepare({keypair,ownerAddress,input,output,amount,poolAddress,reason='',closeEmptyInput=false,referenceMinOut,minContextSlot}){
+  if(input===SOL&&!validBuyLamports(String(amount)))throw new TradePolicyError('Cỡ lệnh SOL không hợp lệ.');
   await this.network();const owner=keypair?.publicKey??new PublicKey(ownerAddress);
+  if(input===SOL){const size=walletOrderSol(await this.balance(owner,minContextSlot));if(!size||String(amount)!==String(Math.round(size*1e9)))throw new TradePolicyError('Số dư đã đổi hoặc cỡ lệnh không bằng 20% ví sau dự phòng gas; tính lại quote trước khi ký.');}
   const cap=executionSlippageBps(input===SOL?'BUY':'SELL',reason),emergency=cap===TRADE_RULES.emergencySlippageCapBps;
   const {tx,quote:q,lastValidBlockHeight,closedInputAccount}=await buildPumpSwap(this.rpc,{owner,input,output,amount,poolAddress,slippageBps:emergency?cap:TRADE_RULES.slippageBps,maxReserveFraction:emergency?.1:.02,closeEmptyInput,referenceMinOut});
   validateQuote(q,input,output,amount,cap,emergency?.1:LIVE_LIMITS.maxPriceImpact);
@@ -127,9 +130,9 @@ export class SolanaExecution{
    return {mint,rawAmount:amount,checkedAt:Date.now(),netSol:Number(p.minNativeOutLamports)/1e9,provider:'PumpSwap',jupiterUnavailable:true,failed:false};
   }
  }
- async prepareProfit(ownerAddress,lamports,initialSol=TRADE_RULES.initialSol){
+ async prepareProfit(ownerAddress,lamports,initialSol=null){
   if(!Number.isSafeInteger(lamports)||lamports<PROFIT_RULES.minTransferLamports||lamports>PROFIT_RULES.maxTransferLamports)throw new TradePolicyError('Số lãi chuyển không hợp lệ.');
-  if(!Number.isFinite(initialSol)||initialSol<=0||initialSol>TRADE_RULES.initialSol)throw new TradePolicyError('Ngân sách gốc không hợp lệ.');
+  if(!Number.isFinite(initialSol)||initialSol<=0||!Number.isSafeInteger(Math.round(initialSol*1e9)))throw new TradePolicyError('Ngân sách gốc không hợp lệ.');
   await this.network();const owner=new PublicKey(ownerAddress),recipient=new PublicKey(PROFIT_RECIPIENT),balance=await this.rpc.getBalance(owner),block=await this.rpc.getLatestBlockhash();
   const tx=new VersionedTransaction(new TransactionMessage({payerKey:owner,recentBlockhash:block.blockhash,instructions:[SystemProgram.transfer({fromPubkey:owner,toPubkey:recipient,lamports})]}).compileToV0Message());
   const fee=await this.rpc.getFeeForMessage(tx.message);

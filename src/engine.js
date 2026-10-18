@@ -9,7 +9,7 @@ export function freshState(now=Date.now()){
  return {version:2,profile:PROFILE,strategy:'autonomous',watchlist:[],decisions:[],decisionStats:{evaluated:0,bought:0,rejected:0},cashSol:DEFAULTS.initialSol,positions:[],trades:[],events:[],curve:[],running:false,automationRequested:false,halted:null,day:new Date(now).toISOString().slice(0,10),dayStartEquity:DEFAULTS.initialSol,peakEquity:DEFAULTS.initialSol,maxDrawdownObservedPct:0,cooldowns:{},settings:{...DEFAULTS}};
 }
 export function equity(state,markets,solUsd,now=Date.now()){
- return (state.withdrawnSol??0)+state.cashSol+state.positions.reduce((sum,p)=>sum+(()=>{const m=markets.find(m=>m?.mint===p.mint),q=m?.exitQuote;return q?.mint===p.mint&&typeof p.rawQuantity==='string'&&q.rawAmount===p.rawQuantity&&Number.isFinite(q.netSol)&&q.checkedAt<=now&&now-q.checkedAt<=state.settings.maxPriceAgeMs?q.netSol:p.priceBasis==='sol'?p.quantity*(p.lastPriceSol??p.entryPriceSol):p.quantity*(m?.priceUsd??p.lastPriceUsd)/solUsd;})(),0);
+ return (state.withdrawnSol??0)+(state.externalWithdrawnSol??0)+state.cashSol+state.positions.reduce((sum,p)=>sum+(()=>{const m=markets.find(m=>m?.mint===p.mint),q=m?.exitQuote;return q?.mint===p.mint&&typeof p.rawQuantity==='string'&&q.rawAmount===p.rawQuantity&&Number.isFinite(q.netSol)&&q.checkedAt<=now&&now-q.checkedAt<=state.settings.maxPriceAgeMs?q.netSol:p.priceBasis==='sol'?p.quantity*(p.lastPriceSol??p.entryPriceSol):p.quantity*(m?.priceUsd??p.lastPriceUsd)/solUsd;})(),0);
 }
 export function event(state,message,now=Date.now()){state.events.unshift({at:now,message});state.events=state.events.slice(0,200);}
 export function assertMarket(m,now,s,exit=false){
@@ -22,8 +22,8 @@ export function riskCheck(state,markets,solUsd,now=Date.now()){
  clearLegacyDailyHalt(state);clearLegacyLossPause(state);
  if(day!==state.day){state.day=day;state.dayStartEquity=value;}
  state.peakEquity=Math.max(state.peakEquity,value);
- state.maxDrawdownObservedPct=Math.max(state.maxDrawdownObservedPct??0,(1-value/state.peakEquity)*100);
- if(value<=state.peakEquity*(1-state.settings.maxDrawdownPct/100)){
+ state.maxDrawdownObservedPct=Math.max(state.maxDrawdownObservedPct??0,state.peakEquity>0?(1-value/state.peakEquity)*100:0);
+ if(state.peakEquity>0&&value<=state.peakEquity*(1-state.settings.maxDrawdownPct/100)){
   state.halted='Drawdown ≥15%: đóng toàn bộ vị thế, khóa BUY; chờ bật lại thủ công.';state.haltKind='drawdown';state.liquidating=state.positions.length>0;if(!state.liquidating)state.running=false;
  }
 

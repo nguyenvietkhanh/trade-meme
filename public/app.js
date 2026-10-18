@@ -14,7 +14,7 @@ function render(){
   const s=state.mode==='live'&&state.ownerAuthenticated&&ownerState?{...state,...ownerState}:state, f=s.feed, cfg=s.settings, fresh=f.updatedAt&&Date.now()-f.updatedAt<cfg.maxPriceAgeMs&&!f.error;
   $('equity').textContent=fmt(s.equitySol)+' SOL';$('cash').textContent=s.cashSol===null?'Đăng nhập ví chủ để xem số dư':s.walletMode==='owner'&&Number.isFinite(s.budgetCashSol)?`Ngân sách ứng dụng còn ${fmt(s.budgetCashSol)} SOL`:`Tiền khả dụng ${fmt(s.cashSol)} SOL`;
   $('pnl').textContent=s.pnlSol===null?'—':signed(s.pnlSol)+' SOL';$('pnl').className=sign(s.pnlSol);
-  $('return').textContent=s.pnlSol===null?'Chưa có dữ liệu vốn mainnet':`${signed(s.pnlSol/cfg.initialSol*100)}% so với vốn đầu`;
+  $('return').textContent=s.pnlSol===null||!(cfg.initialSol>0)?'Chưa có dữ liệu vốn mainnet':`${signed(s.pnlSol/cfg.initialSol*100)}% so với vốn đầu`;
   $('win').textContent=s.winRate===null?'Chưa có win rate':fmt(s.winRate*100,1)+'% win';
   $('drawdown').textContent=s.maxDrawdownObservedPct===null?'—':'−'+fmt(s.maxDrawdownObservedPct,1)+'%';$('peak').textContent=`Đỉnh vốn ${fmt(s.peakEquity,5)} SOL`;
   $('copied').innerHTML=`${s.bought??s.decisionStats.bought} <span>lệnh mua</span>`;
@@ -35,11 +35,11 @@ function render(){
   $('feed-time').textContent=f.updatedAt?`Giá SOL ${money(f.solUsd)} · ${time(f.updatedAt)}`:'Đang lấy giá thật…';
   $('start').disabled=busy||s.running||!fresh;$('pause').disabled=busy||!s.running;
   $('error').textContent=commandError||s.halted||f.error||'';
-  $('risk-summary').innerHTML=[['Vốn hóa tối thiểu',money(cfg.minMarketCapUsd)],['Xu hướng mua','M5 và H1 cùng tăng'],['Nến H4','Tránh đỏ mạnh / tăng vọt rồi xả'],['Mỗi lệnh',`${cfg.orderSol.toLocaleString('vi-VN')} SOL`],['Số vị thế',cfg.maxPositions==null?'Theo vốn khả dụng':cfg.maxPositions],['Dự phòng',`${cfg.reserveSol} SOL`],['Cắt lỗ',`−${cfg.stopLossPct}%`],['Chốt lần đầu',`+${cfg.takeProfitTriggerPct}% → bán 78%`],['Phần thả nổi','2×/4×/8× bán 50% · trailing −30/25/20%'],['Time-stop','45 phút chưa vượt +20%'],['Giữ tối đa','6 giờ'],['Mua lại cùng token','Nghỉ 24 giờ'],['Giá mua','Phải mới ≤30 giây'],['Quote khứ hồi','Hao hụt ≤6%'],['Priority + tip','≤0,002 SOL/chiều'],['Retry','Tối đa 3 lần sau lần đầu'],['Drawdown tối đa',`${cfg.maxDrawdownPct}%`],['Slippage tối đa','Mua 4% · bán 3% · khẩn 10%'],['Phí đã khớp',s.mode==='live'?'Theo receipt Solana':`${cfg.feeSol} SOL`]].map(([a,b])=>`<div><span>${a}</span><strong>${b}</strong></div>`).join('');
+  $('risk-summary').innerHTML=[['Vốn hóa tối thiểu',money(cfg.minMarketCapUsd)],['Xu hướng mua','M5 và H1 cùng tăng'],['Nến H4','Tránh đỏ mạnh / tăng vọt rồi xả'],['Mỗi lệnh',cfg.sizingVersion==='wallet-balance-v1'?'20% số dư SOL hiện tại':`${cfg.orderSol?.toLocaleString('vi-VN')??'—'} SOL`],['Số vị thế',cfg.maxPositions==null?'Theo vốn khả dụng':cfg.maxPositions],['Dự phòng',`${cfg.reserveSol} SOL`],['Cắt lỗ',`−${cfg.stopLossPct}%`],['Chốt lần đầu',`+${cfg.takeProfitTriggerPct}% → bán 78%`],['Phần thả nổi','2×/4×/8× bán 50% · trailing −30/25/20%'],['Time-stop','45 phút chưa vượt +20%'],['Giữ tối đa','6 giờ'],['Mua lại cùng token','Nghỉ 24 giờ'],['Giá mua','Phải mới ≤30 giây'],['Quote khứ hồi','Hao hụt ≤6%'],['Priority + tip','≤0,002 SOL/chiều'],['Retry','Tối đa 3 lần sau lần đầu'],['Drawdown tối đa',`${cfg.maxDrawdownPct}%`],['Slippage tối đa','Mua 4% · bán 3% · khẩn 10%'],['Phí đã khớp',s.mode==='live'?'Theo receipt Solana':`${cfg.feeSol} SOL`]].map(([a,b])=>`<div><span>${a}</span><strong>${b}</strong></div>`).join('');
   const curve=s.curve;
   $('chart-empty').hidden=curve.length>0;
   if(curve.length){
-    const values=curve.map(p=>p.equitySol), min=Math.min(...values,cfg.initialSol)*.995,max=Math.max(...values,cfg.initialSol)*1.005;
+    const values=curve.map(p=>p.equitySol), min=Math.min(...values,cfg.initialSol)*.995,max=Math.max(Math.max(...values,cfg.initialSol??0)*1.005,min+1e-9);
     const points=values.map((v,i)=>`${20+(i/Math.max(1,values.length-1))*720},${210-(v-min)/(max-min)*185}`);
     if(points.length===1)points.push(`740,${points[0].split(',')[1]}`);
     $('line').setAttribute('d','M'+points.join(' L'));$('area').setAttribute('d','M'+points.join(' L')+' L740,230 L20,230 Z');

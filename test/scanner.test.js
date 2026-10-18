@@ -47,12 +47,12 @@ test('scan rollover leaves an eligible autonomous BUY and subsequent risk SELL e
  const now=Date.now(),ledger=createOwnerLedger('owner',.3),scan=freshState(now),m=verifiedMarket({priceUsd:1},now);
  scan.decisionStats.evaluated=9999;recordEvaluation(scan,{at:now,action:'WATCH',mint:m.mint});
  const market=scannerMarkets(scan,[{...m,coarseCooldownUntil:now+1800000}])[0],feed={markets:[market],solUsd:100,updatedAt:now};
- const buy=nextOwnerOrder(ledger,feed,.3);assert.equal(buy.side,'BUY');assert.equal(buy.orderSol,.2);
- applyOwnerReceipt(ledger,{intent:{...buy,solUsd:100,priceUsd:1}},{status:'confirmed',signature:'buy-fixture',tokenDelta:'20000000',solDelta:-.20002,decimals:6,feeSol:.00002});
- const exit={...market,exitQuote:{mint:m.mint,rawAmount:'20000000',checkedAt:Date.now(),netSol:.159}};
- const sell=nextOwnerOrder(ledger,{...feed,markets:[exit]},.09998);assert.equal(sell.side,'SELL');assert.equal(sell.reason,'stop-loss');
- assert.equal(sell.amount,'20000000');assert.equal(ledger.positions.length,1,'SELL is only an intent until its receipt confirms');
- applyOwnerReceipt(ledger,{intent:{...sell,solUsd:100,priceUsd:.795}},{status:'confirmed',signature:'sell-fixture',tokenDelta:'-20000000',solDelta:.159,decimals:6,feeSol:.00002});
+ const buy=nextOwnerOrder(ledger,feed,.3);assert.equal(buy.side,'BUY');assert.equal(buy.orderSol,.06);
+ applyOwnerReceipt(ledger,{intent:{...buy,solUsd:100,priceUsd:1}},{status:'confirmed',signature:'buy-fixture',tokenDelta:'6000000',solDelta:-.06002,decimals:6,feeSol:.00002});
+ const exit={...market,exitQuote:{mint:m.mint,rawAmount:'6000000',checkedAt:Date.now(),netSol:.0475}};
+ const sell=nextOwnerOrder(ledger,{...feed,markets:[exit]},.23998);assert.equal(sell.side,'SELL');assert.equal(sell.reason,'stop-loss');
+ assert.equal(sell.amount,'6000000');assert.equal(ledger.positions.length,1,'SELL is only an intent until its receipt confirms');
+ applyOwnerReceipt(ledger,{intent:{...sell,solUsd:100,priceUsd:.795}},{status:'confirmed',signature:'sell-fixture',tokenDelta:'-6000000',solDelta:.0475,decimals:6,feeSol:.00002});
  assert.equal(ledger.positions.length,0);assert.ok(ledger.cooldowns[m.mint]>now+86399000);
 });
 

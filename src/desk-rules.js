@@ -23,6 +23,18 @@ export const BUY_LAMPORTS=String(Math.round(TRADE_RULES.orderSol*1e9));
 // Old signed orders and historical purchases must still reconcile after a size change.
 export const HISTORICAL_BUY_LAMPORTS=Object.freeze(['20000000','30000000',BUY_LAMPORTS]);
 
+export const WALLET_ORDER_FRACTION=.2;
+export const WALLET_SIZING_VERSION='wallet-balance-v1';
+// initialSol/orderSol in TRADE_RULES seed the isolated paper engine only. Mainnet has no capital cap.
+export function walletOrderSol(balanceSol){
+ if(!Number.isFinite(balanceSol)||balanceSol<0)return 0;
+ const balance=Math.floor(balanceSol*1e9+1e-6);if(!Number.isSafeInteger(balance))return 0;
+ const order=Number(BigInt(balance)/5n)/1e9;
+ return order>0&&canFundBuy(balanceSol,order,TRADE_RULES.reserveSol)?order:0;
+}
+export function validBuyLamports(amount){return typeof amount==='string'&&/^[1-9]\d{0,15}$/.test(amount)&&Number.isSafeInteger(Number(amount));}
+export function validHistoricalBuy(intent){return intent.sizingVersion==null?HISTORICAL_BUY_LAMPORTS.includes(intent.amount):validBuyLamports(intent.amount)&&intent.sizingVersion===WALLET_SIZING_VERSION&&Number.isSafeInteger(intent.walletBalanceLamports)&&String(Math.round(walletOrderSol(intent.walletBalanceLamports/1e9)*1e9))===intent.amount;}
+
 export function executionSlippageBps(side,reason=''){return side==='BUY'?TRADE_RULES.buySlippageCapBps:/^(stop-loss|emergency-|runner-trailing|drawdown-close)/.test(reason)?TRADE_RULES.emergencySlippageCapBps:TRADE_RULES.sellSlippageCapBps;}
 
 export function validatePriorityBudget(priorityLamports,tipLamports=0){

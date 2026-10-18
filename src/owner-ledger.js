@@ -1,21 +1,24 @@
 import {freshState,recordBuy,recordSell,riskCheck,exitPlan,event} from './engine.js';
 import {rankMarket} from './strategy.js';
 import {profitOrder,PROFIT_RECIPIENT} from './profit.js';
-import {STRATEGY_VERSION,positionLimitReached,canFundBuy,TRADE_RULES,BUY_LAMPORTS} from './desk-rules.js';
+import {STRATEGY_VERSION,positionLimitReached,canFundBuy,BUY_LAMPORTS,walletOrderSol,WALLET_SIZING_VERSION,WALLET_ORDER_FRACTION} from './desk-rules.js';
 
 export function createOwnerLedger(owner,balance){
- if(!Number.isFinite(balance)||balance<.075)throw Error('Cần ít nhất 0,075 SOL để khởi động sổ. Chỉ mua 0,2 SOL khi đủ vốn, phí và dự phòng 0,05 SOL.');
- const s=freshState(),budget=Math.min(TRADE_RULES.initialSol,balance);
- return {...s,strategyVersion:STRATEGY_VERSION,owner,ownerLedgerVersion:1,realizedNetSol:0,withdrawnSol:0,payoutFeesSol:0,payouts:[],expenses:[],cashSol:budget,peakEquity:budget,dayStartEquity:budget,settings:{...s.settings,initialSol:budget},pending:null,recordedSignatures:[],running:false};
+ if(!Number.isFinite(balance)||balance<0||!Number.isSafeInteger(Math.round(balance*1e9)))throw Error('Số dư SOL ví chưa hợp lệ.');
+ const s=freshState(),budget=balance,size=walletOrderSol(balance);
+ return {...s,strategyVersion:STRATEGY_VERSION,owner,ownerLedgerVersion:1,realizedNetSol:0,withdrawnSol:0,externalWithdrawnSol:0,payoutFeesSol:0,payouts:[],expenses:[],cashSol:budget,peakEquity:budget,dayStartEquity:budget,settings:{...s.settings,initialSol:budget,orderSol:size,smallOrderSol:size,orderFraction:WALLET_ORDER_FRACTION,sizingVersion:WALLET_SIZING_VERSION},pending:null,recordedSignatures:[],running:false};
 }
 export function allocateOwnerCapital(s,walletBalance,now=Date.now()){
  if(s.pending||![walletBalance,s.cashSol,s.settings?.initialSol,s.peakEquity,s.dayStartEquity].every(Number.isFinite))return 0;
- const target=Math.round(TRADE_RULES.initialSol*1e9),initial=Math.round(s.settings.initialSol*1e9),surplus=Math.floor(walletBalance*1e9+1e-6)-Math.round(s.cashSol*1e9);
- const lamports=Math.min(target-initial,Math.max(0,surplus));if(lamports<=0)return 0;
+ const initial=Math.round(s.settings.initialSol*1e9),observed=Math.floor(walletBalance*1e9+1e-6),lamports=observed-Math.round(s.cashSol*1e9);
+ if(walletBalance<0||!Number.isSafeInteger(observed)||!Number.isSafeInteger(initial)||!Number.isSafeInteger(initial+Math.max(0,lamports)))return 0;
+ s.settings.orderSol=walletOrderSol(walletBalance);s.settings.smallOrderSol=s.settings.orderSol;s.settings.orderFraction=WALLET_ORDER_FRACTION;s.settings.sizingVersion=WALLET_SIZING_VERSION;
+ if(lamports===0)return 0;
  const amount=lamports/1e9;
- s.cashSol+=amount;s.settings.initialSol=(initial+lamports)/1e9;s.peakEquity+=amount;s.dayStartEquity+=amount;
+ s.cashSol=observed/1e9;
+ if(amount>0){s.settings.initialSol=(initial+lamports)/1e9;s.peakEquity+=amount;s.dayStartEquity+=amount;}else s.externalWithdrawnSol=(s.externalWithdrawnSol??0)-amount;
  s.capitalAllocations??=[];s.capitalAllocations.push({at:now,amountSol:amount,initialSol:s.settings.initialSol});s.capitalAllocations=s.capitalAllocations.slice(-200);
- event(s,`Đã bổ sung ${amount.toFixed(6)} SOL vào vốn ứng dụng; không ghi thành lợi nhuận.`,now);return amount;
+ event(s,amount>0?`Đã bổ sung ${amount.toFixed(6)} SOL vào vốn ứng dụng; không ghi thành lợi nhuận.`:`Ví giảm ${(-amount).toFixed(6)} SOL ngoài sổ lệnh; ghi dòng tiền ra, không tính là lỗ giao dịch.`,now);return amount;
 }
 export function nextOwnerOrder(s,feed,walletBalance){
  if(s.pending)return null;
@@ -32,9 +35,10 @@ export function nextOwnerOrder(s,feed,walletBalance){
  }
  if(feed.error||!feed.updatedAt||now-feed.updatedAt>s.settings.maxPriceAgeMs||feed.updatedAt>now||!validSol||s.buyPaused||s.buyBlockedReason)return null;
  const payout=s.recoveryRequired?null:profitOrder(s,walletBalance);if(payout)return payout;
- if(!Number.isFinite(walletBalance)||s.halted||positionLimitReached(s.positions.length,s.settings)||!canFundBuy(s.cashSol,s.settings.orderSol,s.settings.reserveSol)||!canFundBuy(walletBalance,s.settings.orderSol,s.settings.reserveSol)||s.positions.some(p=>!feed.markets.some(m=>m.mint===p.mint)))return null;
- const m=feed.markets.map(m=>({...m,...rankMarket(m,s.settings)})).filter(m=>m.eligible&&canFundBuy(s.cashSol,m.orderSol,s.settings.reserveSol)&&canFundBuy(walletBalance,m.orderSol,s.settings.reserveSol)&&!s.positions.some(p=>p.mint===m.mint)&&!(s.cooldowns[m.mint]>Date.now())&&!exhausted({side:'BUY',mint:m.mint})).sort((a,b)=>b.score-a.score)[0];
- return m?{side:'BUY',mint:m.mint,symbol:m.symbol,reason:'autonomous-low-cap',orderSol:m.orderSol,strategyVersion:STRATEGY_VERSION,riskSol:m.orderSol*s.settings.stopLossPct/100}:null;
+ const size=walletOrderSol(walletBalance);
+ if(!size||s.halted||positionLimitReached(s.positions.length,s.settings)||!canFundBuy(s.cashSol,size,s.settings.reserveSol)||s.positions.some(p=>!feed.markets.some(m=>m.mint===p.mint)))return null;
+ const m=feed.markets.map(m=>({...m,...rankMarket(m,s.settings)})).filter(m=>m.eligible&&!s.positions.some(p=>p.mint===m.mint)&&!(s.cooldowns[m.mint]>Date.now())&&!exhausted({side:'BUY',mint:m.mint})).sort((a,b)=>b.score-a.score)[0];
+ return m?{side:'BUY',mint:m.mint,symbol:m.symbol,reason:'autonomous-low-cap',orderSol:size,minContextSlot:s.lastReceiptSlot,strategyVersion:STRATEGY_VERSION,riskSol:size*s.settings.stopLossPct/100}:null;
 }
 export function ownerExit(s,mint,fraction=1,reason='owner-exit',solUsd){
  const p=s.positions.find(p=>p.mint===mint);if(!p)throw Error('Không có vị thế do ứng dụng quản lý.');
@@ -63,5 +67,6 @@ export function applyOwnerReceipt(s,pending,result){
   s.cashSol-=result.feeSol;s.realizedNetSol=(s.realizedNetSol??0)-result.feeSol;event(s,'Giao dịch thất bại trên Solana; đã ghi nhận phí mạng.');
  }else if(result.status==='expired')event(s,'Giao dịch hết hạn; không ghi nhận mua/bán và không tự gửi thay thế.');
  else return false;
+ if(Number.isSafeInteger(result.slot))s.lastReceiptSlot=Math.max(s.lastReceiptSlot??0,result.slot);
  s.recordedSignatures.push(result.signature);s.recordedSignatures=s.recordedSignatures.slice(-1000);s.pending=null;if(s.haltKind==='drawdown'&&!s.positions.length){s.liquidating=false;s.running=false;}return result.status==='confirmed';
 }

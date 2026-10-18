@@ -1,10 +1,10 @@
-import {PROFIT_RECIPIENT,PROFIT_RULES,TRADE_RULES} from './desk-rules.js';
+import {PROFIT_RECIPIENT,PROFIT_RULES} from './desk-rules.js';
 export {PROFIT_RECIPIENT};
 
 // Native SOL basis: unrealized appreciation never finances a transfer. Fees remain reserved.
 export function availableProfitLamports({cashSol,initialSol,realizedNetSol,withdrawnSol=0,payoutFeesSol=0,remainingCostSol=0,recoverableNetSol=realizedNetSol},walletBalance){
  const amounts=[cashSol,initialSol,realizedNetSol,withdrawnSol,payoutFeesSol,remainingCostSol,recoverableNetSol,walletBalance];
- if(amounts.some(n=>!Number.isFinite(n))||initialSol<=0||initialSol>TRADE_RULES.initialSol||withdrawnSol<0||payoutFeesSol<0||remainingCostSol<0||remainingCostSol>initialSol)return 0;
+ if(amounts.some(n=>!Number.isFinite(n))||initialSol<=0||!Number.isSafeInteger(Math.round(initialSol*1e9))||withdrawnSol<0||payoutFeesSol<0||remainingCostSol<0||remainingCostSol>initialSol)return 0;
  const surplus=Math.floor((cashSol+remainingCostSol-initialSol)*1e9+1e-6),earned=Math.floor((Math.min(realizedNetSol,recoverableNetSol)-withdrawnSol-payoutFeesSol)*1e9+1e-6),spendable=Math.floor(walletBalance*1e9)-Math.max(PROFIT_RULES.reserveLamports,Math.ceil((initialSol-remainingCostSol)*1e9));
  const value=Math.min(surplus,earned,spendable,PROFIT_RULES.maxTransferLamports+PROFIT_RULES.feeBufferLamports)-PROFIT_RULES.feeBufferLamports;
  return Number.isSafeInteger(value)&&value>=PROFIT_RULES.minTransferLamports?value:0;

@@ -1,4 +1,4 @@
-import {positionLimitReached,canFundBuy,BUY_LAMPORTS,TRADE_RULES,clearLegacyDailyHalt,clearLegacyLossPause} from './desk-rules.js';
+import {positionLimitReached,canFundBuy,TRADE_RULES,clearLegacyDailyHalt,clearLegacyLossPause,walletOrderSol} from './desk-rules.js';
 import {readFile} from 'node:fs/promises';
 import path from 'node:path';
 import {PublicKey} from '@solana/web3.js';
@@ -15,13 +15,13 @@ export class LiveTrader{
  status(){const s=this.state;return {mode:'live',...this.vault.status(),enabled:s.enabled,funded:s.funded,balanceSol:s.observedBalanceSol??s.cashSol,positions:s.positions,trades:s.trades.slice(0,50),pending:s.pending?{signature:s.pending.signature,status:s.pending.status}:null,halted:s.halted,error:s.lastError,entryBlockedReason:s.entryBlockedReason??null,lastSyncAt:s.lastSyncAt,settings:s.settings,events:s.events.slice(0,30),needsUnlock:!!(this.vault.exists&&!this.vault.keypair)};}
  key(){const kp=this.vault.keypair;if(!kp)throw Error('Két ví đang khóa. Mở khóa trước khi ký.');return kp;}
  async enable(confirm){return this.serial(async()=>{
-  if(confirm!==`ENABLE MAINNET ${LIVE_LIMITS.budgetSol} SOL`)throw Error('Thiếu xác nhận bật mainnet.');
+  if(confirm!=='ENABLE MAINNET WALLET')throw Error('Thiếu xác nhận bật mainnet.');
   this.key();await this.execution.network();const balance=await this.execution.balance(this.vault.publicKey);
-  if(!this.state.funded){if(balance>LIVE_LIMITS.budgetSol+.00000001)throw Error('Ví bot khởi đầu chỉ được giữ tối đa 1,19 SOL.');if(!canFundBuy(balance,LIVE_LIMITS.orderSol,LIVE_LIMITS.reserveSol))throw Error('Chưa đủ SOL để giữ dự phòng và vào lệnh.');this.state.settings.initialSol=balance;this.state.cashSol=balance;this.state.dayStartEquity=balance;this.state.peakEquity=balance;this.state.funded=true;}
+  if(!this.state.funded){if(!canFundBuy(balance,walletOrderSol(balance),LIVE_LIMITS.reserveSol))throw Error('Chưa đủ SOL để giữ dự phòng và vào lệnh.');this.state.settings.initialSol=balance;this.state.cashSol=balance;this.state.dayStartEquity=balance;this.state.peakEquity=balance;this.state.funded=true;}
   if(balance<.055&&!this.state.positions.length)throw Error('Chưa đủ SOL để giữ dự phòng.');
   clearLegacyDailyHalt(this.state);clearLegacyLossPause(this.state);
   if(this.state.halted)throw Error(this.state.halted);
-  this.state.observedBalanceSol=balance;this.state.lastSyncAt=Date.now();this.state.enabled=true;this.state.running=true;this.state.lastError=null;event(this.state,'Đã bật ký lệnh mainnet trong giới hạn 0,2 SOL/lệnh.');await this.save();return this.status();
+  this.state.observedBalanceSol=balance;this.state.lastSyncAt=Date.now();this.state.enabled=true;this.state.running=true;this.state.lastError=null;event(this.state,'Đã bật ký lệnh mainnet trong cỡ lệnh 20% số dư SOL ví.');await this.save();return this.status();
  });}
  async pause(){return this.serial(async()=>{this.state.enabled=false;this.state.running=false;event(this.state,'Dừng ký lệnh mới. Vị thế mainnet vẫn mở.');await this.save();return this.status();});}
  async reconcile(markets,solUsd){
@@ -49,9 +49,10 @@ export class LiveTrader{
   const s=this.state;if(s.pending)throw Error('Đang chờ giao dịch trước được đối soát.');
   const kp=this.key();let amount;
   if(side==='BUY'){
-   if(s.halted||positionLimitReached(s.positions.length,s.settings)||!canFundBuy(s.cashSol,LIVE_LIMITS.orderSol,LIVE_LIMITS.reserveSol))throw Error('Giới hạn vốn/vị thế không cho phép mua.');
+   const size=walletOrderSol(await this.execution.balance(this.vault.publicKey));
+   if(!size||s.halted||positionLimitReached(s.positions.length,s.settings)||!canFundBuy(s.cashSol,size,LIVE_LIMITS.reserveSol))throw Error('Giới hạn vốn/vị thế không cho phép mua.');
    if(s.positions.some(p=>p.mint===m.mint)||s.cooldowns[m.mint]>Date.now())throw Error('Token đã giữ hoặc đang cooldown.');
-   await this.execution.mintCheck(m.mint);amount=BUY_LAMPORTS;
+   await this.execution.mintCheck(m.mint);amount=String(Math.round(size*1e9));
   }else{
    const p=s.positions.find(p=>p.mint===m.mint);if(!p?.rawQuantity)throw Error('Không có số dư token đã đối soát.');
    const raw=BigInt(p.rawQuantity);amount=(fraction>=1?raw:raw*BigInt(Math.floor(fraction*1e9))/1000000000n).toString();if(BigInt(amount)<=0n)throw Error('Lượng token quá nhỏ.');
@@ -101,7 +102,7 @@ export class LiveTrader{
    s.entryBlockedReason=s.positions.some(p=>!feed.markets.some(m=>m.mint===p.mint&&m.updatedAt<=Date.now()&&Date.now()-m.updatedAt<=90000))?'Chưa có giá mới cho một vị thế. Khóa mua mới; vẫn theo dõi thoát các vị thế còn dữ liệu.':null;
    const value=riskCheck(s,feed.markets,feed.solUsd);s.curve.push({at:Date.now(),equitySol:value});s.curve=s.curve.slice(-1440);
    for(const p of s.positions){const m=feed.markets.find(m=>m.mint===p.mint);if(!m||Date.now()-m.updatedAt>90000||m.updatedAt>Date.now())continue;p.lastPriceUsd=m.priceUsd;const plan=exitPlan(p,m,feed.solUsd,s.settings);if(plan){try{await this.submit(m,'SELL',plan.fraction,plan.reason,feed.solUsd);}catch(e){if(!(e instanceof TradePolicyError))throw e;event(s,`Chưa thoát ${m.symbol}: ${e.message}`);await this.save();}return;}}
-   if(!s.halted&&!s.entryBlockedReason&&!positionLimitReached(s.positions.length,s.settings)&&canFundBuy(s.cashSol,LIVE_LIMITS.orderSol,LIVE_LIMITS.reserveSol)){let checked=0;for(const m of [...feed.markets].sort((a,b)=>rankMarket(b,s.settings).score-rankMarket(a,s.settings).score))if(rankMarket(m,s.settings).eligible&&!s.positions.some(p=>p.mint===m.mint)&&!(s.cooldowns[m.mint]>Date.now())){
+   if(!s.halted&&!s.entryBlockedReason&&!positionLimitReached(s.positions.length,s.settings)&&walletOrderSol(balance)>0&&canFundBuy(s.cashSol,walletOrderSol(balance),LIVE_LIMITS.reserveSol)){let checked=0;for(const m of [...feed.markets].sort((a,b)=>rankMarket(b,s.settings).score-rankMarket(a,s.settings).score))if(rankMarket(m,s.settings).eligible&&!s.positions.some(p=>p.mint===m.mint)&&!(s.cooldowns[m.mint]>Date.now())){
     try{await this.submit(m,'BUY',1,'autonomous-low-cap',feed.solUsd);return;}catch(e){if(!(e instanceof TradePolicyError))throw e;s.cooldowns[m.mint]=Date.now()+1800000;event(s,`Bỏ qua ${m.symbol}: ${e.message}`);if(++checked>=3)break;}
    }}
    await this.save();

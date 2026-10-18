@@ -54,9 +54,9 @@ test('official SDK simulation checks referenced accounts without depending on fu
  assert.ok(result.bytes.length>0);assert.equal(result.quote.inAmount,'200000000');assert.equal(result.signature,null);
 });
 
-test('new BUY preparation refuses old sizes and larger requests before any RPC call',async()=>{
+test('new BUY preparation refuses invalid amounts before any RPC call',async()=>{
  const execution=new SolanaExecution();let rpcCalls=0;execution.network=async()=>{rpcCalls++;throw Error('Must reject before RPC');};
- for(const amount of ['20000000','30000000','200000001','300000000'])await assert.rejects(execution.prepare({input:SOL,amount}),/0,2 SOL/);
+ for(const amount of ['0','-1','1.5','9007199254740992'])await assert.rejects(execution.prepare({input:SOL,amount}),/không hợp lệ/);
  assert.equal(rpcCalls,0);
 });
 

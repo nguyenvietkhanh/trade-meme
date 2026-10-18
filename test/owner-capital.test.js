@@ -19,15 +19,15 @@ test('confirmed capital increases preserve historical PnL, daily loss, positions
  near(s.peakEquity-equity(s,[b],100),before.peakEquity-value);
  for(const key of ['positions','trades','payouts','realizedNetSol','withdrawnSol','payoutFeesSol','cooldowns','dailyLossBlocked','halted','haltKind','buyPaused','lossPauseUntil'])assert.deepEqual(s[key],before[key],key);
  assert.deepEqual(s.capitalAllocations,[{at:123,amountSol:.89,initialSol:1.19}]);
- assert.equal(allocateOwnerCapital(s,balance+10),0);assert.equal(s.capitalAllocations.length,1);assert.equal(profitOrder(s,balance),null);
+ assert.equal(allocateOwnerCapital(s,balance),0);assert.equal(s.capitalAllocations.length,1);assert.equal(profitOrder(s,balance),null);
 });
 test('new capital is limited to actual native wallet surplus, allocated once, and never applied to uncertain orders',()=>{
  const s=createOwnerLedger('owner',.3);near(allocateOwnerCapital(s,.4),.1);near(s.cashSol,.4);near(s.settings.initialSol,.4);
- assert.equal(allocateOwnerCapital(s,.4),0);assert.equal(allocateOwnerCapital(s,.399),0);
+ assert.equal(allocateOwnerCapital(s,.4),0);near(allocateOwnerCapital(s,.399),-.001);near(s.externalWithdrawnSol,.001);
  s.pending={signature:'uncertain'};const before=structuredClone(s);assert.equal(allocateOwnerCapital(s,1.19),0);assert.deepEqual(s,before);s.pending=null;
  for(const balance of [NaN,Infinity,undefined,-1])assert.equal(allocateOwnerCapital(s,balance),0);
- near(allocateOwnerCapital(s,2),.79);assert.equal(s.settings.initialSol,1.19);near(s.cashSol,1.19);
- const fresh=createOwnerLedger('owner',2);assert.equal(fresh.cashSol,1.19);assert.equal(allocateOwnerCapital(fresh,2),0);
+ near(allocateOwnerCapital(s,2),1.601);near(s.settings.initialSol,2.001);near(s.cashSol,2);
+ const fresh=createOwnerLedger('owner',2);assert.equal(fresh.cashSol,2);assert.equal(allocateOwnerCapital(fresh,2),0);
 });
 test('the 0.2 SOL fixed size retains reserve and overhead at exact lamport boundaries',()=>{
  assert.equal(TRADE_RULES.orderSol,.2);assert.equal(TRADE_RULES.smallOrderSol,.2);assert.equal(TRADE_RULES.maxPositions,null);

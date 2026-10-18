@@ -12,11 +12,11 @@ import {TradePolicyError} from '../src/solana.js';
 import {PROFIT_RECIPIENT} from '../src/profit.js';
 const password='unit-fixture-password-123456';
 async function fixture(){
- const dir=await mkdtemp('/tmp/meme-owner-agent-'),kp=Keypair.generate(),owner=kp.publicKey.toBase58(),mint=Keypair.generate().publicKey.toBase58();let sends=0,balanceSol=.3;
+ const dir=await mkdtemp('/tmp/meme-owner-agent-'),kp=Keypair.generate(),owner=kp.publicKey.toBase58(),mint=Keypair.generate().publicKey.toBase58();let sends=0,balanceSol=.3,preparedSol=0,preparedBalance=0;
  const market=()=>verifiedMarket({mint,priceUsd:1,pairAddress:'11111111111111111111111111111112'});
  const feed=()=>({markets:[market()],solUsd:100,updatedAt:Date.now()});
  const transaction=(to,lamports)=>new VersionedTransaction(new TransactionMessage({payerKey:kp.publicKey,recentBlockhash:Keypair.generate().publicKey.toBase58(),instructions:[SystemProgram.transfer({fromPubkey:kp.publicKey,toPubkey:to,lamports})]}).compileToV0Message());
- const execution={provider:'Fixture RPC',network:async()=>{},balance:async()=>balanceSol,holdings:async()=>[],mintCheck:async()=>{},height:async()=>100,prepare:async r=>{assert.equal(r.amount,'200000000');return {bytes:transaction(Keypair.generate().publicKey,200000000).serialize(),lastValidBlockHeight:200};},prepareProfit:async(_owner,amount)=>({bytes:transaction(new PublicKey(PROFIT_RECIPIENT),amount).serialize(),lastValidBlockHeight:200}),send:async bytes=>{const signed=verifyOwnerTransaction(Buffer.from(bytes).toString('base64'),owner),stored=JSON.parse(await readFile(path.join(dir,'owner-agent-state.json'),'utf8'));assert.equal(stored.pending.signature,signed.signature);assert.equal(stored.pending.transaction,Buffer.from(bytes).toString('base64'));sends++;return signed.signature;},status:async()=>({confirmationStatus:'confirmed'}),receipt:async()=>{balanceSol=.0999;return {slot:100,solDelta:-.2001,tokenDelta:20000000n,decimals:6,feeSol:.00002};},profitReceipt:async(_sig,_owner,amount)=>({slot:100,amountLamports:amount,recipient:PROFIT_RECIPIENT,solDelta:-Number(amount)/1e9-.000005,feeSol:.000005})};
+ const execution={provider:'Fixture RPC',network:async()=>{},balance:async()=>balanceSol,holdings:async()=>[],mintCheck:async()=>{},height:async()=>100,roundTripQuote:async(_mint,amount)=>({...market().evidence,probeSol:Number(amount)/1e9,quoteCheckedAt:Date.now()}),prepare:async r=>{preparedBalance=await execution.balance(owner);preparedSol=Number(r.amount)/1e9;assert.equal(Number(r.amount),Math.floor(Math.round(preparedBalance*1e9)/5));return {bytes:transaction(Keypair.generate().publicKey,Number(r.amount)).serialize(),lastValidBlockHeight:200};},prepareProfit:async(_owner,amount)=>({bytes:transaction(new PublicKey(PROFIT_RECIPIENT),amount).serialize(),lastValidBlockHeight:200}),send:async bytes=>{const signed=verifyOwnerTransaction(Buffer.from(bytes).toString('base64'),owner),stored=JSON.parse(await readFile(path.join(dir,'owner-agent-state.json'),'utf8'));assert.equal(stored.pending.signature,signed.signature);assert.equal(stored.pending.transaction,Buffer.from(bytes).toString('base64'));sends++;return signed.signature;},status:async()=>({confirmationStatus:'confirmed'}),receipt:async()=>{balanceSol=preparedBalance-preparedSol-.0001;return {slot:100,solDelta:-preparedSol-.0001,tokenDelta:BigInt(Math.round(preparedSol*1e8)),decimals:6,feeSol:.00002};},profitReceipt:async(_sig,_owner,amount)=>({slot:100,amountLamports:amount,recipient:PROFIT_RECIPIENT,solDelta:-Number(amount)/1e9-.000005,feeSol:.000005})};
  const direct=new DirectWallet(execution);direct.owner=owner;const agent=new OwnerAgent(dir,direct,execution,owner);agent.vault.keypair=kp;
  return {dir,kp,owner,mint,execution,direct,agent,feed,get sends(){return sends;},cleanup:()=>rm(dir,{recursive:true,force:true})};
 }
@@ -34,7 +34,7 @@ test('the server signs without a browser and durably journals before broadcastin
  const f=await fixture();try{
   await f.agent.enable();assert.equal(f.agent.state.settings.initialSol,.3);await f.agent.tick(f.feed());assert.equal(f.sends,1);assert.ok(f.agent.state.pending);assert.equal(f.agent.state.trades.length,0);
   const newDirect=new DirectWallet(f.execution);newDirect.owner=f.owner;const restarted=new OwnerAgent(f.dir,newDirect,f.execution,f.owner);await restarted.load();assert.equal(restarted.vault.keypair,null);assert.equal(restarted.state.running,false);
-  await restarted.tick(f.feed());assert.equal(restarted.state.pending,null);assert.equal(restarted.state.trades.length,1);assert.equal(restarted.state.positions[0].rawQuantity,'20000000');assert.equal(f.sends,1);
+  await restarted.tick(f.feed());assert.equal(restarted.state.pending,null);assert.equal(restarted.state.trades.length,1);assert.equal(restarted.state.positions[0].rawQuantity,'6000000');assert.equal(f.sends,1);
   const status=await restarted.status();assert.ok(!JSON.stringify(status).includes(bs58.encode(f.kp.secretKey)));assert.equal(status.vault.unlocked,false);await restarted.tick(f.feed());assert.equal(f.sends,1);
  }finally{await f.cleanup();}
 });
@@ -51,10 +51,10 @@ test('enable upgrades an existing allocated budget using confirmed wallet capita
   await f.agent.enable();await f.agent.tick(f.feed());await f.agent.tick(f.feed());await f.agent.pause();
   const oldPosition=structuredClone(f.agent.state.positions[0]),oldTrade=structuredClone(f.agent.state.trades[0]);
   f.execution.balance=async()=>.9899;await f.agent.enable();
-  assert.equal(f.agent.state.settings.initialSol,1.19);assert.ok(Math.abs(f.agent.state.cashSol-.9899)<1e-12);
+  assert.ok(Math.abs(f.agent.state.settings.initialSol-1.05)<1e-12);assert.ok(Math.abs(f.agent.state.cashSol-.9899)<1e-12);
   assert.deepEqual(f.agent.state.positions[0],oldPosition);assert.deepEqual(f.agent.state.trades[0],oldTrade);assert.equal(f.sends,1);
   const restarted=new OwnerAgent(f.dir,f.direct,f.execution,f.owner);await restarted.load();
-  assert.equal(restarted.state.settings.initialSol,1.19);assert.equal(restarted.state.settings.orderSol,.2);assert.equal(restarted.state.settings.maxPositions,null);
+  assert.ok(Math.abs(restarted.state.settings.initialSol-1.05)<1e-12);assert.equal(restarted.state.settings.orderSol,.19798);assert.equal(restarted.state.settings.maxPositions,null);
   assert.deepEqual(restarted.state.positions[0],oldPosition);assert.deepEqual(restarted.state.trades[0],oldTrade);assert.equal(restarted.state.running,false);
  }finally{await f.cleanup();}
 });
@@ -63,7 +63,7 @@ test('a running agent durably records confirmed top-up capital before preparing 
  const f=await fixture();try{
   await f.agent.enable();f.execution.balance=async()=>1.19;await f.agent.tick(f.feed());
   const stored=JSON.parse(await readFile(f.agent.file,'utf8'));
-  assert.equal(stored.settings.initialSol,1.19);assert.equal(stored.cashSol,1.19);assert.equal(stored.pending.intent.amount,'200000000');
+  assert.equal(stored.settings.initialSol,1.19);assert.equal(stored.cashSol,1.19);assert.equal(stored.pending.intent.amount,'238000000');
   assert.equal(stored.capitalAllocations[0].amountSol,.89);assert.equal(stored.realizedNetSol,0);assert.equal(f.sends,1);
  }finally{await f.cleanup();}
 });
@@ -75,7 +75,7 @@ test('transient preparation failures recover only after two healthy scans with p
   assert.equal(f.agent.state.buyCircuitOpen,true);assert.equal(f.agent.state.buyCircuitKind,'network');assert.equal(f.sends,0);
   f.execution.prepare=original;now+=5000;const stale=f.feed();stale.markets[0].evidence.quoteCheckedAt=f.agent.state.buyCircuitOpenedAt-1;await f.agent.tick(stale);assert.equal(f.agent.state.networkHealthyScans,0);
   for(let i=0;i<2;i++){now+=5000;const feed=f.feed();feed.markets[0].evidence.quoteCheckedAt=now;await f.agent.tick(feed);if(i===0){assert.equal(f.agent.state.buyCircuitOpen,true);assert.equal(f.sends,0);}}
-  assert.equal(f.agent.state.buyCircuitOpen,false);assert.equal(f.agent.state.buyCircuitKind,null);assert.equal(f.agent.state.pending.intent.amount,'200000000');assert.equal(f.sends,1);assert.equal(f.agent.state.orderAttempts['BUY:'+f.mint+':fixed'],4);
+  assert.equal(f.agent.state.buyCircuitOpen,false);assert.equal(f.agent.state.buyCircuitKind,null);assert.equal(f.agent.state.pending.intent.amount,'60000000');assert.equal(f.sends,1);assert.equal(f.agent.state.orderAttempts['BUY:'+f.mint+':fixed'],4);
  }finally{await f.cleanup();}
 });
 
@@ -157,7 +157,7 @@ test('restart preserves confirmed positions and both journal copies; a missing p
  const f=await fixture();try{
   await f.agent.enable();await f.agent.tick(f.feed());await f.agent.tick(f.feed());assert.equal(f.agent.state.positions.length,1);
   assert.equal(await readFile(f.agent.file,'utf8'),await readFile(f.agent.backupFile,'utf8'));
-  const restarted=new OwnerAgent(f.dir,f.direct,f.execution,f.owner);await restarted.load();assert.equal(restarted.state.positions[0].rawQuantity,'20000000');assert.ok(Math.abs(restarted.state.cashSol-.0999)<1e-12);assert.equal(restarted.state.trades.length,1);assert.equal(restarted.state.running,false);
+  const restarted=new OwnerAgent(f.dir,f.direct,f.execution,f.owner);await restarted.load();assert.equal(restarted.state.positions[0].rawQuantity,'6000000');assert.ok(Math.abs(restarted.state.cashSol-.2399)<1e-12);assert.equal(restarted.state.trades.length,1);assert.equal(restarted.state.running,false);
   await rm(f.agent.file);const fallback=new OwnerAgent(f.dir,f.direct,f.execution,f.owner);await fallback.load();assert.equal(fallback.state.positions.length,1);assert.equal(fallback.state.recoveryRequired,true);assert.equal(fallback.state.running,false);assert.equal(fallback.state.buyPaused,true);
  }finally{await f.cleanup();}
 });

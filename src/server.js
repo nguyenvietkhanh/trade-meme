@@ -76,7 +76,7 @@ function snapshot(req){
   if(liveOnly){
     const authenticated=auth.authenticated(req);
     const diagnostics={...diagnose({...state,running:false},feed,rankings),phase:authenticated?'owner-wallet':'owner-required',message:authenticated?ownerAgent?'Mở khóa bộ ký để bot tự giao dịch trên server; không chờ ký từng lệnh.':'Ví chủ ký trực tiếp. Mỗi giao dịch cần xác nhận trong ví.':'Kết nối đúng ví chủ để đọc số dư và giao dịch trực tiếp.'};
-    return {mode:'live',walletMode:'owner',ownerAuthenticated:authenticated,readOnly:true,running:false,automationRequested:false,settings:DEFAULTS,rankings,diagnostics,feed,buildRevision:process.env.RAILWAY_GIT_COMMIT_SHA??'local',cashSol:null,equitySol:null,pnlSol:null,positions:[],trades:[],curve:[],events:[],watchlist:[],halted:null,peakEquity:null,maxDrawdownObservedPct:null,closedCount:0,winRate:null,decisionStats:state.decisionStats,decisions:state.decisions};
+    return {mode:'live',walletMode:'owner',ownerAuthenticated:authenticated,readOnly:true,running:false,automationRequested:false,settings:{...DEFAULTS,initialSol:null,orderSol:null,smallOrderSol:null,orderFraction:.2,sizingVersion:'wallet-balance-v1'},rankings,diagnostics,feed,buildRevision:process.env.RAILWAY_GIT_COMMIT_SHA??'local',cashSol:null,equitySol:null,pnlSol:null,positions:[],trades:[],curve:[],events:[],watchlist:[],halted:null,peakEquity:null,maxDrawdownObservedPct:null,closedCount:0,winRate:null,decisionStats:state.decisionStats,decisions:state.decisions};
   }
   return {...state,rankings,diagnostics:diagnose(state,feed,rankings),buildRevision:process.env.RAILWAY_GIT_COMMIT_SHA??'local',mode:'paper',readOnly,feed,equitySol:feed.solUsd?value:null,pnlSol:feed.solUsd?value-state.settings.initialSol:null,winRate:closed.length?closed.filter(t=>(t.positionPnlSol??t.pnlSol)>0).length/closed.length:null,closedCount:closed.length};
 }
@@ -115,7 +115,7 @@ const server=http.createServer(async(req,res)=>{
       }
       if(req.method==='GET'&&url.pathname==='/api/direct/status'){
         if(!auth.authenticated(req))return json(res,401,{error:'Cần xác thực bằng ví chủ.'});
-        return json(res,200,await direct.status());
+        const minContextSlot=Number(url.searchParams.get('minContextSlot')??0);if(!Number.isSafeInteger(minContextSlot)||minContextSlot<0)throw Error('Slot không hợp lệ.');return json(res,200,await direct.status(minContextSlot||undefined));
       }
       if(req.method==='GET'&&url.pathname.startsWith('/api/live/')){
         if(!auth.authenticated(req))return json(res,401,{error:'Cần xác thực bằng ví chủ.'});

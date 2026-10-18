@@ -57,9 +57,9 @@ test('priority and tip share a 0.002 SOL per-side ceiling',()=>{
 });
 function router(mint,{sellOut='197000000',bad=false}={}){return async url=>{const u=new URL(url),input=u.searchParams.get('inputMint'),amount=u.searchParams.get('amount'),out=input===SOL?'10000000':sellOut,bps=Number(u.searchParams.get('slippageBps'));return new Response(JSON.stringify({inputMint:bad?'wrong':input,outputMint:u.searchParams.get('outputMint'),inAmount:amount,outAmount:out,otherAmountThreshold:(BigInt(out)*BigInt(10000-bps)/10000n).toString(),slippageBps:bps,swapMode:'ExactIn',contextSlot:100,routePlan:[{}],priceImpactPct:'0.01'}));};}
 test('Jupiter round trip sells the full quoted token output, includes fee allowance and binds both mints',async()=>{
- const mint='token',requests=[],base=router(mint),q=await jupiterRoundTrip(mint,async url=>{requests.push(new URL(url));return base(url);});assert.equal(requests[0].searchParams.get('amount'),'200000000');assert.equal(requests[1].searchParams.get('amount'),'10000000');assert.equal(q.probeSol,.2);assert.equal(q.buyImpactPct,1);assert.ok(q.roundTripLossPct<6);
- const costly=await jupiterRoundTrip(mint,router(mint,{sellOut:'186000000'}));assert.ok(costly.roundTripLossPct>6);
- await assert.rejects(jupiterRoundTrip(mint,router(mint,{bad:true})),/không khớp/);
+ const mint='token',requests=[],base=router(mint),q=await jupiterRoundTrip(mint,async url=>{requests.push(new URL(url));return base(url);},.2);assert.equal(requests[0].searchParams.get('amount'),'200000000');assert.equal(requests[1].searchParams.get('amount'),'10000000');assert.equal(q.probeSol,.2);assert.equal(q.buyImpactPct,1);assert.ok(q.roundTripLossPct<6);
+ const costly=await jupiterRoundTrip(mint,router(mint,{sellOut:'186000000'}),.2);assert.ok(costly.roundTripLossPct>6);
+ await assert.rejects(jupiterRoundTrip(mint,router(mint,{bad:true}),.2),/không khớp/);
  const noRoute=await jupiterSellQuote({mint,rawAmount:'10000000'},async()=>new Response(JSON.stringify({errorCode:'COULD_NOT_FIND_ANY_ROUTE'}),{status:400}));assert.equal(noRoute.failed,true);
  await assert.rejects(jupiterSellQuote({mint,rawAmount:'10000000'},async()=>new Response('{}',{status:403})),/HTTP 403/);
 });
@@ -67,8 +67,8 @@ test('a stopped token stays blocked for 24 hours and a 0.2 SOL order cannot cons
  const {s,m,p}=position();
  applyOwnerReceipt(s,{intent:{side:'SELL',mint:p.mint,symbol:p.symbol,solUsd:100,priceUsd:.7,reason:'stop-loss'}},{status:'confirmed',signature:'stop-24h',tokenDelta:'-3000000',solDelta:.021,decimals:6,feeSol:.00002});
  assert.ok(s.cooldowns[p.mint]>=Date.now()+R.reentryMs-1000);
- const small=createOwnerLedger('owner',.08);assert.equal(nextOwnerOrder(small,{markets:[m],solUsd:100,updatedAt:Date.now()},.08),null);
- const funded=createOwnerLedger('owner',.255);assert.equal(nextOwnerOrder(funded,{markets:[m],solUsd:100,updatedAt:Date.now()},.255).orderSol,.2);
+ const small=createOwnerLedger('owner',.06);assert.equal(nextOwnerOrder(small,{markets:[m],solUsd:100,updatedAt:Date.now()},.06),null);
+ const funded=createOwnerLedger('owner',.255);assert.equal(nextOwnerOrder(funded,{markets:[m],solUsd:100,updatedAt:Date.now()},.255).orderSol,.051);
 });
 
 test('owner entry opens more than two positions until SOL reserve and fees prevent the next buy',()=>{
@@ -79,8 +79,8 @@ test('owner entry opens more than two positions until SOL reserve and fees preve
   const order=nextOwnerOrder(s,feed(),s.cashSol);
   if(!order)break;
   assert.equal(order.side,'BUY');assert.equal(order.mint,m.mint);
-  const intent={...order,owner:'owner',amount:'200000000',solUsd:100,priceUsd:1};
-  applyOwnerReceipt(s,{intent},{status:'confirmed',signature:'capital-fill-'+i,tokenDelta:'20000000',solDelta:-.2001,decimals:6,feeSol:.00002});
+  const amount=String(Math.round(order.orderSol*1e9)),raw=String(Math.round(order.orderSol*1e8)),intent={...order,owner:'owner',amount,solUsd:100,priceUsd:1};
+  applyOwnerReceipt(s,{intent},{status:'confirmed',signature:'capital-fill-'+i,tokenDelta:raw,solDelta:-order.orderSol-.0001,decimals:6,feeSol:.00002});
   assert.ok(s.cashSol>=s.settings.reserveSol);
  }
  assert.ok(s.positions.length>=5);assert.ok(s.trades.length>=5);assert.equal(nextOwnerOrder(s,feed(),s.cashSol),null);

@@ -8,7 +8,7 @@ import {DEFAULT_OWNER} from './security.js';
 import {createOwnerLedger,nextOwnerOrder,applyOwnerReceipt,ownerExit,allocateOwnerCapital} from './owner-ledger.js';
 import {DEFAULTS,equity,event} from './engine.js';
 import {rankMarket} from './strategy.js';
-import {STRATEGY_VERSION,clearLegacyDailyHalt,clearLegacyLossPause} from './desk-rules.js';
+import {STRATEGY_VERSION,clearLegacyDailyHalt,clearLegacyLossPause,walletOrderSol,WALLET_SIZING_VERSION,WALLET_ORDER_FRACTION} from './desk-rules.js';
 import {auditDesk} from './auditor.js';
 import {diagnoseOwnerEntry} from './diagnostics.js';
 import {TelegramReporter,enqueueTradeReport} from './telegram.js';
@@ -20,10 +20,11 @@ export function signerRequestAllowed(req,expectedOrigin,onRailway){
 }
 function networkFailure(error){return ['TimeoutError','AbortError'].includes(error?.name)||error?.code==='PROVIDER_BACKOFF'||/RPC|fetch|timeout|timed out|hết thời gian|Jupiter quote chưa khả dụng|HTTP\s+(403|408|429|5\d\d)/i.test(typeof error==='string'?error:error?.message??'');}
 function validatedState(s,owner){
- if(s?.owner!==owner||s.ownerLedgerVersion!==1||!Array.isArray(s.positions)||!Array.isArray(s.trades)||!Array.isArray(s.events)||!Array.isArray(s.curve)||!Array.isArray(s.recordedSignatures)||!Number.isFinite(s.cashSol)||s.cashSol<0||!(s.settings?.initialSol>0&&s.settings.initialSol<=DEFAULTS.initialSol))throw Error('Nhật ký không thuộc ví chủ hoặc sai cấu trúc.');
+ if(s?.owner!==owner||s.ownerLedgerVersion!==1||!Array.isArray(s.positions)||!Array.isArray(s.trades)||!Array.isArray(s.events)||!Array.isArray(s.curve)||!Array.isArray(s.recordedSignatures)||!Number.isFinite(s.cashSol)||s.cashSol<0||!(Number.isFinite(s.settings?.initialSol)&&s.settings.initialSol>=0&&Number.isSafeInteger(Math.round(s.settings.initialSol*1e9))))throw Error('Nhật ký không thuộc ví chủ hoặc sai cấu trúc.');
  for(const p of s.positions)if(typeof p.rawQuantity!=='string'||!/^\d{1,20}$/.test(p.rawQuantity)||BigInt(p.rawQuantity)<=0n||!Number.isInteger(p.decimals)||p.decimals<0||p.decimals>9||!Number.isFinite(p.quantity)||p.quantity<=0||!Number.isFinite(p.costSol)||p.costSol<0)throw Error('Vị thế khôi phục không hợp lệ.');
  for(const p of s.positions)if(p.priceBasis==='sol'&&(!(p.entryPriceSol>0)||!Number.isFinite(p.entryPriceSol)||!(p.peakPriceSol>0)||!Number.isFinite(p.peakPriceSol)||!Number.isFinite(p.lastPriceSol)||p.lastPriceSol<0||p.nextTakeProfitPriceSol!==null&&!(p.nextTakeProfitPriceSol>0)))throw Error('Giá vốn SOL của vị thế khôi phục không hợp lệ.');
- const withdrawnSol=s.withdrawnSol??0,payoutFeesSol=s.payoutFeesSol??0,realizedNetSol=s.realizedNetSol??s.cashSol+s.positions.reduce((sum,p)=>sum+p.costSol,0)+withdrawnSol+payoutFeesSol-s.settings.initialSol;
+ const externalWithdrawnSol=s.externalWithdrawnSol??0;if(!Number.isFinite(externalWithdrawnSol)||externalWithdrawnSol<0)throw Error('Dòng tiền ngoài sổ không hợp lệ.');
+ const withdrawnSol=s.withdrawnSol??0,payoutFeesSol=s.payoutFeesSol??0,realizedNetSol=s.realizedNetSol??s.cashSol+s.positions.reduce((sum,p)=>sum+p.costSol,0)+withdrawnSol+externalWithdrawnSol+payoutFeesSol-s.settings.initialSol;
  if(!Number.isFinite(withdrawnSol)||withdrawnSol<0||!Number.isFinite(payoutFeesSol)||payoutFeesSol<0||!Number.isFinite(realizedNetSol)||!Array.isArray(s.payouts??[]))throw Error('Sổ chuyển lợi nhuận không hợp lệ.');
  if(!Array.isArray(s.telegramOutbox??[])||(s.telegramOutbox??[]).some(m=>typeof m.id!=='string'||typeof m.text!=='string'||m.text.length>4096||!['queued','sent','failed'].includes(m.status)||!Number.isSafeInteger(m.attempts)||m.attempts<0||m.attempts>6||!Number.isFinite(m.nextAttemptAt)))throw Error('Hàng đợi báo cáo Telegram không hợp lệ.');
  if(s.pending&&(typeof s.pending.transaction!=='string'||s.pending.intent?.owner!==owner))throw Error('Khôi phục server chỉ nhận nhật ký pending có giao dịch đã ký đầy đủ.');
@@ -33,7 +34,7 @@ function validatedState(s,owner){
  s.cooldowns??={};for(const t of s.trades)if(t.side==='SELL'&&t.reason==='stop-loss'&&t.closed&&Number.isFinite(t.at))s.cooldowns[t.mint]=Math.max(s.cooldowns[t.mint]??0,t.at+DEFAULTS.reentryMs);
  clearLegacyDailyHalt(s);clearLegacyLossPause(s);
  if(s.haltKind==='drawdown'&&s.positions.length)s.liquidating=true;
- return {...s,strategyVersion:STRATEGY_VERSION,withdrawnSol,payoutFeesSol,realizedNetSol,payouts:s.payouts??[],settings:{...DEFAULTS,initialSol:s.settings.initialSol},running:false};
+ return {...s,strategyVersion:STRATEGY_VERSION,withdrawnSol,externalWithdrawnSol,payoutFeesSol,realizedNetSol,payouts:s.payouts??[],settings:{...DEFAULTS,initialSol:s.settings.initialSol,orderSol:walletOrderSol(s.cashSol),smallOrderSol:walletOrderSol(s.cashSol),orderFraction:WALLET_ORDER_FRACTION,sizingVersion:WALLET_SIZING_VERSION},running:false};
 }
 export class OwnerAgent{
  constructor(dir,direct,execution,owner=DEFAULT_OWNER,options={}){this.owner=owner;this.file=path.join(dir,'owner-agent-state.json');this.backupFile=path.join(dir,'owner-agent-state.backup.json');this.storageMode=options.storageMode??'local-disk';this.storageBlockedReason=null;this.vault=new OwnerSignerVault(path.join(dir,'owner-signer.json'),owner);this.telegram=new TelegramReporter(dir,owner);this.direct=direct;this.execution=execution;this.state=null;this.queue=Promise.resolve();this.busy=false;this.wallet=null;this.error=null;this.commandEpoch=0;this.inventory=null;this.inventoryAt=0;this.inventoryTask=null;this.inventoryError=null;this.inventoryAttemptAt=0;}
@@ -56,7 +57,7 @@ export class OwnerAgent{
  async previewRecovery(input){return verifyPurchase(this.execution,this.owner,input);}
  async recoverPurchase(input){return this.serial(async()=>{
   if(this.state?.running||this.state?.pending)throw Error('Dừng bot và đối soát lệnh chờ trước khi khôi phục.');
-  const proof=await this.previewRecovery(input),balance=await this.execution.balance(this.owner);this.state=adoptPurchase(this.state,this.owner,proof,balance);await this.save();return proof;
+  const proof=await this.previewRecovery(input),balance=await this.execution.balance(this.owner,this.state?.lastReceiptSlot);this.state=adoptPurchase(this.state,this.owner,proof,balance);await this.save();return proof;
  });}
  trackedMints(){return [...new Set([...(this.state?.positions??[]).map(p=>p.mint),this.state?.pending?.intent?.mint].filter(Boolean))];}
  async restore(s){return this.serial(async()=>{
@@ -65,7 +66,7 @@ export class OwnerAgent{
  });}
  async enable(){return this.serial(async()=>{
   if(!this.vault.keypair)throw Error('Mở khóa bộ ký tự động trước khi chạy.');
-  await this.execution.network();const balance=await this.execution.balance(this.owner);
+  await this.execution.network();const balance=await this.execution.balance(this.owner,this.state?.lastReceiptSlot);
   this.refreshInventory();
   if(!this.state){this.state=createOwnerLedger(this.owner,balance);event(this.state,'Bắt đầu sổ mới với ngân sách SOL hiện có; token ngoài sổ không tự động được quản lý.');}
   if(this.state.pending)throw Error('Đợi đối soát giao dịch đang chờ trước khi bật lại.');
@@ -85,7 +86,7 @@ export class OwnerAgent{
  async pause(lock=false){this.commandEpoch++;if(this.state)this.state.running=false;return this.serial(async()=>{if(this.state)this.state.running=false;try{await this.save();}finally{if(lock)this.vault.lock();}});}
  async status(){
   this.refreshInventory();
-  let balanceSol=null,rpcError=null;try{balanceSol=await this.execution.balance(this.owner);}catch{const failures=this.execution.rpc?.rpcDiagnostics?.().failures??[];rpcError='Chưa đọc được số dư qua RPC. '+(failures.length?failures.map(r=>r.host+': '+r.reason).join(' · '):'RPC chưa trả số dư hợp lệ.');}
+  let balanceSol=null,rpcError=null;try{balanceSol=await this.execution.balance(this.owner,this.state?.lastReceiptSlot);}catch{const failures=this.execution.rpc?.rpcDiagnostics?.().failures??[];rpcError='Chưa đọc được số dư qua RPC. '+(failures.length?failures.map(r=>r.host+': '+r.reason).join(' · '):'RPC chưa trả số dư hợp lệ.');}
   const inventory=(this.inventory??[]).map(a=>({...a,tracked:!!this.state?.positions.some(p=>p.mint===a.mint)})),emptyWithAssets=inventory.length&&(!this.state||!this.state.trades.length&&!this.state.positions.length&&!this.state.pending);
   const recoveryMessage=emptyWithAssets?'Ví có token ngoài sổ. Khôi phục là tùy chọn để quản lý vị thế cũ; bot vẫn xét mua token khác.':this.state?.recoveryRequired?'Lịch sử tài khoản chưa đầy đủ; khôi phục là tùy chọn. BUY/SELL vẫn hoạt động sau khi bật bot, chỉ chưa tự chuyển lãi.':null;
   const entryStatus=!this.vault.keypair?{phase:'locked',message:'Bộ ký đang khóa; quét token không đồng nghĩa bot đã được phép mua.'}:!this.state?.running?{phase:'paused',message:'Bot chưa bật; quét token vẫn tiếp tục.'}:rpcError?{phase:'rpc-unavailable',message:rpcError}:this.state.entryStatus??{phase:'checking',message:'Đang kiểm tra điều kiện vào lệnh.'};
@@ -102,7 +103,7 @@ export class OwnerAgent{
    const prepareMs=performance.now()-started;
    const tx=VersionedTransaction.deserialize(Buffer.from(prepared.transaction,'base64'));
    if(tx.message.header.numRequiredSignatures!==1||tx.message.staticAccountKeys[0].toBase58()!==this.owner)throw Error('Sai người ký tự động.');
-   if(order.side==='BUY'&&(s.buyPaused||s.buyCircuitOpen||Date.now()-feed.updatedAt>DEFAULTS.maxPriceAgeMs||!rankMarket({...feed.markets.find(m=>m.mint===order.mint),solUsd:feed.solUsd},DEFAULTS).eligible))throw Error('Dữ liệu BUY đã quá 30 giây hoặc kiểm chứng hết hạn; không ký.');
+   if(order.side==='BUY'&&(s.buyPaused||s.buyCircuitOpen||Date.now()-feed.updatedAt>DEFAULTS.maxPriceAgeMs||!rankMarket({...feed.markets.find(m=>m.mint===order.mint),evidence:{...feed.markets.find(m=>m.mint===order.mint)?.evidence,...prepared.intent.entryQuoteProof},solUsd:feed.solUsd},DEFAULTS).eligible))throw Error('Dữ liệu BUY đã quá 30 giây hoặc kiểm chứng hết hạn; không ký.');
    if(epoch!==this.commandEpoch||!this.vault.keypair)throw Error('Đã dừng bộ ký; không ký lệnh mới.');
    if(order.side==='PROFIT'&&this.payoutGuard())throw Error(this.payoutGuard());
    const signStarted=performance.now();tx.sign([this.vault.keypair]);const signMs=performance.now()-signStarted;
@@ -112,7 +113,7 @@ export class OwnerAgent{
    const sendStarted=performance.now();s.pending.timing.broadcastStartedAt=Date.now();
    const result=await this.direct.submit({id:prepared.intent.id,transaction:s.pending.transaction});
    s.lastExecutionLatency={...s.pending.timing,broadcastRpcMs:performance.now()-sendStarted,submissionStatus:result.status,confirmationMs:null};await this.save();
-  }catch(e){if(prepared&&!s.pending)this.direct.cancel(prepared.intent.id);throw e;}
+  }catch(e){if(prepared&&!s.pending)this.direct.cancel(prepared.intent.id);if(e.code==='BALANCE_CHANGED'&&!s.pending){s.orderAttempts[key]=Math.max(0,(s.orderAttempts[key]??1)-1);await this.save();}throw e;}
  }
  async close(mint,feed){return this.serial(async()=>{
   if(!this.state||!this.vault.keypair)throw Error('Mở khóa bộ ký trước khi bán.');
@@ -139,8 +140,8 @@ export class OwnerAgent{
    if(!s.running||!this.vault.keypair)return;
    s.storageBlockedReason=this.storageBlockedReason;
    const working={...feed,markets:(feed.markets??[]).map(m=>({...m}))};if(!(working.solUsd>0)){working.solUsd=s.positions[0]?.entrySolUsd??(s.positions.some(p=>p.priceBasis==='sol')?1:null);working.solUsdEstimated=true;working.error=working.error??'Thiếu giá SOL mới; chỉ quản lý SELL.';}let networkError=null,balance=NaN;
-   try{balance=await this.execution.balance(this.owner);}catch(e){networkError=e.message;}
-   if(allocateOwnerCapital(s,balance)>0)await this.save();
+   try{balance=await this.execution.balance(this.owner,this.state?.lastReceiptSlot);}catch(e){networkError=e.message;}
+   if(allocateOwnerCapital(s,balance)!==0)await this.save();
    this.refreshInventory();
    for(const p of s.positions){
     let m=working.markets.find(m=>m.mint===p.mint);

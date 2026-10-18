@@ -24,7 +24,7 @@ test('an obsolete future timer cannot block another mint, while token re-entry, 
  assert.equal(diagnoseOwnerEntry(s,feed,1.19,now).phase,'ready');assert.equal(nextOwnerOrder(s,feed,1.19).side,'BUY');assert.equal(s.lossPauseUntil,0);
  s.cooldowns[m.mint]=now+86400000;assert.equal(nextOwnerOrder(s,feed,1.19),null);delete s.cooldowns[m.mint];
  s.buyPaused=true;assert.equal(nextOwnerOrder(s,feed,1.19),null);s.buyPaused=false;
- assert.equal(nextOwnerOrder(s,feed,.254999999),null);assert.equal(nextOwnerOrder(s,{...feed,updatedAt:now-31000},1.19),null);
+ assert.equal(nextOwnerOrder(s,feed,.06),null);assert.equal(nextOwnerOrder(s,{...feed,updatedAt:now-31000},1.19),null);
  s.cashSol=1;riskCheck(s,[],150,now);assert.equal(s.haltKind,'drawdown');assert.equal(nextOwnerOrder(s,feed,1),null);
 });
 test('restore clears only the old loss-pause timer/status and preserves accounting, pending orders and other stops',async()=>{

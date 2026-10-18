@@ -12,7 +12,7 @@ test('loss above the retired daily threshold permits an eligible BUY even with o
  Object.assign(s,{cashSol:1.15,running:true,halted:'old daily halt',haltKind:'daily',dailyLossBlocked:true});s.settings.maxDailyLossSol=.03;
  const before={dayStartEquity:s.dayStartEquity,peakEquity:s.peakEquity};
  const order=nextOwnerOrder(s,{markets:[m],solUsd:150,updatedAt:now},1.15);
- assert.equal(order.side,'BUY');assert.equal(order.orderSol,.2);assert.equal(s.halted,null);assert.equal(s.haltKind,null);assert.equal(s.dailyLossBlocked,false);assert.equal(s.running,true);
+ assert.equal(order.side,'BUY');assert.equal(order.orderSol,.23);assert.equal(s.halted,null);assert.equal(s.haltKind,null);assert.equal(s.dailyLossBlocked,false);assert.equal(s.running,true);
  assert.equal(s.cashSol,1.15);assert.equal(s.dayStartEquity,before.dayStartEquity);assert.equal(s.peakEquity,before.peakEquity);
 });
 test('removing daily limits preserves drawdown, manual halt and manual pause protections',()=>{

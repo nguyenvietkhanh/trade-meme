@@ -12,12 +12,12 @@ const kp=Keypair.generate(),owner=kp.publicKey.toBase58(),mint=Keypair.generate(
 const market=()=>verifiedMarket({mint,priceUsd:1,pairAddress:'11111111111111111111111111111112'});
 const unsigned=()=>new VersionedTransaction(new TransactionMessage({payerKey:kp.publicKey,recentBlockhash:Keypair.generate().publicKey.toBase58(),instructions:[SystemProgram.transfer({fromPubkey:kp.publicKey,toPubkey:Keypair.generate().publicKey,lamports:200000000})]}).compileToV0Message());
 const encode=tx=>Buffer.from(tx.serialize()).toString('base64');
-function setup(){let sends=0,request;const execution={provider:'Helius',configureHelius(){},network:async()=>{},balance:async()=>10,holdings:async()=>[],mintCheck:async()=>{},height:async()=>100,prepare:async r=>{request=r;return {bytes:unsigned().serialize(),lastValidBlockHeight:200};},send:async bytes=>{sends++;return bs58.encode(VersionedTransaction.deserialize(bytes).signatures[0]);},status:async()=>({confirmationStatus:'confirmed'}),receipt:async()=>({slot:90,solDelta:-.2001,tokenDelta:20000000n,rawBalance:'999000000',decimals:6})};const desk=new DirectWallet(execution);desk.owner=owner;return {desk,execution,get sends(){return sends;},get request(){return request;}};}
+function setup(){let sends=0,request;const execution={provider:'Helius',configureHelius(){},network:async()=>{},balance:async()=>1,holdings:async()=>[],mintCheck:async()=>{},height:async()=>100,prepare:async r=>{request=r;return {bytes:unsigned().serialize(),lastValidBlockHeight:200};},send:async bytes=>{sends++;return bs58.encode(VersionedTransaction.deserialize(bytes).signatures[0]);},status:async()=>({confirmationStatus:'confirmed'}),receipt:async()=>({slot:90,solDelta:-.2001,tokenDelta:20000000n,rawBalance:'999000000',decimals:6})};const desk=new DirectWallet(execution);desk.owner=owner;return {desk,execution,get sends(){return sends;},get request(){return request;}};}
 test('direct preparation uses the connected owner as payer, fixes buy size and needs no server signer or volume',async()=>{
  const f=setup(),result=await f.desk.prepare({side:'BUY',mint,amount:'999999999'},{markets:[market()],solUsd:100,updatedAt:Date.now()});
  assert.equal(f.request.ownerAddress,owner);assert.equal(f.request.keypair,undefined);assert.equal(f.request.amount,'200000000');assert.equal(f.sends,0);assert.equal(result.intent.owner,owner);
  const tx=VersionedTransaction.deserialize(Buffer.from(result.transaction,'base64'));assert.ok(tx.signatures[0].every(b=>b===0));assert.equal(tx.message.staticAccountKeys[0].toBase58(),owner);
- const status=await f.desk.status();assert.equal(status.balanceSol,10);assert.equal(status.walletMode,'owner');assert.equal(status.apiKey,undefined);
+ const status=await f.desk.status();assert.equal(status.balanceSol,1);assert.equal(status.walletMode,'owner');assert.equal(status.apiKey,undefined);
 });
 test('only the exact owner-signed message is submitted, duplicate submits do not broadcast again',async()=>{
  const f=setup(),prepared=await f.desk.prepare({side:'BUY',mint},{markets:[market()],solUsd:100,updatedAt:Date.now()});
@@ -43,8 +43,8 @@ test('main-wallet buy rejects a token already held and keeps native reserve even
 });
 test('owner ledger limits budget to 1.19 SOL, sells only app-owned units and counts actual failed fees',()=>{
  const s=createOwnerLedger(owner,10),m=market(),pending={intent:{owner,side:'BUY',mint,symbol:'TEST',priceUsd:1,solUsd:100,reason:'auto',amount:'30000000'}};
- assert.equal(s.cashSol,1.19);assert.equal(s.settings.initialSol,1.19);assert.throws(()=>createOwnerLedger(owner,.03));
- assert.equal(nextOwnerOrder(s,{markets:[m],solUsd:100,updatedAt:Date.now()},10).side,'BUY');
+ assert.equal(s.cashSol,10);assert.equal(s.settings.initialSol,10);assert.throws(()=>createOwnerLedger(owner,NaN));
+ assert.equal(nextOwnerOrder(s,{markets:[m],solUsd:100,updatedAt:Date.now()},10).orderSol,2);
  applyOwnerReceipt(s,pending,{status:'confirmed',signature:'buy',tokenDelta:'3000000',solDelta:-.0301,decimals:6});
  assert.equal(s.positions[0].rawQuantity,'3000000');assert.equal(ownerExit(s,mint,.5).amount,'1500000');
  const sell={intent:{...pending.intent,side:'SELL',reason:'runner-double'}};
@@ -66,7 +66,7 @@ test('stale entry feeds block BUY but allow a fresh on-chain SELL preparation',a
 });
 test('the authoritative rank fixes a 0.2 SOL size even when a caller asks for more',async()=>{
  const f=setup(),m=market();m.hasProfile=false;m.sells5m=12;delete m.evidence.higherLows;delete m.evidence.pullback30mPct;delete m.evidence.greenCandleConfirmed;
- const prepared=await f.desk.prepare({side:'BUY',mint,orderSol:99},{markets:[m],solUsd:100,updatedAt:Date.now()});assert.equal(prepared.intent.amount,'200000000');assert.equal(f.request.amount,'200000000');
+ await assert.rejects(f.desk.prepare({side:'BUY',mint,orderSol:99},{markets:[m],solUsd:100,updatedAt:Date.now()}),/Số dư đã đổi/);const prepared=await f.desk.prepare({side:'BUY',mint},{markets:[m],solUsd:100,updatedAt:Date.now()});assert.equal(prepared.intent.amount,'200000000');assert.equal(f.request.amount,'200000000');
 });
 test('live entry binds the pool minimum output to a fresh Jupiter reference for the actual tier size',async()=>{
  const f=setup();let quotedAmount;f.execution.entryQuote=async(_mint,amount)=>{quotedAmount=amount;return {minOut:'1000',checkedAt:Date.now()};};
