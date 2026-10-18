@@ -3,18 +3,26 @@ import {retryAfterMs} from './provider-fetch.js';
 import {rpcScheduler} from './rpc-priority.js';
 
 export const PUBLIC_RPC_ENDPOINTS=Object.freeze(['https://api.mainnet-beta.solana.com','https://solana-rpc.publicnode.com']);
+// Server-only configuration. Never return these URLs to a browser or a log.
+export function rpcConfiguration(apiKey=process.env.HELIUS_API_KEY){
+ const key=typeof apiKey==='string'?apiKey.trim():'';
+ if(!key)return {endpoints:[...PUBLIC_RPC_ENDPOINTS],heliusConfigured:false,mode:'public'};
+ if(key.length>512||/\s/.test(key))throw Error('HELIUS_API_KEY không hợp lệ; kiểm tra Railway Variables.');
+ const url=new URL('https://mainnet.helius-rpc.com/');url.searchParams.set('api-key',key);
+ return {endpoints:[url.toString(),...PUBLIC_RPC_ENDPOINTS],heliusConfigured:true,mode:'helius-with-public-fallback'};
+}
 // Full 32-byte genesis hash; the 32-character CAIP chain identifier is NOT a genesis hash.
 export const MAINNET_GENESIS_HASH='5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d';
 class RpcFailure extends Error{constructor(message,extra={}){super(message);Object.assign(this,extra);}}
 const WRITES=new Set(['sendTransaction','requestAirdrop']);
 
 // Reads may fail over/coalesce. Signed broadcasts are never replayed or coalesced.
-export function keylessConnection(endpoints=PUBLIC_RPC_ENDPOINTS,{clock=Date.now,random=Math.random}={}){
+export function keylessConnection(endpoints=PUBLIC_RPC_ENDPOINTS,{clock=Date.now,random=Math.random,preferPrimary=false}={}){
  if(!endpoints.length||endpoints.some(url=>new URL(url).protocol!=='https:'))throw Error('RPC cần HTTPS.');
  let active=0,lastFailures=[];const verified=new Map(),checking=new Map(),pending=new Map(),methods=new Map();
  const health=endpoints.map(()=>({failures:0,retryAt:0,epoch:0}));
  const lanes=endpoints.map(()=>rpcScheduler());
- const request=(url,options)=>lanes[endpoints.indexOf(url)](JSON.parse(options.body).method,()=>{if(health[endpoints.indexOf(url)].retryAt>clock())throw new RpcFailure('RPC tạm chờ hồi phục',{waiting:true});return fetch(url,{...options,signal:AbortSignal.timeout(10000)});});
+ const request=(url,options)=>lanes[endpoints.indexOf(url)](JSON.parse(options.body).method,()=>{if(health[endpoints.indexOf(url)].retryAt>clock())throw new RpcFailure('RPC tạm chờ hồi phục',{waiting:true});return fetch(url,{...options,redirect:'error',signal:AbortSignal.timeout(10000)});});
  const httpError=response=>new RpcFailure('HTTP '+response.status,{status:response.status,retryAfter:retryAfterMs(response.headers.get('retry-after'),clock())});
  const check=async url=>{
   if(verified.has(url)&&clock()-verified.get(url)<60000)return;
@@ -28,7 +36,7 @@ export function keylessConnection(endpoints=PUBLIC_RPC_ENDPOINTS,{clock=Date.now
   try{await task;}finally{if(checking.get(url)===task)checking.delete(url);}
  };
  const run=async(message,options)=>{
-  const write=WRITES.has(message.method),tries=write?1:endpoints.length,start=active,failures=[];
+  const write=WRITES.has(message.method),tries=write?1:endpoints.length,start=!write&&preferPrimary&&health[0].retryAt<=clock()?0:active,failures=[];
   for(let n=0;n<tries;n++){
    const index=(start+n)%endpoints.length,url=endpoints[index],h=health[index],methodKey=index+':'+message.method;
    try{
@@ -40,7 +48,9 @@ export function keylessConnection(endpoints=PUBLIC_RPC_ENDPOINTS,{clock=Date.now
     const data=await response.json();if(!data||typeof data!=='object'||Array.isArray(data)||data.jsonrpc!=='2.0'||String(data.id)!==String(message.id))throw new RpcFailure('RPC trả phản hồi không khớp yêu cầu');
     if(!write&&[-32010,-32601].includes(data.error?.code))throw new RpcFailure('RPC không hỗ trợ truy vấn/chỉ mục ('+data.error.code+')',{unsupported:true});
     if([-32005,-32429,-32004,429].includes(data.error?.code))throw new RpcFailure('RPC quá tải ('+data.error.code+')');
-    active=index;lastFailures=[];if(h.epoch===startedEpoch){h.failures=0;h.retryAt=0;}methods.delete(methodKey);return data;
+    active=index;lastFailures=[];if(h.epoch===startedEpoch){h.failures=0;h.retryAt=0;}methods.delete(methodKey);
+    if(data.error){if(!Number.isInteger(data.error.code))throw new RpcFailure('RPC trả mã lỗi không hợp lệ');return {...data,error:{code:data.error.code,message:'RPC báo lỗi ('+data.error.code+')'}};}
+    return data;
    }catch(e){
     if(!e.waiting){
      if(e.unsupported)methods.set(methodKey,clock()+60000);
@@ -51,7 +61,7 @@ export function keylessConnection(endpoints=PUBLIC_RPC_ENDPOINTS,{clock=Date.now
     if(write)throw Error('Chưa rõ kết quả gửi giao dịch. Giữ signature để đối soát.');
    }
   }
-  throw Error('Các RPC công khai đang lỗi hoặc giới hạn lượt gọi. Không cần API key; thử kết nối lại sau.');
+  throw Error('Các RPC đã cấu hình đang lỗi hoặc giới hạn lượt gọi; thử kết nối lại sau.');
  };
  const transport=async(_url,options)=>{
   const message=JSON.parse(options.body);let data;

@@ -1,13 +1,13 @@
 # Meme Pilot — Solana spot
 
-Bot chọn token PumpSwap và pump.fun trước migrate, tự ký từ ví chủ **7JePGU7MFtRo9z5jMh2486UniD4EB4PpRd8tv2Jhqpsy**. Không cần Helius/Jupiter API key, không tạo ví phụ.
+Bot chọn token PumpSwap và pump.fun trước migrate, tự ký từ ví chủ **7JePGU7MFtRo9z5jMh2486UniD4EB4PpRd8tv2Jhqpsy**. Hỗ trợ Helius API key tùy chọn phía server, không tạo ví phụ.
 
 **Kết nối ví chỉ xác thực chủ.** Muốn tự giao dịch không chờ ký, chủ nhập private key của đúng ví một lần qua giao diện đã đăng nhập trên Railway HTTPS hoặc localhost 127.0.0.1. Két AES-256-GCM/scrypt giữ bản mã hóa; mở khóa nạp khóa ký vào RAM. Không nhập seed phrase, không gửi khóa/mật khẩu trong chat hoặc Git. Private key có quyền với toàn bộ ví; cỡ lệnh 20% số dư SOL và dự phòng gas do phần mềm thực thi, không phải hạn mức on-chain. Không dùng ví này giữ tài sản vượt mức chấp nhận rủi ro của bạn.
 
 ## Sử dụng
 
 1. Mở website HTTPS trong Phantom/Solflare hoặc trình duyệt có extension. Kết nối đúng ví chủ và ký thông điệp đăng nhập.
-2. Mạng Solana kết nối tự động, không có ô Helius/Jupiter key.
+2. Mạng Solana kết nối tự động. Muốn dùng Helius, đặt `HELIUS_API_KEY` trong Railway Variables; không nhập key trên giao diện hoặc gửi qua chat.
 3. Trong **BỘ KÝ TỰ ĐỘNG**, nhập khóa riêng base58 hoặc JSON 64 byte của đúng ví chủ, đặt mật khẩu mã hóa ít nhất 12 ký tự, bấm **Mã hóa và lưu bộ ký**. Các ô nhập được xóa sau yêu cầu; không lưu vào localStorage.
 4. Bấm **Bật tự giao dịch**. Server tự quét, chọn, ký, gửi và đối soát mua/bán/chuyển lãi. Không gọi `signTransaction` của extension mỗi lệnh. Đóng tab hoặc session giao diện hết hạn không làm bot ngừng chạy.
 5. **Dừng theo dõi** ngừng lệnh mới; **Dừng và khóa bộ ký** bỏ khóa đã mở khỏi bộ ký. Vị thế vẫn tồn tại. Có thể bán toàn bộ phần token ứng dụng quản lý bằng nút ở vị thế khi bộ ký đang mở.
@@ -31,7 +31,7 @@ Khám phá tìm kiếm/profiles/pool mới chạy nền mỗi 30 giây sau lần
 
 Server dùng `https://api.mainnet-beta.solana.com` và `https://solana-rpc.publicnode.com`. Trước dùng một RPC, kiểm tra genesis mainnet. RPC đọc lỗi/quá tải có thể chuyển sang nguồn dự phòng. Lệnh gửi không tự chuyển endpoint khi chưa rõ kết quả: giữ signature để đối soát, không gửi lệnh thay thế. Cả hai RPC vẫn có thể cùng lỗi hoặc rate-limit; không bảo đảm kết nối miễn phí luôn khả dụng.
 
-`HELIUS_API_KEY`, `JUPITER_API_KEY` và cấu hình RPC cũ không được dùng. Chỉ constructor nội bộ cho test có thể truyền endpoint riêng. Không gửi khóa/seed qua chat hoặc Git. Quét thị trường vẫn dùng DexScreener; RPC không thay thế nguồn dữ liệu giá.
+`HELIUS_API_KEY` là biến server tùy chọn: ưu tiên `mainnet.helius-rpc.com`, đọc lỗi chuyển sang hai RPC công khai, quay lại Helius khi hết cooldown. Các RPC đều phải xác minh genesis mainnet; giao dịch gửi chưa rõ kết quả không replay. Key không xuất vào health/status/browser/log; chỉ hostname và mã lỗi được hiển thị. `JUPITER_API_KEY` và RPC URL tùy ý từ env vẫn không được dùng. Không gửi khóa/seed qua chat hoặc Git. Quét thị trường vẫn dùng DexScreener; RPC không thay thế nguồn dữ liệu giá.
 
 ## Quy tắc và thuật toán
 
@@ -116,9 +116,9 @@ npm test
 npm start
 ```
 
-Railway auto-deploy nhánh `codex/meme-pilot-railway` bằng Dockerfile/railway.json; một replica. Không dùng Docker secret mounts vì builder Railway hiện chỉ hỗ trợ cache mounts. Volume lưu sổ và két của bộ ký; thiếu Volume chỉ cảnh báo dữ liệu có thể mất, không khóa BUY. `PUBLIC_ORIGIN` cần đúng HTTPS origin khi dùng domain riêng. Egress: frontend-api-v3.pump.fun, api.dexscreener.com, api.geckoterminal.com, api.rugcheck.xyz, lite-api.jup.ag và hai RPC trên; không cần Helius/Jupiter. Install scripts tắt; SDK transitive TOML/BigInt dùng các bản override đã kiểm tra.
+Railway auto-deploy nhánh `codex/meme-pilot-railway` bằng Dockerfile/railway.json; một replica. Không dùng Docker secret mounts vì builder Railway hiện chỉ hỗ trợ cache mounts. Volume lưu sổ và két của bộ ký; thiếu Volume chỉ cảnh báo dữ liệu có thể mất, không khóa BUY. `PUBLIC_ORIGIN` cần đúng HTTPS origin khi dùng domain riêng. Egress: frontend-api-v3.pump.fun, api.dexscreener.com, api.geckoterminal.com, api.rugcheck.xyz, lite-api.jup.ag, mainnet.helius-rpc.com và hai RPC trên. Helius tùy chọn, cấu hình Jupiter giữ nguyên. Install scripts tắt; SDK transitive TOML/BigInt dùng các bản override đã kiểm tra.
 
-`/api/health`: `mode=live`, `rpcMode=keyless`, `signingMode=owner-agent` và `unattendedSigningAvailable=true`, `strategyVersion=solana-six-stage-desk-v4`. Đây là HTTP/feed readiness, không chứng minh giao dịch/lợi nhuận. `/api/direct/status` cần đăng nhập chủ.
+`/api/health`: `mode=live`, `rpcMode=public` hoặc `helius-with-public-fallback`, `heliusConfigured` chỉ báo cấu hình, chưa chứng minh kết nối, `signingMode=owner-agent` và `unattendedSigningAvailable=true`, `strategyVersion=solana-dual-venue-desk-v5`. Đây là HTTP/feed readiness, không chứng minh giao dịch/lợi nhuận. `/api/direct/status` cần đăng nhập chủ.
 
 Kiểm thử dùng fixture, chữ ký ví thử và RPC giả lập. Chưa gửi giao dịch SOL thật, chưa kiểm chứng hiệu quả thị trường hoặc trạng thái Railway Online từ môi trường này.
 
@@ -153,3 +153,5 @@ Dữ liệu curve mới thay dòng `pumpfun` cùng mint từ DexScreener, kể c
 - Nhật ký training ghi venue, snapshot đầu vào, trigger SELL và chênh lệch thực nhận so với dự kiến (bao gồm tác động phí/rent, không gọi là riêng trượt giá thị trường). Báo cáo Telegram 23h giữ lịch cũ. Lệnh PumpSwap cũ không đổi quy tắc thoát hay kích thước.
 
 Khôi phục theo một chữ ký mua đơn lẻ vẫn chỉ hỗ trợ PumpSwap; với vị thế curve cần giữ/nhập bản xuất sổ owner đầy đủ. Volume và bản sao nhật ký vẫn là cách bảo toàn giá vốn/pending sau redeploy.
+
+Helius RPC không thay nguồn danh sách/lịch sử `frontend-api-v3.pump.fun` và không sửa lỗi HTTP 403 ở nguồn đó. Bản tích hợp RPC chưa thêm feed WebSocket. Có key trên Railway không chứng minh đã kết nối: cần số dư thực hoặc RPC read thành công; `/api/health` chỉ công khai nhãn và cờ cấu hình.

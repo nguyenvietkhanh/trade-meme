@@ -1,15 +1,29 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {Keypair} from '@solana/web3.js';
-import {keylessConnection,PUBLIC_RPC_ENDPOINTS} from '../src/rpc.js';
+import {keylessConnection,PUBLIC_RPC_ENDPOINTS,rpcConfiguration} from '../src/rpc.js';
 import {SolanaExecution} from '../src/solana.js';
 const GENESIS='5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d';
 const reply=(request,result)=>new Response(JSON.stringify({jsonrpc:'2.0',id:request.id,result}),{status:200,headers:{'Content-Type':'application/json'}});
-test('no-key RPC ignores obsolete Helius configuration and carries confirmed JSON-RPC balances',async()=>{
- const original=globalThis.fetch,old=process.env.HELIUS_API_KEY,methods=[];process.env.HELIUS_API_KEY='obsolete-key-must-not-be-used';
+test('without a Helius key public mainnet RPC carries confirmed balances',async()=>{
+ const original=globalThis.fetch,old=process.env.HELIUS_API_KEY,methods=[];delete process.env.HELIUS_API_KEY;
  globalThis.fetch=async(url,options)=>{const endpoint=new URL(url);assert.ok(PUBLIC_RPC_ENDPOINTS.includes(endpoint.origin));assert.equal(endpoint.search,'');const r=JSON.parse(options.body);methods.push(r.method);return reply(r,r.method==='getGenesisHash'?GENESIS:{context:{slot:50},value:300000000});};
  try{const e=new SolanaExecution();await e.network();assert.equal(await e.balance(Keypair.generate().publicKey),.3);assert.equal(e.configureHelius,undefined);assert.ok(methods.includes('getBalance'));assert.throws(()=>new SolanaExecution('http://example.invalid'));}
  finally{globalThis.fetch=original;if(old===undefined)delete process.env.HELIUS_API_KEY;else process.env.HELIUS_API_KEY=old;}
+});
+test('Helius key is server-only, primary reads recover after cooldown, and public fallbacks never receive the key',async t=>{
+ let now=10000,limited=true;const calls=[],key='fixture-helius-key-not-a-secret',config=rpcConfiguration(key);
+ assert.equal(config.heliusConfigured,true);assert.equal(rpcConfiguration('').mode,'public');assert.throws(()=>rpcConfiguration('invalid key'),/HELIUS_API_KEY/);
+ t.mock.method(globalThis,'fetch',async(url,options)=>{const u=new URL(url),r=JSON.parse(options.body);calls.push([u.hostname,r.method]);assert.equal(options.redirect,'error');if(u.hostname==='mainnet.helius-rpc.com')assert.equal(u.searchParams.get('api-key'),key);else assert.equal(u.search,'');if(r.method==='getGenesisHash')return reply(r,GENESIS);if(u.hostname==='mainnet.helius-rpc.com'&&limited)return new Response('private body must not be exposed',{status:429,headers:{'Retry-After':'5'}});return reply(r,{context:{slot:50},value:300000000});});
+ const rpc=keylessConnection(config.endpoints,{clock:()=>now,random:()=>0,preferPrimary:true}),address=Keypair.generate().publicKey;
+ assert.equal(await rpc.getBalance(address),300000000);assert.equal(rpc.rpcDiagnostics().activeHost,'api.mainnet-beta.solana.com');assert.ok(!JSON.stringify(rpc.rpcDiagnostics()).includes(key));
+ limited=false;now+=5001;assert.equal(await rpc.getBalance(address),300000000);assert.equal(rpc.rpcDiagnostics().activeHost,'mainnet.helius-rpc.com');assert.equal(calls.filter(([h,m])=>h==='mainnet.helius-rpc.com'&&m==='getBalance').length,2);
+});
+test('Helius integration redacts provider RPC errors and never replays uncertain signed broadcasts',async t=>{
+ const old=process.env.HELIUS_API_KEY,key='fixture-helius-key-not-a-secret';process.env.HELIUS_API_KEY=key;let sends=0;
+ t.mock.method(globalThis,'fetch',async(url,options)=>{const r=JSON.parse(options.body);if(r.method==='getGenesisHash')return reply(r,GENESIS);if(r.method==='sendTransaction'){sends++;throw Error(url);}return new Response(JSON.stringify({jsonrpc:'2.0',id:r.id,error:{code:-32602,message:'credential '+key,data:{secret:key}}}));});
+ try{const e=new SolanaExecution();assert.equal(e.heliusConfigured,true);assert.equal(e.provider,'Helius RPC');await assert.rejects(e.balance(Keypair.generate().publicKey),err=>!String(err).includes(key));await assert.rejects(e.rpc.sendRawTransaction(Buffer.from([1,2,3])),/signature/);assert.equal(sends,1);assert.ok(!JSON.stringify(e.rpc.rpcDiagnostics()).includes(key));}
+ finally{if(old===undefined)delete process.env.HELIUS_API_KEY;else process.env.HELIUS_API_KEY=old;}
 });
 test('a throttled read switches to a verified mainnet RPC and remains on that endpoint',async()=>{
  const original=globalThis.fetch,calls=[];

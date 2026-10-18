@@ -8,7 +8,7 @@ import {buildPumpSwap,PUMP_PROGRAM} from './pump-swap.js';
 import {SOL} from './engine.js';
 import {isPumpCurve} from './venues.js';
 import {curveState,curveRoundTrip,quoteCurve,decodeCurve,bondingCurvePda,canonicalPumpPoolPda,buildPumpCurve,CURVE_PROGRAM} from './pump-curve.js';
-import {keylessConnection,PUBLIC_RPC_ENDPOINTS,MAINNET_GENESIS_HASH} from './rpc.js';
+import {keylessConnection,rpcConfiguration,MAINNET_GENESIS_HASH} from './rpc.js';
 import {PROFIT_RECIPIENT,PROFIT_RULES,TRADE_RULES,executionSlippageBps,walletOrderSol,validBuyLamports,WALLET_ORDER_FRACTION,CURVE_RULES} from './desk-rules.js';
 export const TOKEN=new PublicKey('TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA');
 export const TOKEN2022=new PublicKey('TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb');
@@ -49,7 +49,8 @@ function tokenData(info){
  return {mint:new PublicKey(data.subarray(0,32)).toBase58(),owner:new PublicKey(data.subarray(32,64)).toBase58(),amount:data.readBigUInt64LE(64).toString(),delegate:data.subarray(72,165).toString('hex'),raw:data.toString('base64')};
 }
 export class SolanaExecution{
- constructor(url){this.rpc=keylessConnection(url?[url]:PUBLIC_RPC_ENDPOINTS);this.provider='Solana RPC công khai';this.mintFacts=new Map();this.quoteFetch=backoffFetch(undefined,{provider:'Jupiter'});}
+ constructor(url){const config=url?{endpoints:[url],heliusConfigured:false,mode:'custom'}:rpcConfiguration();this.heliusConfigured=config.heliusConfigured;this.rpcMode=config.mode;this.rpc=keylessConnection(config.endpoints,{preferPrimary:config.heliusConfigured});this.mintFacts=new Map();this.quoteFetch=backoffFetch(undefined,{provider:'Jupiter'});}
+ get provider(){return this.heliusConfigured?(this.rpc.rpcDiagnostics?.().activeHost==='mainnet.helius-rpc.com'?'Helius RPC':'Solana RPC công khai · dự phòng Helius'):'Solana RPC công khai';}
  async network(){if(await this.rpc.getGenesisHash()!==MAINNET_GENESIS_HASH)throw new TradePolicyError('RPC không phải Solana mainnet.');}
  async balance(address,minContextSlot){return (await this.rpc.getBalance(new PublicKey(address),minContextSlot?{commitment:'confirmed',minContextSlot}:'confirmed'))/1e9;}
  async mintCheck(mint){

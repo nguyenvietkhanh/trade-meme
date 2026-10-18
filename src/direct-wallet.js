@@ -28,7 +28,7 @@ export class DirectWallet{
   try{await this.execution.network();const balanceSol=await this.execution.balance(this.owner,minContextSlot),tokenBalances={};
    if(this.watched.length)for(const a of await this.execution.holdings(this.owner)){const d=a.account.data;if(d.length>=165){const mint=new PublicKey(d.subarray(0,32)).toBase58();if(this.watched.includes(mint))tokenBalances[mint]=(BigInt(tokenBalances[mint]??'0')+d.readBigUInt64LE(64)).toString();}}
    return {...this.configure({}),publicKey:this.owner,balanceSol,tokenBalances,lastSyncAt:Date.now()};}
-  catch{throw Error('Chưa đọc được số dư ví chủ. Các RPC công khai có thể đang giới hạn lượt gọi; bấm thử lại kết nối.');}
+  catch{throw Error('Chưa đọc được số dư ví chủ. RPC có thể đang lỗi hoặc giới hạn lượt gọi; bấm thử lại kết nối.');}
  }
  async prepare(input,feed){
   if(this.intent){if(this.intent.signature||await this.execution.height()<=this.intent.lastValidBlockHeight)throw Error('Còn giao dịch trước cần ký hoặc đối soát.');this.intent=null;}
