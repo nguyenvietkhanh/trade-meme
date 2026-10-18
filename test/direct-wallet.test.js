@@ -72,3 +72,9 @@ test('live entry binds the pool minimum output to a fresh Jupiter reference for 
  const f=setup();let quotedAmount;f.execution.entryQuote=async(_mint,amount)=>{quotedAmount=amount;return {minOut:'1000',checkedAt:Date.now()};};
  await f.desk.prepare({side:'BUY',mint},{markets:[market()],solUsd:100,updatedAt:Date.now()});assert.equal(quotedAmount,'30000000');assert.equal(f.request.referenceMinOut,'1000');
 });
+
+test('each order reads only its own mint and never requires full-wallet token discovery',async()=>{
+ const f=setup(),calls=[];f.execution.holdings=async(address,selectedMint)=>{calls.push({address,selectedMint});if(!selectedMint)throw Error('Full inventory unavailable');return [];};
+ const result=await f.desk.prepare({side:'BUY',mint},{markets:[market()],solUsd:100,updatedAt:Date.now()});
+ assert.equal(result.intent.side,'BUY');assert.deepEqual(calls,[{address:owner,selectedMint:mint}]);assert.equal(f.sends,0);
+});

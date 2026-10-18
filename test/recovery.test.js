@@ -77,6 +77,6 @@ test('owner recovery re-verifies at commit, persists paused native positions and
   f.setHoldings([{pubkey:f.baseAta,account:f.token(new PublicKey(f.mint),f.user,f.raw)}]);await agent.recoverPurchase(f.input);await agent.recoverPurchase(f.input);
   const disk=JSON.parse(await readFile(agent.file,'utf8'));assert.equal(disk.positions.length,1);assert.equal(disk.trades.length,1);assert.equal(disk.pending,null);assert.equal(disk.running,false);assert.equal(disk.telegramOutbox,undefined);assert.equal(await readFile(agent.file,'utf8'),await readFile(agent.backupFile,'utf8'));
   const restarted=new OwnerAgent(dir,direct,f.execution,f.owner);await restarted.load();assert.equal(restarted.state.positions[0].costSol,.0213462);assert.equal(restarted.state.recoveryRequired,true);assert.equal(restarted.vault.keypair,null);
-  const ephemeral=new OwnerAgent(dir,direct,f.execution,f.owner,{storageMode:'ephemeral'});await assert.rejects(ephemeral.recoverPurchase(f.input),/Volume/);assert.equal(ephemeral.state,null);
+  const ephemeral=new OwnerAgent(dir,direct,f.execution,f.owner,{storageMode:'ephemeral'});await ephemeral.recoverPurchase(f.input);assert.equal(ephemeral.state.positions.length,1);assert.equal(ephemeral.state.running,false);
  }finally{await rm(dir,{recursive:true,force:true});}
 });

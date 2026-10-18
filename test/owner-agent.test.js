@@ -94,16 +94,16 @@ test('kill and BUY-pause during RPC reads prevent a buy from reaching the signer
  }finally{await f.cleanup();}}
 });
 
-test('missing or empty journals cannot rebase on remaining SOL when the owner still has tokens',async()=>{
+test('unmanaged wallet tokens do not block starting or buying another mint and are not automatically adopted',async()=>{
  const f=await fixture();try{
-  const data=Buffer.alloc(165);new PublicKey(f.mint).toBuffer().copy(data,0);f.kp.publicKey.toBuffer().copy(data,32);data.writeBigUInt64LE(13523538793n,64);
-  f.execution.holdings=async()=>[{account:{data}}];
-  await assert.rejects(f.agent.enable(),/Ví đang có token/);assert.equal(f.agent.state,null);assert.equal(f.sends,0);
-  const status=await f.agent.status();assert.equal(status.wallet.inventory[0].mint,f.mint);assert.equal(status.wallet.inventory[0].tracked,false);assert.equal(status.wallet.tokenBalances[f.mint],'13523538793');assert.ok(status.recoveryMessage.includes('sổ giao dịch trống'));
-  f.execution.holdings=async()=>[];await f.agent.enable();await f.agent.pause();f.execution.holdings=async()=>[{account:{data}}];await assert.rejects(f.agent.enable(),/khôi phục/);assert.equal(f.agent.state.cashSol,.3);
+  const oldMint=Keypair.generate().publicKey.toBase58(),data=Buffer.alloc(165);new PublicKey(oldMint).toBuffer().copy(data,0);f.kp.publicKey.toBuffer().copy(data,32);data.writeBigUInt64LE(13523538793n,64);
+  f.execution.holdings=async(_owner,mint)=>!mint||mint===oldMint?[{account:{data}}]:[];
+  await f.agent.enable();await f.agent.inventoryTask;assert.equal(f.agent.state.running,true);assert.equal(f.agent.state.positions.length,0);
+  const status=await f.agent.status();assert.equal(status.wallet.inventory[0].mint,oldMint);assert.equal(status.wallet.inventory[0].tracked,false);assert.equal(status.wallet.tokenBalances[oldMint],'13523538793');assert.ok(status.recoveryMessage.includes('tùy chọn'));assert.notEqual(status.entryStatus.phase,'ledger-review');
+  await f.agent.tick(f.feed());assert.equal(f.sends,1);assert.equal(f.agent.state.pending.intent.mint,f.mint);
  }finally{await f.cleanup();}
 });
-test('restart preserves confirmed positions and both journal copies; a missing primary uses the backup with BUY locked',async()=>{
+test('restart preserves confirmed positions and both journal copies; a missing primary loads the backup paused for normal owner re-enable',async()=>{
  const f=await fixture();try{
   await f.agent.enable();await f.agent.tick(f.feed());await f.agent.tick(f.feed());assert.equal(f.agent.state.positions.length,1);
   assert.equal(await readFile(f.agent.file,'utf8'),await readFile(f.agent.backupFile,'utf8'));
@@ -117,18 +117,33 @@ test('a missing primary with a signed backup still reconciles exactly once and n
   const direct=new DirectWallet(f.execution);direct.owner=f.owner;const restarted=new OwnerAgent(f.dir,direct,f.execution,f.owner);await restarted.load();assert.ok(restarted.state.pending.transaction);await restarted.tick(f.feed());await restarted.tick(f.feed());assert.equal(restarted.state.positions.length,1);assert.equal(restarted.state.trades.length,1);assert.equal(f.sends,1);assert.equal(restarted.state.recoveryRequired,true);
  }finally{await f.cleanup();}
 });
-test('Railway ephemeral storage blocks new buys and payouts, but confirmed tracked positions can still exit',async()=>{
+test('Railway ephemeral storage does not block BUY, confirmed receipts or subsequent position management',async()=>{
  const f=await fixture();try{
-  const ephemeral=new OwnerAgent(f.dir,f.direct,f.execution,f.owner,{storageMode:'ephemeral'});ephemeral.vault.keypair=f.kp;await assert.rejects(ephemeral.enable(),/Volume/);assert.equal(ephemeral.state,null);
-  await f.agent.enable();await f.agent.tick(f.feed());await f.agent.tick(f.feed());await f.agent.pause();
-  const agent=new OwnerAgent(f.dir,f.direct,f.execution,f.owner,{storageMode:'ephemeral'});await agent.load();agent.vault.keypair=f.kp;
-  const data=Buffer.alloc(165);new PublicKey(f.mint).toBuffer().copy(data,0);f.kp.publicKey.toBuffer().copy(data,32);data.writeBigUInt64LE(3000000n,64);f.execution.holdings=async()=>[{account:{data}}];
-  await agent.enable();assert.equal(agent.state.running,true);await assert.rejects(agent.execute({side:'BUY',mint:f.mint},f.feed()),/Volume/);await assert.rejects(agent.execute({side:'PROFIT'},f.feed()),/Volume/);
-  f.execution.sellQuote=async()=>({mint:f.mint,rawAmount:'3000000',checkedAt:Date.now(),netSol:.02});
-  f.execution.prepare=async()=>({bytes:new VersionedTransaction(new TransactionMessage({payerKey:f.kp.publicKey,recentBlockhash:Keypair.generate().publicKey.toBase58(),instructions:[SystemProgram.transfer({fromPubkey:f.kp.publicKey,toPubkey:Keypair.generate().publicKey,lamports:1})]}).compileToV0Message()).serialize(),lastValidBlockHeight:200});
-  await agent.tick(f.feed());assert.equal(agent.state.pending.intent.side,'SELL');assert.equal(f.sends,2);
+  const agent=new OwnerAgent(f.dir,f.direct,f.execution,f.owner,{storageMode:'ephemeral'});agent.vault.keypair=f.kp;
+  await agent.enable();assert.equal(agent.state.running,true);await agent.tick(f.feed());assert.equal(agent.state.pending.intent.side,'BUY');assert.equal(f.sends,1);
+  await agent.tick(f.feed());assert.equal(agent.state.positions.length,1);assert.equal(agent.state.trades.length,1);assert.equal(agent.state.pending,null);assert.equal(agent.state.storageBlockedReason,null);
+  const status=await agent.status();assert.equal(status.storageMode,'ephemeral');assert.notEqual(status.entryStatus.phase,'ledger-review');
  }finally{await f.cleanup();}
 });
-test('unavailable inventory fails closed before initializing a new owner budget',async()=>{
- const f=await fixture();try{f.execution.holdings=async()=>{throw Error('RPC unavailable');};await assert.rejects(f.agent.enable(),/danh sách token/);assert.equal(f.agent.state,null);assert.equal(f.sends,0);}finally{await f.cleanup();}
+test('full-wallet inventory failure does not block enable or BUY, while a per-token balance failure cannot sign',async()=>{
+ const f=await fixture();try{
+  f.execution.holdings=async(_owner,mint)=>{if(!mint)throw Error('full inventory RPC unavailable');return [];};
+  await f.agent.enable();await f.agent.inventoryTask;assert.equal(f.agent.state.running,true);assert.ok(f.agent.inventoryError);await f.agent.tick(f.feed());assert.equal(f.sends,1);assert.equal(f.agent.state.pending.intent.side,'BUY');
+  const status=await f.agent.status();assert.ok(status.wallet.inventoryError);assert.notEqual(status.entryStatus.phase,'ledger-review');assert.equal(status.error,null);
+ }finally{await f.cleanup();}
+ const f2=await fixture();try{f2.execution.holdings=async()=>{throw Error('RPC unavailable');};await f2.agent.enable();await f2.agent.tick(f2.feed());assert.equal(f2.sends,0);assert.equal(f2.agent.state.pending,null);}finally{await f2.cleanup();}
+});
+test('a stalled full-wallet inventory is independent of owner enable and a valid trade',async()=>{
+ const f=await fixture();let release;const wait=new Promise(r=>release=r);try{
+  f.execution.holdings=async(_owner,mint)=>{if(!mint)await wait;return [];};
+  await f.agent.enable();assert.equal(f.agent.state.running,true);assert.ok(f.agent.inventoryTask);
+  await f.agent.tick(f.feed());assert.equal(f.sends,1);assert.ok(f.agent.inventoryTask);
+ }finally{release();await f.agent.inventoryTask;await f.cleanup();}
+});
+test('legacy recovery and storage BUY locks do not survive explicit enable; incomplete profit remains protected',async()=>{
+ const f=await fixture();try{
+  await f.agent.enable();await f.agent.pause();Object.assign(f.agent.state,{recoveryRequired:true,buyPaused:true,storageBlockedReason:'legacy-volume-lock',entryStatus:{phase:'ledger-review',message:'old lock'}});
+  const before=f.agent.state.cashSol;await f.agent.enable();assert.equal(f.agent.state.buyPaused,false);assert.equal(f.agent.state.storageBlockedReason,null);assert.equal(f.agent.state.recoveryRequired,true);assert.equal(f.agent.state.cashSol,before);assert.equal(f.agent.state.entryStatus,undefined);
+  await f.agent.tick(f.feed());assert.equal(f.sends,1);assert.equal(f.agent.state.pending.intent.side,'BUY');
+ }finally{await f.cleanup();}
 });

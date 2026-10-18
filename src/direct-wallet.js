@@ -40,7 +40,7 @@ export class DirectWallet{
   const side=input.side;if(!['BUY','SELL'].includes(side))throw Error('Loại lệnh không hợp lệ.');
   if(side==='BUY'&&(feed.error||!feed.updatedAt||Date.now()-feed.updatedAt>DEFAULTS.maxPriceAgeMs||feed.updatedAt>Date.now()||!Number.isFinite(feed.solUsd)||feed.solUsd<=0))throw Error('Chờ dữ liệu thị trường mới.');
   const market=feed.markets.find(m=>m.mint===input.mint);if(!market)throw Error('Token chưa có dữ liệu trong tập quét.');
-  const holdings=await this.execution.holdings(this.owner);
+  const holdings=await this.execution.holdings(this.owner,market.mint);
   let held=0n;for(const a of holdings){const d=a.account.data;if(d.length>=165&&new PublicKey(d.subarray(0,32)).toBase58()===market.mint)held+=d.readBigUInt64LE(64);}
   let amount;
   if(side==='BUY'){

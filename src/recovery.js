@@ -57,7 +57,7 @@ export function adoptPurchase(current,owner,proof,walletBalance){
  const entryPriceSol=proof.swapInputSol/proof.quantity;
  s.positions.push({mint:proof.mint,pairAddress:proof.pairAddress,symbol:proof.mint.slice(0,6),quantity:proof.quantity,initialQuantity:proof.quantity,rawQuantity:proof.rawQuantity,decimals:proof.decimals,costSol:proof.costSol,initialCostSol:proof.costSol,costUsd:0,initialCostUsd:0,entrySolUsd:null,entryPriceUsd:null,lastPriceUsd:null,peakPriceUsd:null,priceBasis:'sol',entryPriceSol,lastPriceSol:entryPriceSol,peakPriceSol:entryPriceSol,nextTakeProfitPriceSol:null,maxGainPct:0,openedAt:proof.openedAt,observedSince:Date.now(),phase:'initial',realizedPnlSol:0,recoveredUsd:0,runnerSteps:0,recoverySignature:proof.signature});
  s.trades.unshift({side:'BUY',mode:'live',mint:proof.mint,symbol:proof.mint.slice(0,6),quantity:proof.quantity,priceUsd:null,sol:proof.costSol,at:proof.openedAt,reason:'verified-recovery',signature:proof.signature,networkFeeSol:proof.networkFeeSol,recovered:true});
- s.recordedSignatures.push(proof.signature);s.running=false;s.buyPaused=true;s.recoveryRequired=true;s.recoveryReason='Đã khôi phục vị thế từ receipt; lịch sử tài khoản chưa đầy đủ. Chỉ quản lý SELL, khóa BUY và chuyển lãi cho đến khi khôi phục nhật ký đầy đủ.';
+ s.recordedSignatures.push(proof.signature);s.running=false;s.buyPaused=true;s.recoveryRequired=true;s.recoveryReason='Đã khôi phục vị thế từ receipt; lịch sử tài khoản chưa đầy đủ nên chưa chuyển lãi. Bật bot để tiếp tục BUY/SELL theo giới hạn vốn.';
  s.recoveries??=[];s.recoveries.push({...proof,recoveredAt:Date.now()});
  event(s,'Khôi phục vị thế từ giao dịch '+proof.signature+'; giữ nguyên SOL hiện có, không trừ tiền mua lần hai.');return s;
 }

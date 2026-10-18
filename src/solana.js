@@ -81,9 +81,11 @@ export class SolanaExecution{
   const roundTrip=await jupiterRoundTrip(m.mint),slot=await this.rpc.getSlot('confirmed');if(roundTrip.quoteContextSlot>slot+20||slot-roundTrip.quoteContextSlot>20)throw Error('Jupiter quote slot không còn mới.');
   return {...facts,...roundTrip,quoteReserveSol:Number(state.poolQuoteAmount.toString())/1e9,holderCount:owners.size,top10ExcludesPool:true,top10Pct:percent(distribution.slice(0,10).reduce((a,b)=>a+b,0n)),largestHolderPct:percent(distribution[0]??0n),devPct};
  }
- async holdings(owner){
+ async holdings(owner,mint=null){
   const key=new PublicKey(owner),all=[];
-  for(const programId of [TOKEN,TOKEN2022]){const result=await this.rpc.getTokenAccountsByOwner(key,{programId});all.push(...result.value);}
+  if(mint){const result=await this.rpc.getTokenAccountsByOwner(key,{mint:new PublicKey(mint)},'confirmed');all.push(...result.value);}
+  else for(const programId of [TOKEN,TOKEN2022]){const result=await this.rpc.getTokenAccountsByOwner(key,{programId});all.push(...result.value);}
+  if(mint&&all.some(a=>!Buffer.isBuffer(a.account.data)||a.account.data.length<165||new PublicKey(a.account.data.subarray(0,32)).toBase58()!==mint||!new PublicKey(a.account.data.subarray(32,64)).equals(key)))throw new TradePolicyError('Số dư token trả về không khớp lệnh/ví chủ.');
   if(all.length>64)throw new TradePolicyError('Ví có quá nhiều tài khoản token để kiểm tra an toàn.');return all;
  }
  async entryQuote(mint,amount){const q=await jupiterEntryQuote(mint,amount),slot=await this.rpc.getSlot('confirmed');if(q.contextSlot>slot+20||slot-q.contextSlot>20)throw Error('Jupiter entry quote slot đã cũ.');return q;}
@@ -99,7 +101,11 @@ export class SolanaExecution{
   const keys=tx.message.getAccountKeys({addressLookupTableAccounts:tables});
   if(tx.message.compiledInstructions.some(i=>!PROGRAMS.has(keys.get(i.programIdIndex).toBase58())))throw new TradePolicyError('Giao dịch gọi chương trình ngoài danh sách hỗ trợ.');
   const fee=await this.rpc.getFeeForMessage(tx.message);if(!Number.isSafeInteger(fee.value)||fee.value>25000)throw new TradePolicyError('Phí mạng vượt giới hạn 0,000025 SOL.');
-  const owned=await this.holdings(owner),addresses=[owner,...owned.map(a=>a.pubkey)];
+  // Only accounts listed in this transaction can change. Inspect every referenced wallet-owned
+  // token account, including unrelated mints, without requiring a full-wallet discovery RPC.
+  const messageKeys=Array.from({length:keys.length},(_,i)=>keys.get(i)),messageInfo=await this.rpc.getMultipleAccountsInfo(messageKeys);
+  if(messageInfo.length!==messageKeys.length)throw new TradePolicyError('Thiếu dữ liệu tài khoản giao dịch.');
+  const owned=messageKeys.filter((_,i)=>{const info=messageInfo[i];return info&&(info.owner.equals(TOKEN)||info.owner.equals(TOKEN2022))&&tokenData(info)?.owner===owner.toBase58();}),addresses=[owner,...owned];
   for(const mint of [input,output])if(mint!==SOL){const ata=PublicKey.findProgramAddressSync([owner.toBuffer(),new PublicKey(q.tokenProgram??TOKEN).toBuffer(),new PublicKey(mint).toBuffer()],ATA)[0];if(!addresses.some(a=>a.equals(ata)))addresses.push(ata);}
   const beforeInfo=await this.rpc.getMultipleAccountsInfo(addresses),sim=await this.rpc.simulateTransaction(tx,{sigVerify:false,replaceRecentBlockhash:true,accounts:{encoding:'base64',addresses:addresses.map(a=>a.toBase58())}});
   if(sim.value.err||!sim.value.accounts||sim.value.accounts.length!==addresses.length)throw new TradePolicyError('Mô phỏng giao dịch thất bại.');

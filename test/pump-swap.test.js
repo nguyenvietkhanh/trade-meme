@@ -46,3 +46,17 @@ test('a local pool cannot relax the owner entry price reference supplied by Jupi
  await assert.rejects(buildPumpSwap(f.rpc,{...request(f),referenceMinOut:(BigInt(base.quote.outAmount)+1n).toString()}),/Jupiter/);
  const reference=BigInt(base.quote.outAmount)*99n/100n,result=await buildPumpSwap(f.rpc,{...request(f),referenceMinOut:String(reference)});assert.ok(BigInt(result.quote.otherAmountThreshold)>=reference);
 });
+
+test('official SDK simulation checks referenced accounts without depending on full-wallet inventory',async()=>{
+ const f=await pumpFixture(),execution=new SolanaExecution();execution.rpc=f.rpc;
+ execution.holdings=async()=>{throw Error('Global wallet inventory must not be required by prepare');};
+ const result=await execution.prepare({ownerAddress:f.user.toBase58(),input:SOL,output:f.mint.toBase58(),amount:'30000000',poolAddress:f.poolKey.toBase58()});
+ assert.ok(result.bytes.length>0);assert.equal(result.quote.inAmount,'30000000');assert.equal(result.signature,null);
+});
+
+test('per-mint token balances work independently of global inventory and reject mismatched owner/mint data',async()=>{
+ const f=await pumpFixture({buy:false}),execution=new SolanaExecution(),mint=f.mint.toBase58(),calls=[];
+ execution.rpc={getTokenAccountsByOwner:async(owner,filter)=>{calls.push(filter);if(!filter.mint)throw Error('Global index unavailable');assert.ok(owner.equals(f.user));assert.equal(filter.mint.toBase58(),mint);return {value:[{pubkey:f.baseAta,account:f.map.get(f.baseAta.toBase58())}]};}};
+ assert.equal((await execution.holdings(f.user,mint))[0].account.data.readBigUInt64LE(64),100000000n);assert.equal(calls.length,1);
+ const account=f.map.get(f.baseAta.toBase58());Keypair.generate().publicKey.toBuffer().copy(account.data,32);await assert.rejects(execution.holdings(f.user,mint),/không khớp/);
+});
