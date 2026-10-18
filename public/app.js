@@ -30,6 +30,9 @@ function render(){
   $('last-evaluation').textContent=(d.lastEvaluationAt?'Đánh giá gần nhất '+time(d.lastEvaluationAt):'Chưa có vòng đánh giá tự động')+` · Mục tiêu ${(d.scanIntervalMs??5000)/1000} giây/lần`;
   $('scan-blockers').innerHTML=d.topBlockers.map(b=>`<span class="blocker">${b.count} token: ${escape(b.reason)}</span>`).join('');
   $('feed-warnings').textContent=(f.warnings??[]).join(' ');
+  const pumpFun=f.sources?.pumpFun;
+  $('pumpfun-status').textContent=pumpFun?.message??'pump.fun trước migrate: chưa có trạng thái nguồn.';
+  if(pumpFun?.stages)$('pumpfun-status').textContent+=` Đã khám phá ${pumpFun.discoveredMints??0} token · đọc được ${pumpFun.verifiedCurves??0} curve ở lượt gần nhất · ${pumpFun.liquidCurves??0} qua lọc thanh khoản/vốn hóa · ${pumpFun.freshMarkets??0} có dữ liệu mới.`;
   $('build-revision').textContent='Bản chạy: '+s.buildRevision.slice(0,7);
   $('connection').textContent=fresh?'● Dữ liệu trực tuyến':'● Dữ liệu chưa sẵn sàng';
   $('feed-time').textContent=f.updatedAt?`Giá SOL ${money(f.solUsd)} · ${time(f.updatedAt)}`:'Đang lấy giá thật…';

@@ -21,3 +21,24 @@ test('a slow/blocked curve feed runs in the background and cannot hold the ordin
  let release;const wait=new Promise(r=>release=r),source=new PumpFunMarkets({},async()=>{await wait;return new Response('blocked',{status:403});});
  const first=source.cachedMarkets(100);assert.equal(first.markets.length,0);assert.ok(first.warnings.length);assert.ok(source.job);const job=source.job;source.cachedMarkets(100);assert.equal(source.job,job);release();await job;assert.equal(source.latest.markets.length,0);assert.ok(source.latest.warnings[0].includes('chưa khả dụng'));
 });
+test('a discovery 403 remains visible between refresh attempts, and only a successful response clears it',async t=>{
+ let now=Date.now(),calls=0;t.mock.method(Date,'now',()=>now);
+ const source=new PumpFunMarkets({},async()=>{calls++;return calls===1?new Response('blocked',{status:403}):new Response('[]');});
+ const first=await source.markets(100);assert.equal(first.diagnostics.status,'unavailable');assert.equal(first.diagnostics.stages.discovery.errorCode,'HTTP_403');const failedAt=first.diagnostics.stages.discovery.checkedAt;
+ now+=5000;const second=await source.markets(100);assert.equal(calls,1);assert.equal(second.diagnostics.stages.discovery.checkedAt,failedAt);assert.ok(second.warnings.some(w=>w.includes('chưa khả dụng')));assert.ok(second.diagnostics.message.includes('HTTP_403'));
+ now+=30000;const recovered=await source.markets(100);assert.equal(calls,2);assert.equal(recovered.diagnostics.status,'empty');assert.equal(recovered.diagnostics.stages.discovery.errorCode,null);assert.equal(recovered.warnings.length,0);assert.equal(recovered.diagnostics.stages.discovery.lastSuccessAt,now);
+});
+test('diagnostics distinguish a successful list from failed/empty curve RPC without exposing raw errors',async()=>{
+ let failed=true;const source=new PumpFunMarkets({curveMarketData:async()=>{if(failed)throw Error('private endpoint /?api-key=fixture-do-not-publish');return [];}},async()=>new Response(JSON.stringify([{mint,complete:false}])));
+ const first=await source.markets(100);assert.equal(first.diagnostics.discoveredMints,1);assert.equal(first.diagnostics.stages.discovery.status,'ok');assert.equal(first.diagnostics.stages.curveRpc.status,'error');assert.equal(first.diagnostics.freshMarkets,0);assert.ok(!JSON.stringify(first).includes('fixture-do-not-publish'));
+ failed=false;const recovered=await source.markets(100);assert.equal(recovered.diagnostics.stages.curveRpc.status,'ok');assert.equal(recovered.diagnostics.status,'waiting');assert.ok(recovered.diagnostics.message.includes('Chưa đọc được curve'));
+});
+test('trade-history 429 is separate from RPC success, survives skipped polls, recovers and expires honestly',async t=>{
+ let now=Date.now(),blocked=true;t.mock.method(Date,'now',()=>now);
+ const execution={curveMarketData:async()=>[{mint,venue:'pumpfun',dexId:'pumpfun',updatedAt:now,liquidityQuoteSol:30,liquidityUsd:3000,valuationUsd:40000,creatorAddress:users[0],tokenSupplyRaw:1e15}]};
+ const source=new PumpFunMarkets(execution,async url=>url.includes('/trades/')?(blocked?new Response('limited',{status:429}):new Response(JSON.stringify(trades(now)))):new Response(JSON.stringify([{mint,complete:false}])));
+ const first=await source.markets(100);assert.equal(first.diagnostics.stages.discovery.status,'ok');assert.equal(first.diagnostics.stages.curveRpc.status,'ok');assert.equal(first.diagnostics.stages.activity.errorCode,'HTTP_429');assert.equal(first.diagnostics.freshMarkets,0);
+ now+=1000;const skipped=await source.markets(100);assert.equal(skipped.diagnostics.stages.activity.errorCode,'HTTP_429');assert.ok(skipped.warnings.length);
+ now+=10000;blocked=false;const good=await source.markets(100);assert.equal(good.diagnostics.status,'ready');assert.equal(good.diagnostics.freshMarkets,1);assert.equal(good.diagnostics.completeActivityMarkets,1);assert.equal(good.diagnostics.stages.activity.errorCode,null);assert.equal(good.warnings.length,0);
+ now+=31000;const stale=source.diagnostics(good.markets);assert.equal(stale.freshMarkets,0);assert.equal(stale.status,'stale');assert.ok(stale.message.includes('đã cũ'));
+});
