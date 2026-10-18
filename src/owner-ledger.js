@@ -2,6 +2,7 @@ import {freshState,recordBuy,recordSell,riskCheck,exitPlan,event} from './engine
 import {rankMarket} from './strategy.js';
 import {profitOrder,PROFIT_RECIPIENT} from './profit.js';
 import {STRATEGY_VERSION,positionLimitReached,canFundBuy,BUY_LAMPORTS,walletOrderSol,WALLET_SIZING_VERSION,WALLET_ORDER_FRACTION} from './desk-rules.js';
+import {enqueueTrainingRecord} from './training-records.js';
 
 export function createOwnerLedger(owner,balance){
  if(!Number.isFinite(balance)||balance<0||!Number.isSafeInteger(Math.round(balance*1e9)))throw Error('Số dư SOL ví chưa hợp lệ.');
@@ -48,17 +49,20 @@ export function ownerExit(s,mint,fraction=1,reason='owner-exit',solUsd){
 }
 export function applyOwnerReceipt(s,pending,result){
  if(s.recordedSignatures.includes(result.signature)){s.pending=null;return false;}
- const {intent}=pending;
+ const {intent}=pending;let trainingPosition=null;
  if(result.status==='confirmed'&&intent.side==='PROFIT'){
   if(result.recipient!==PROFIT_RECIPIENT||result.amountLamports!==intent.amount||!Number.isFinite(result.feeSol)||result.feeSol<0||result.feeSol>.00001||!Number.isFinite(result.solDelta)||Math.abs(result.solDelta+Number(intent.amount)/1e9+result.feeSol)>1e-10)throw Error('Receipt chuyển lãi không khớp.');
   const amount=Number(result.amountLamports)/1e9;s.cashSol+=result.solDelta;s.withdrawnSol=(s.withdrawnSol??0)+amount;s.payoutFeesSol=(s.payoutFeesSol??0)+result.feeSol;
   s.payouts??=[];s.payouts.unshift({signature:result.signature,amountSol:amount,feeSol:result.feeSol,recipient:PROFIT_RECIPIENT,at:Date.now()});s.payouts=s.payouts.slice(0,500);event(s,'Đã xác nhận chuyển lãi '+amount.toFixed(6)+' SOL về '+PROFIT_RECIPIENT);
  }else if(result.status==='confirmed'){
   const raw=BigInt(result.tokenDelta),quantity=Number(raw<0n?-raw:raw)/10**result.decimals,m={mint:intent.mint,symbol:intent.symbol,priceUsd:intent.priceUsd,liquidityUsd:intent.entryLiquidityUsd,volume5mUsd:intent.entryVolume5mUsd,pairAddress:intent.pairAddress};
-  if(intent.side==='BUY')recordBuy(s,m,intent.solUsd,{quantity,costSol:-result.solDelta,priceUsd:Number(intent.amount??BUY_LAMPORTS)/1e9*intent.solUsd/quantity,rawQuantity:raw.toString(),decimals:result.decimals,signature:result.signature,networkFeeSol:result.feeSol??null},Date.now(),intent.reason,'live');
+  if(intent.side==='BUY'){
+   recordBuy(s,m,intent.solUsd,{quantity,costSol:-result.solDelta,priceUsd:Number(intent.amount??BUY_LAMPORTS)/1e9*intent.solUsd/quantity,rawQuantity:raw.toString(),decimals:result.decimals,signature:result.signature,networkFeeSol:result.feeSol??null},Date.now(),intent.reason,'live');
+   trainingPosition=s.positions.find(p=>p.mint===intent.mint);trainingPosition.trainingEntry={signature:result.signature,features:intent.entryFeatures??null};
+  }
   else{
    const p=s.positions.find(p=>p.mint===intent.mint);if(!p||raw>=0n||-raw>BigInt(p.rawQuantity))throw Error('Lượng bán không khớp sổ vị thế của ứng dụng.');
-   const remaining=BigInt(p.rawQuantity)+raw;
+   trainingPosition=p;const remaining=BigInt(p.rawQuantity)+raw;
    recordSell(s,m,intent.solUsd,{quantity,proceedsSol:result.solDelta,priceUsd:result.solDelta*intent.solUsd/quantity,rawBalance:remaining.toString(),closed:remaining===0n,signature:result.signature,networkFeeSol:result.feeSol??null},Date.now(),intent.reason,'live');
   }
  }else if(result.status==='failed'){
@@ -67,6 +71,10 @@ export function applyOwnerReceipt(s,pending,result){
   s.cashSol-=result.feeSol;s.realizedNetSol=(s.realizedNetSol??0)-result.feeSol;event(s,'Giao dịch thất bại trên Solana; đã ghi nhận phí mạng.');
  }else if(result.status==='expired')event(s,'Giao dịch hết hạn; không ghi nhận mua/bán và không tự gửi thay thế.');
  else return false;
+ if(result.status==='confirmed'&&['BUY','SELL'].includes(intent.side)){
+  const trade=s.trades.find(t=>t.signature===result.signature);
+  if(trade){trainingPosition.trainingFills??=[];trainingPosition.trainingFills.push({signature:trade.signature,side:trade.side,at:trade.at,sol:trade.sol,pnlSol:trade.pnlSol??null,networkFeeSol:trade.networkFeeSol,reason:trade.reason});enqueueTrainingRecord(s,trade,intent,trainingPosition,result);}
+ }
  if(Number.isSafeInteger(result.slot))s.lastReceiptSlot=Math.max(s.lastReceiptSlot??0,result.slot);
  s.recordedSignatures.push(result.signature);s.recordedSignatures=s.recordedSignatures.slice(-1000);s.pending=null;if(s.haltKind==='drawdown'&&!s.positions.length){s.liquidating=false;s.running=false;}return result.status==='confirmed';
 }

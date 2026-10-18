@@ -5,6 +5,7 @@ import {DEFAULT_OWNER} from './security.js';
 import {SOL,DEFAULTS} from './engine.js';
 import {rankMarket} from './strategy.js';
 import {walletOrderSol,validHistoricalBuy,WALLET_SIZING_VERSION} from './desk-rules.js';
+import {entryFeatures} from './training-records.js';
 import {availableProfitLamports,PROFIT_RECIPIENT} from './profit.js';
 
 const hash=tx=>createHash('sha256').update(tx.message.serialize()).digest('hex');
@@ -51,7 +52,7 @@ export class DirectWallet{
    amount=String(Math.round(size*1e9));
    const proof=this.execution.roundTripQuote?await this.execution.roundTripQuote(market.mint,amount):market.evidence;
    if(!proof||proof.probeSol!==size||!rankMarket({...market,evidence:{...market.evidence,...proof},solUsd:feed.solUsd},DEFAULTS).eligible)throw Error('Quote vòng chưa đạt cho cỡ lệnh thực tế.');
-   sizing={sizingVersion:WALLET_SIZING_VERSION,walletBalanceLamports:Math.floor(balance*1e9+1e-6),entryQuoteProof:proof};
+   sizing={sizingVersion:WALLET_SIZING_VERSION,walletBalanceLamports:Math.floor(balance*1e9+1e-6),entryQuoteProof:proof,entryFeatures:entryFeatures(market,feed.solUsd,proof)};
    await this.execution.mintCheck(market.mint);
   }else{
    if(typeof input.amount!=='string'||!/^\d{1,20}$/.test(input.amount)||BigInt(input.amount)<=0n||BigInt(input.amount)>held)throw Error('Lượng bán vượt số token đang có.');

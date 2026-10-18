@@ -47,8 +47,17 @@ export class TelegramReporter{
  async disable(){await writeDurable(this.file,{version:1,owner:this.owner,disabled:true});this.doc=null;this.creds=null;this.enabled=false;this.configured=false;this.error=null;}
  status(state){return {configured:this.configured,enabled:this.enabled,unlocked:!!this.creds,pending:(state?.telegramOutbox??[]).filter(m=>m.status==='queued').length,failed:(state?.telegramOutbox??[]).filter(m=>m.status==='failed').length,error:this.error};}
  async send(text){
+  return this.post('sendMessage',JSON.stringify({chat_id:this.creds?.chatId,text,link_preview_options:{is_disabled:true}}),{'Content-Type':'application/json'},5000);
+ }
+ async sendReport(ref,text,archive){
+  if(!archive)throw Error('Chưa có kho báo cáo training.');
+  const {filename,content}=await archive.document(ref),form=new FormData();
+  form.set('chat_id',this.creds?.chatId??'');form.set('caption',text.slice(0,1024));form.set('document',new Blob([content],{type:'application/json'}),filename);
+  return this.post('sendDocument',form,{},20000);
+ }
+ async post(method,body,headers,timeout){
   if(!this.creds)throw Error('Mở khóa bộ ký và lưu cấu hình Telegram trước khi gửi thử.');
-  let response;try{response=await this.fetcher('https://api.telegram.org/bot'+this.creds.token+'/sendMessage',{method:'POST',redirect:'error',headers:{'Content-Type':'application/json'},body:JSON.stringify({chat_id:this.creds.chatId,text,link_preview_options:{is_disabled:true}}),signal:AbortSignal.timeout(5000)});}catch{throw Error('Không kết nối được Telegram; kết quả gửi có thể chưa rõ.');}
+  let response;try{response=await this.fetcher('https://api.telegram.org/bot'+this.creds.token+'/'+method,{method:'POST',redirect:'error',headers,body,signal:AbortSignal.timeout(timeout)});}catch{throw Error('Không kết nối được Telegram; kết quả gửi có thể chưa rõ.');}
   let value;try{value=await response.json();}catch{throw Error('Telegram trả dữ liệu không hợp lệ.');}
   if(!response.ok||value.ok!==true)throw Object.assign(Error('Telegram HTTP '+response.status+'; kiểm tra token, Chat ID và đã Start bot.'),{retryAfter:Number.isSafeInteger(value.parameters?.retry_after)?Math.min(3600,Math.max(1,value.parameters.retry_after)):null});
   if(!Number.isSafeInteger(value.result?.message_id))throw Error('Telegram chưa xác nhận mã thông báo.');
@@ -60,9 +69,9 @@ export class TelegramReporter{
   try{
    await this.unlock(agent.vault.keypair);if(!this.creds)return;
    let message;
-   await agent.serial(async()=>{const s=agent.state;if(!s)return;const next=(s.telegramOutbox??[]).find(m=>m.status==='queued'&&m.nextAttemptAt<=Date.now());if(!next)return;next.attempts++;next.nextAttemptAt=Date.now()+60000;await agent.save();message={id:next.id,text:next.text};});
+   await agent.serial(async()=>{const s=agent.state;if(!s)return;const next=(s.telegramOutbox??[]).find(m=>m.status==='queued'&&m.nextAttemptAt<=Date.now());if(!next)return;next.attempts++;next.nextAttemptAt=Date.now()+60000;await agent.save();message={id:next.id,text:next.text,report:next.report};});
    if(!message)return;
-   let messageId,error;try{messageId=await this.send(message.text);}catch(e){error=e;}
+   let messageId,error;try{messageId=message.report?await this.sendReport(message.report,message.text,agent.training):await this.send(message.text);}catch(e){error=e;}
    await agent.serial(async()=>{
     const s=agent.state,entry=s?.telegramOutbox?.find(m=>m.id===message.id);if(!entry)return;
     if(!error){entry.status='sent';entry.messageId=messageId;entry.sentAt=Date.now();this.error=null;}

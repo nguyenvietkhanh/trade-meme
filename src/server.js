@@ -191,6 +191,6 @@ const host=process.env.HOST??(onRailway?'0.0.0.0':'127.0.0.1'),port=Number(proce
 server.listen(port,host,()=>{if(!auth.origin)auth.origin=`http://127.0.0.1:${server.address().port}`;console.log(`Meme Desk listening on ${host}:${server.address().port} — ${liveOnly?'MAINNET / OWNER AUTH REQUIRED':'PAPER TEST WORKSPACE'}`);refresh();});
 const timer=setInterval(refresh,SCAN_RULES.intervalMs);
 const agentTimer=ownerAgent?setInterval(()=>ownerAgent.tick(feed),2000):null;
-const telegramTimer=ownerAgent?setInterval(()=>ownerAgent.telegram.tick(ownerAgent),2000):null;
+const telegramTimer=ownerAgent?setInterval(async()=>{await ownerAgent.training.tick(ownerAgent);await ownerAgent.telegram.tick(ownerAgent);},2000):null;
 async function shutdown(){clearInterval(timer);if(agentTimer)clearInterval(agentTimer);if(telegramTimer)clearInterval(telegramTimer);server.close();if(ownerAgent)await ownerAgent.pause(true);await serial(async()=>{state.running=false;await save();});process.exit(0);}
 process.on('SIGTERM',shutdown);process.on('SIGINT',shutdown);
