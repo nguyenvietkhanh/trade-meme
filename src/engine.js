@@ -9,7 +9,7 @@ export function freshState(now=Date.now()){
  return {version:2,profile:PROFILE,strategy:'autonomous',watchlist:[],decisions:[],decisionStats:{evaluated:0,bought:0,rejected:0},cashSol:DEFAULTS.initialSol,positions:[],trades:[],events:[],curve:[],running:false,automationRequested:false,halted:null,day:new Date(now).toISOString().slice(0,10),dayStartEquity:DEFAULTS.initialSol,peakEquity:DEFAULTS.initialSol,maxDrawdownObservedPct:0,cooldowns:{},settings:{...DEFAULTS}};
 }
 export function equity(state,markets,solUsd,now=Date.now()){
- return (state.withdrawnSol??0)+state.cashSol+state.positions.reduce((sum,p)=>sum+(()=>{const m=markets.find(m=>m?.mint===p.mint),q=m?.exitQuote;return q?.mint===p.mint&&typeof p.rawQuantity==='string'&&q.rawAmount===p.rawQuantity&&Number.isFinite(q.netSol)&&q.checkedAt<=now&&now-q.checkedAt<=state.settings.maxPriceAgeMs?q.netSol:p.quantity*(m?.priceUsd??p.lastPriceUsd)/solUsd;})(),0);
+ return (state.withdrawnSol??0)+state.cashSol+state.positions.reduce((sum,p)=>sum+(()=>{const m=markets.find(m=>m?.mint===p.mint),q=m?.exitQuote;return q?.mint===p.mint&&typeof p.rawQuantity==='string'&&q.rawAmount===p.rawQuantity&&Number.isFinite(q.netSol)&&q.checkedAt<=now&&now-q.checkedAt<=state.settings.maxPriceAgeMs?q.netSol:p.priceBasis==='sol'?p.quantity*(p.lastPriceSol??p.entryPriceSol):p.quantity*(m?.priceUsd??p.lastPriceUsd)/solUsd;})(),0);
 }
 export function event(state,message,now=Date.now()){state.events.unshift({at:now,message});state.events=state.events.slice(0,200);}
 export function assertMarket(m,now,s,exit=false){
@@ -51,6 +51,17 @@ export function recordBuy(state,m,solUsd,fill,now=Date.now(),reason='manual',mod
 }
 export function netPositionUsd(p,m,solUsd,s){return Math.max(0,p.quantity*m.priceUsd*(1-s.slippageBps/10000)-s.feeSol*solUsd);}
 export function exitPlan(p,m,solUsd,s,now=Date.now()){
+ if(p.priceBasis==='sol'){
+  // A receipt contains SOL cost, not historical SOL/USD. Keep recovered positions in SOL.
+  const q=m.exitQuote,fresh=q?.mint===p.mint&&q.rawAmount===p.rawQuantity&&Number.isFinite(q.netSol)&&q.netSol>=0&&q.checkedAt<=now&&now-q.checkedAt<=s.maxPriceAgeMs;
+  const priceSol=fresh?q.netSol/p.quantity:p.lastPriceSol;
+  const normalized={...p,priceBasis:undefined,entryPriceUsd:p.entryPriceSol,peakPriceUsd:p.peakPriceSol,lastPriceUsd:priceSol,initialCostUsd:p.initialCostSol,nextTakeProfitPriceUsd:p.nextTakeProfitPriceSol};
+  const plan=exitPlan(normalized,{...m,priceUsd:priceSol},1,{...s,dustUsd:solUsd>0?s.dustUsd/solUsd:0},now);
+  p.peakPriceSol=normalized.peakPriceUsd;p.maxGainPct=normalized.maxGainPct;if(fresh){p.lastPriceSol=priceSol;p.lastQuoteAt=q.checkedAt;}
+  if(plan?.reason==='time-stop'&&p.observedSince&&now-p.observedSince<s.timeStopMs)return null;
+  // Stale native marks must not trigger price-based exits. Time/emergency rules still apply.
+  return fresh||['max-hold','time-stop','emergency-risk'].includes(plan?.reason)?plan:null;
+ }
  const quote=m.exitQuote,quoted=quote&&quote.mint===p.mint&&typeof p.rawQuantity==='string'&&quote.rawAmount===p.rawQuantity&&Number.isFinite(quote.netSol)&&quote.netSol>=0&&quote.checkedAt<=now&&now-quote.checkedAt<=s.maxPriceAgeMs;
  const trailing=p.peakPriceUsd/p.entryPriceUsd>=8?20:p.peakPriceUsd/p.entryPriceUsd>=4?25:s.runnerTrailingPct;
  const value=quoted?quote.netSol*solUsd:netPositionUsd(p,m,solUsd,s);
@@ -92,6 +103,11 @@ export function recordSell(state,m,solUsd,fill,now=Date.now(),reason='manual',mo
  if(fraction===1){state.lossStreak=p.realizedPnlSol<0?(state.lossStreak??0)+1:0;if(state.lossStreak>=state.settings.lossStreakLimit){state.lossPauseUntil=now+state.settings.lossPauseMs;state.lossStreak=0;event(state,'Nghỉ BUY 2 giờ sau 3 vị thế thua liên tiếp; vẫn quản lý thoát lệnh.',now);}state.positions=state.positions.filter(x=>x!==p);state.cooldowns[p.mint]=now+(reason==='stop-loss'?state.settings.reentryMs:state.settings.coarseCooldownMs);}
  else if(reason==='recover-capital'){p.phase='runner';p.peakPriceUsd=m.priceUsd;p.nextTakeProfitPriceUsd=p.entryPriceUsd*2**Math.max(1,Math.floor(Math.log2(m.priceUsd/p.entryPriceUsd))+1);}
  else if(reason==='runner-double'){p.runnerSteps++;p.nextTakeProfitPriceUsd=p.entryPriceUsd*2**Math.max(1,Math.floor(Math.log2(m.priceUsd/p.entryPriceUsd))+1);}
+ if(p.priceBasis==='sol'&&fraction<1&&['recover-capital','runner-double'].includes(reason)){
+  const priceSol=fill.proceedsSol/fill.quantity;
+  if(reason==='recover-capital')p.peakPriceSol=priceSol;
+  p.nextTakeProfitPriceSol=p.entryPriceSol*2**Math.max(1,Math.floor(Math.log2(priceSol/p.entryPriceSol))+1);p.nextTakeProfitPriceUsd=null;p.peakPriceUsd=null;
+ }
  state.trades.unshift({side:'SELL',mode,mint:p.mint,symbol:p.symbol,quantity,priceUsd:fill.priceUsd,sol:proceeds,pnlSol,at:now,reason,fraction,closed:fraction===1,positionPnlSol:fraction===1?p.realizedPnlSol:null,initialRiskSol:p.initialCostSol*state.settings.stopLossPct/100,networkFeeSol:fill.networkFeeSol??null,remainingQuantity:p.quantity,signature:fill.signature});state.trades=state.trades.slice(0,500);
  state.decisions.unshift({at:now,mint:p.mint,symbol:p.symbol,score:null,action:'SELL',reason});state.decisions=state.decisions.slice(0,300);
  event(state,`${mode==='live'?'MAINNET':'MÔ PHỎNG'} • Bán ${(fraction*100).toFixed(2)}% ${p.symbol} (${reason}): P/L ${pnlSol.toFixed(5)} SOL`,now);

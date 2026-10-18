@@ -63,7 +63,7 @@ Sau khi lệnh bán xác nhận, sổ tính lãi ròng bằng SOL sau giá vốn
 
 Lệnh chuyển dùng ví chủ làm fee payer, đúng đích cố định, kiểm tra phí/số dư/simulation. Bộ ký đã mở tự ký; không chờ xác nhận từng lần. Chỉ ghi đã chuyển khi receipt xác nhận cả số dư giảm, số dư tăng của đích và fee. Kết quả chưa rõ được đối soát sau restart/reload mà không ký/gửi lại. Khoản chuyển được cộng lại khi tính tổng hiệu quả vốn để không hiện thành lỗ; phí chuyển vẫn làm giảm P&L.
 
-Nguồn tính vốn/lãi là nhật ký `owner-agent-state.json` trên server. Đây không phải hợp đồng giới hạn chi tiêu hoặc sổ lưu bền vững trên server. Không sửa số liệu bằng tay hoặc chạy nhiều service/replica độc lập cho cùng ví. Chuyển/rút tài sản ngoài ứng dụng làm lệch sổ và phải kiểm tra trước khi tiếp tục.
+Nguồn tính vốn/lãi là nhật ký `owner-agent-state.json` trên server. Sổ chỉ lưu bền vững khi đặt trên ổ dữ liệu/Volume; đây không phải hợp đồng giới hạn chi tiêu on-chain. Không sửa số liệu bằng tay hoặc chạy nhiều service/replica độc lập cho cùng ví. Chuyển/rút tài sản ngoài ứng dụng làm lệch sổ và phải kiểm tra trước khi tiếp tục.
 
 ## Nhật ký, kiểm toán và bảo mật
 
@@ -71,7 +71,17 @@ Nhật ký server gắn theo chủ, chứa vị thế, phí đo được, trades
 
 Xuất nhật ký trước khi redeploy hoặc di chuyển dữ liệu. Xuất chỉ chứa state, không xuất két hoặc khóa. Khôi phục chỉ khi dừng và không có pending đang xử lý, phải cùng chủ, đúng schema; không reset budget khi còn vị thế. `owner-signer.json` chỉ chứa bản mã hóa; không tự tạo đè két có sẵn. Sau restart không có khóa trong RAM, kể cả sổ trước đó đang chạy. Dùng một service/replica.
 
-**Lưu trữ Railway:** có volume thì két và sổ nằm trong `RAILWAY_VOLUME_MOUNT_PATH/meme-pilot`. Không có volume, service vẫn cho thiết lập và chạy nhưng dữ liệu có thể mất qua deploy/restart thay container. Khi mất sổ/khóa, bot không thể tự phục hồi hoặc quản lý vị thế cũ; cần khôi phục, đối chiếu on-chain và nhập lại khóa nếu két bị mất. Volume không bắt buộc để bấm chạy, nhưng cần cho lưu bền vững qua redeploy. Giao diện hiển thị rõ trạng thái lưu trữ.
+**Lưu trữ Railway:** có volume thì két và sổ nằm trong `RAILWAY_VOLUME_MOUNT_PATH/meme-pilot`. Railway bắt buộc có Volume trước BUY/chuyển lãi hoặc khôi phục vị thế từ receipt. Thiếu Volume vẫn phục vụ giao diện, đối soát pending và cho SELL vị thế đã ghi nhận; không dùng cảnh báo làm thay thế cho lưu bền vững. Gắn Volume `/data` vào đúng service; Railway tự đặt `RAILWAY_VOLUME_MOUNT_PATH`, ứng dụng ghi `/data/meme-pilot`. Trước khi gắn Volume/redeploy, dừng bot và xuất nhật ký: ổ mới không tự sao chép dữ liệu của container cũ. Cần giữ khóa gốc, mật khẩu và cấu hình Telegram để nhập lại nếu két/cấu hình cũ mất. Không chạy nhiều replica cho cùng ví.
+
+### Khôi phục vị thế bị mất sổ
+
+Sổ chính và `owner-agent-state.backup.json` được ghi atomic/fsync trước broadcast. Bản sao nằm cùng ổ nên không thay thế Volume hoặc bản xuất bên ngoài. Nếu mất file chính nhưng còn bản sao, khởi động dừng và khóa BUY/chuyển lãi; pending vẫn được đối soát, không gửi lại. File chính hỏng không bị ghi đè. Nếu sổ trống/mất nhưng ví còn token, không tạo ngân sách mới từ số SOL còn lại.
+
+Đăng nhập ví chủ → **Đối soát token trong ví** → nhập mint và link giao dịch mua → **Kiểm tra giao dịch mua** → **Khôi phục vị thế đã xác minh**. Có thể điền sẵn bằng query `recoverMint` và `recoverTx`; chỉ chứa thông tin công khai. Hai endpoint `/api/signer/recovery-preview` và `/api/signer/recovery-apply` đều yêu cầu chủ đã xác thực, đúng origin. Chức năng này chỉ đọc RPC và ghi sổ, không ký/gửi giao dịch; không tự bán token chưa được chủ nhận vào sổ.
+
+Receipt phải là lệnh PumpSwap exact-quote 0,02/0,03 SOL thành công, đúng người ký/payer, mint, pool/PDA; trước mua không có token đó. Số token còn nguyên, không có giao dịch token xen kẽ (kiểm tra tối đa 50 giao dịch mới hơn của tài khoản token, gồm cả chuyển qua delegate); thiếu/mâu thuẫn dữ liệu thì yêu cầu nhật ký đầy đủ. Khôi phục vốn bằng chênh lệch SOL thực của receipt, không cộng phí/rent lần hai, không trừ giá vốn mua thêm khỏi tiền mặt hiện tại. Ghi BUY lịch sử đúng thời gian blockchain, khôi phục một lần theo signature, không gửi thông báo giả như vừa thực hiện lệnh mới.
+
+Không suy ra SOL/USD quá khứ từ receipt. Vị thế khôi phục dùng giá vốn/quote ròng bằng SOL cho stop/TP/runner. Không giả định đỉnh giá trong thời gian sổ mất: time-stop 45 phút cần ít nhất 45 phút theo dõi từ lúc khôi phục; max-hold 6 giờ vẫn tính từ block time gốc. Lịch sử tài khoản chưa đầy đủ thì P&L tổng hiển thị chưa xác định, BUY và chuyển lãi vẫn khóa; mở khóa và bật lại chỉ quản lý SELL. Muốn tiếp tục BUY/chuyển lãi cần khôi phục nhật ký tài khoản đầy đủ; một receipt mua không chứng minh toàn bộ P&L/ngưỡng lỗ trước đó.
 
 Auditor hiển thị 7 ngày gần nhất: lệnh đóng, win rate, kỳ vọng R theo rủi ro ban đầu, max drawdown và vị thế >72h. Thiếu dữ liệu thì báo thiếu, không tự đặt fee/slippage bằng 0 hoặc bịa giao dịch giả định. Tham chiếu: ≥40 vị thế đóng đo được, win rate ≥33%, expectancy ≥+0,4R, max DD ≤15%. Không tự đổi ngưỡng sau khi xem kết quả, không tự bật quyền giao dịch vì báo cáo đạt. Chưa có đủ mẫu không phải bằng chứng có lãi.
 
@@ -91,7 +101,7 @@ npm test
 npm start
 ```
 
-Railway auto-deploy nhánh `codex/meme-pilot-railway` bằng Dockerfile/railway.json; một replica. Không dùng Docker secret mounts vì builder Railway hiện chỉ hỗ trợ cache mounts. Volume lưu sổ và két của bộ ký; thiếu volume được cảnh báo, không chặn thiết lập. `PUBLIC_ORIGIN` cần đúng HTTPS origin khi dùng domain riêng. Egress: api.dexscreener.com, api.geckoterminal.com, api.rugcheck.xyz, lite-api.jup.ag và hai RPC trên; không cần Helius/Jupiter. Install scripts tắt; SDK transitive TOML/BigInt dùng các bản override đã kiểm tra.
+Railway auto-deploy nhánh `codex/meme-pilot-railway` bằng Dockerfile/railway.json; một replica. Không dùng Docker secret mounts vì builder Railway hiện chỉ hỗ trợ cache mounts. Volume lưu sổ và két của bộ ký; thiếu Volume khóa BUY/chuyển lãi, vẫn cho quản lý SELL đã ghi sổ. `PUBLIC_ORIGIN` cần đúng HTTPS origin khi dùng domain riêng. Egress: api.dexscreener.com, api.geckoterminal.com, api.rugcheck.xyz, lite-api.jup.ag và hai RPC trên; không cần Helius/Jupiter. Install scripts tắt; SDK transitive TOML/BigInt dùng các bản override đã kiểm tra.
 
 `/api/health`: `mode=live`, `rpcMode=keyless`, `signingMode=owner-agent` và `unattendedSigningAvailable=true`, `strategyVersion=solana-six-stage-desk-v4`. Đây là HTTP/feed readiness, không chứng minh giao dịch/lợi nhuận. `/api/direct/status` cần đăng nhập chủ.
 

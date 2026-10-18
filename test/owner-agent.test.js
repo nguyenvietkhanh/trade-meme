@@ -93,3 +93,42 @@ test('kill and BUY-pause during RPC reads prevent a buy from reaching the signer
   const tick=f.agent.tick(f.feed());await ready;const stopped=mode==='kill'?f.agent.pause(true):f.agent.pauseBuys();resolve();await Promise.all([tick,stopped]);assert.equal(f.sends,0);assert.equal(f.agent.state.pending,null);
  }finally{await f.cleanup();}}
 });
+
+test('missing or empty journals cannot rebase on remaining SOL when the owner still has tokens',async()=>{
+ const f=await fixture();try{
+  const data=Buffer.alloc(165);new PublicKey(f.mint).toBuffer().copy(data,0);f.kp.publicKey.toBuffer().copy(data,32);data.writeBigUInt64LE(13523538793n,64);
+  f.execution.holdings=async()=>[{account:{data}}];
+  await assert.rejects(f.agent.enable(),/Ví đang có token/);assert.equal(f.agent.state,null);assert.equal(f.sends,0);
+  const status=await f.agent.status();assert.equal(status.wallet.inventory[0].mint,f.mint);assert.equal(status.wallet.inventory[0].tracked,false);assert.equal(status.wallet.tokenBalances[f.mint],'13523538793');assert.ok(status.recoveryMessage.includes('sổ giao dịch trống'));
+  f.execution.holdings=async()=>[];await f.agent.enable();await f.agent.pause();f.execution.holdings=async()=>[{account:{data}}];await assert.rejects(f.agent.enable(),/khôi phục/);assert.equal(f.agent.state.cashSol,.3);
+ }finally{await f.cleanup();}
+});
+test('restart preserves confirmed positions and both journal copies; a missing primary uses the backup with BUY locked',async()=>{
+ const f=await fixture();try{
+  await f.agent.enable();await f.agent.tick(f.feed());await f.agent.tick(f.feed());assert.equal(f.agent.state.positions.length,1);
+  assert.equal(await readFile(f.agent.file,'utf8'),await readFile(f.agent.backupFile,'utf8'));
+  const restarted=new OwnerAgent(f.dir,f.direct,f.execution,f.owner);await restarted.load();assert.equal(restarted.state.positions[0].rawQuantity,'3000000');assert.equal(restarted.state.cashSol,.2699);assert.equal(restarted.state.trades.length,1);assert.equal(restarted.state.running,false);
+  await rm(f.agent.file);const fallback=new OwnerAgent(f.dir,f.direct,f.execution,f.owner);await fallback.load();assert.equal(fallback.state.positions.length,1);assert.equal(fallback.state.recoveryRequired,true);assert.equal(fallback.state.running,false);assert.equal(fallback.state.buyPaused,true);
+ }finally{await f.cleanup();}
+});
+test('a missing primary with a signed backup still reconciles exactly once and never rebroadcasts',async()=>{
+ const f=await fixture();try{
+  await f.agent.enable();await f.agent.tick(f.feed());assert.equal(f.sends,1);await rm(f.agent.file);
+  const direct=new DirectWallet(f.execution);direct.owner=f.owner;const restarted=new OwnerAgent(f.dir,direct,f.execution,f.owner);await restarted.load();assert.ok(restarted.state.pending.transaction);await restarted.tick(f.feed());await restarted.tick(f.feed());assert.equal(restarted.state.positions.length,1);assert.equal(restarted.state.trades.length,1);assert.equal(f.sends,1);assert.equal(restarted.state.recoveryRequired,true);
+ }finally{await f.cleanup();}
+});
+test('Railway ephemeral storage blocks new buys and payouts, but confirmed tracked positions can still exit',async()=>{
+ const f=await fixture();try{
+  const ephemeral=new OwnerAgent(f.dir,f.direct,f.execution,f.owner,{storageMode:'ephemeral'});ephemeral.vault.keypair=f.kp;await assert.rejects(ephemeral.enable(),/Volume/);assert.equal(ephemeral.state,null);
+  await f.agent.enable();await f.agent.tick(f.feed());await f.agent.tick(f.feed());await f.agent.pause();
+  const agent=new OwnerAgent(f.dir,f.direct,f.execution,f.owner,{storageMode:'ephemeral'});await agent.load();agent.vault.keypair=f.kp;
+  const data=Buffer.alloc(165);new PublicKey(f.mint).toBuffer().copy(data,0);f.kp.publicKey.toBuffer().copy(data,32);data.writeBigUInt64LE(3000000n,64);f.execution.holdings=async()=>[{account:{data}}];
+  await agent.enable();assert.equal(agent.state.running,true);await assert.rejects(agent.execute({side:'BUY',mint:f.mint},f.feed()),/Volume/);await assert.rejects(agent.execute({side:'PROFIT'},f.feed()),/Volume/);
+  f.execution.sellQuote=async()=>({mint:f.mint,rawAmount:'3000000',checkedAt:Date.now(),netSol:.02});
+  f.execution.prepare=async()=>({bytes:new VersionedTransaction(new TransactionMessage({payerKey:f.kp.publicKey,recentBlockhash:Keypair.generate().publicKey.toBase58(),instructions:[SystemProgram.transfer({fromPubkey:f.kp.publicKey,toPubkey:Keypair.generate().publicKey,lamports:1})]}).compileToV0Message()).serialize(),lastValidBlockHeight:200});
+  await agent.tick(f.feed());assert.equal(agent.state.pending.intent.side,'SELL');assert.equal(f.sends,2);
+ }finally{await f.cleanup();}
+});
+test('unavailable inventory fails closed before initializing a new owner budget',async()=>{
+ const f=await fixture();try{f.execution.holdings=async()=>{throw Error('RPC unavailable');};await assert.rejects(f.agent.enable(),/danh sách token/);assert.equal(f.agent.state,null);assert.equal(f.sends,0);}finally{await f.cleanup();}
+});

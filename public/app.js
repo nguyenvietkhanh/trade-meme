@@ -7,7 +7,7 @@ const money=n=>Number.isFinite(n)?new Intl.NumberFormat('en-US',{style:'currency
 const time=n=>new Date(n).toLocaleTimeString('vi-VN');
 const escape=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const sign=n=>n>=0?'positive':'negative';
-const signed=n=>(n>=0?'+':'')+fmt(n,5);
+const signed=n=>Number.isFinite(n)?(n>=0?'+':'')+fmt(n,5):'—';
 function rowEmpty(cols,text){return `<tr><td colspan="${cols}" class="empty">${text}</td></tr>`;}
 function render(){
   if(!state)return;
@@ -48,7 +48,7 @@ function render(){
   $('position-count').textContent=`${s.positions.length} / ${cfg.maxPositions}`;
   $('positions').innerHTML=s.positions.map(p=>{
     const m=f.markets.find(m=>m.mint===p.mint),price=m?.priceUsd??p.lastPriceUsd;
-    const pnl=p.quantity*price*(1-cfg.slippageBps/10000)/f.solUsd-cfg.feeSol-p.costSol;
+    const pnl=p.priceBasis==='sol'?(p.lastQuoteAt&&Date.now()-p.lastQuoteAt<=cfg.maxPriceAgeMs?p.quantity*p.lastPriceSol-p.costSol:null):p.quantity*price*(1-cfg.slippageBps/10000)/f.solUsd-cfg.feeSol-p.costSol;
     return `<tr data-spider-mint="${escape(p.mint)}" data-spider-role="position"><td><strong>${escape(p.symbol)}</strong><span class="mint">${p.phase==='runner'?'Đã thu hồi vốn · x2 tiếp bán 50%':'Chờ +80% thu hồi vốn'}</span><span class="mint">${escape(p.mint)}</span></td><td>${fmt(p.costSol,5)}</td><td>${money(price)}</td><td class="${sign(pnl)}">${signed(pnl)}</td><td><button data-action="sell" data-mint="${escape(p.mint)}" ${!fresh||!m||busy?'disabled':''}>Bán</button></td></tr>`;
   }).join('')||rowEmpty(5,'Chưa có vị thế đã xác nhận.');
   const q=$('search').value.toLowerCase();

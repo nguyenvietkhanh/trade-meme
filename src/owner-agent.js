@@ -12,6 +12,7 @@ import {STRATEGY_VERSION} from './desk-rules.js';
 import {auditDesk} from './auditor.js';
 import {diagnoseOwnerEntry} from './diagnostics.js';
 import {TelegramReporter,enqueueTradeReport} from './telegram.js';
+import {inventoryBalances,verifyPurchase,adoptPurchase} from './recovery.js';
 
 export function signerRequestAllowed(req,expectedOrigin,onRailway){
  if(onRailway)return typeof expectedOrigin==='string'&&expectedOrigin.startsWith('https://');
@@ -20,6 +21,7 @@ export function signerRequestAllowed(req,expectedOrigin,onRailway){
 function validatedState(s,owner){
  if(s?.owner!==owner||s.ownerLedgerVersion!==1||!Array.isArray(s.positions)||s.positions.length>5||!Array.isArray(s.trades)||!Array.isArray(s.events)||!Array.isArray(s.curve)||!Array.isArray(s.recordedSignatures)||!Number.isFinite(s.cashSol)||s.cashSol<0||!(s.settings?.initialSol>0&&s.settings.initialSol<=.3))throw Error('Nhật ký không thuộc ví chủ hoặc sai cấu trúc.');
  for(const p of s.positions)if(typeof p.rawQuantity!=='string'||!/^\d{1,20}$/.test(p.rawQuantity)||BigInt(p.rawQuantity)<=0n||!Number.isInteger(p.decimals)||p.decimals<0||p.decimals>9||!Number.isFinite(p.quantity)||p.quantity<=0||!Number.isFinite(p.costSol)||p.costSol<0)throw Error('Vị thế khôi phục không hợp lệ.');
+ for(const p of s.positions)if(p.priceBasis==='sol'&&(!(p.entryPriceSol>0)||!Number.isFinite(p.entryPriceSol)||!(p.peakPriceSol>0)||!Number.isFinite(p.peakPriceSol)||!Number.isFinite(p.lastPriceSol)||p.lastPriceSol<0||p.nextTakeProfitPriceSol!==null&&!(p.nextTakeProfitPriceSol>0)))throw Error('Giá vốn SOL của vị thế khôi phục không hợp lệ.');
  const withdrawnSol=s.withdrawnSol??0,payoutFeesSol=s.payoutFeesSol??0,realizedNetSol=s.realizedNetSol??s.cashSol+s.positions.reduce((sum,p)=>sum+p.costSol,0)+withdrawnSol+payoutFeesSol-s.settings.initialSol;
  if(!Number.isFinite(withdrawnSol)||withdrawnSol<0||!Number.isFinite(payoutFeesSol)||payoutFeesSol<0||!Number.isFinite(realizedNetSol)||!Array.isArray(s.payouts??[]))throw Error('Sổ chuyển lợi nhuận không hợp lệ.');
  if(!Array.isArray(s.telegramOutbox??[])||(s.telegramOutbox??[]).some(m=>typeof m.id!=='string'||typeof m.text!=='string'||m.text.length>4096||!['queued','sent','failed'].includes(m.status)||!Number.isSafeInteger(m.attempts)||m.attempts<0||m.attempts>6||!Number.isFinite(m.nextAttemptAt)))throw Error('Hàng đợi báo cáo Telegram không hợp lệ.');
@@ -32,15 +34,28 @@ function validatedState(s,owner){
  return {...s,strategyVersion:STRATEGY_VERSION,withdrawnSol,payoutFeesSol,realizedNetSol,payouts:s.payouts??[],settings:{...DEFAULTS,initialSol:s.settings.initialSol},running:false};
 }
 export class OwnerAgent{
- constructor(dir,direct,execution,owner=DEFAULT_OWNER){this.owner=owner;this.file=path.join(dir,'owner-agent-state.json');this.vault=new OwnerSignerVault(path.join(dir,'owner-signer.json'),owner);this.telegram=new TelegramReporter(dir,owner);this.direct=direct;this.execution=execution;this.state=null;this.queue=Promise.resolve();this.busy=false;this.wallet=null;this.error=null;this.commandEpoch=0;}
+ constructor(dir,direct,execution,owner=DEFAULT_OWNER,options={}){this.owner=owner;this.file=path.join(dir,'owner-agent-state.json');this.backupFile=path.join(dir,'owner-agent-state.backup.json');this.storageMode=options.storageMode??'local-disk';this.storageBlockedReason=this.storageMode==='ephemeral'?'Railway chưa có Volume lưu bền vững: khóa BUY và chuyển lãi; vẫn cho đối soát và SELL vị thế đã ghi nhận.':null;this.vault=new OwnerSignerVault(path.join(dir,'owner-signer.json'),owner);this.telegram=new TelegramReporter(dir,owner);this.direct=direct;this.execution=execution;this.state=null;this.queue=Promise.resolve();this.busy=false;this.wallet=null;this.error=null;this.commandEpoch=0;this.inventory=null;this.inventoryAt=0;this.inventoryTask=null;this.inventoryError=null;}
  serial(fn){const task=this.queue.then(fn);this.queue=task.catch(()=>{});return task;}
  async load(){
   await this.vault.load();
   await this.telegram.load();
   try{this.state=validatedState(JSON.parse(await readFile(this.file,'utf8')),this.owner);}
-  catch(e){if(e.code!=='ENOENT')throw Error('Nhật ký bộ ký tự động không hợp lệ; không ghi đè.');}
+  catch(e){if(e.code!=='ENOENT')throw Error('Nhật ký bộ ký tự động không hợp lệ; không ghi đè.');
+   try{this.state=validatedState(JSON.parse(await readFile(this.backupFile,'utf8')),this.owner);this.state.recoveryRequired=true;this.state.buyPaused=true;this.state.recoveryReason='Đang dùng bản sao dự phòng; cần đối soát và khôi phục nhật ký đầy đủ trước khi BUY.';}catch(backup){if(backup.code!=='ENOENT')throw Error('Bản sao nhật ký không hợp lệ; không tạo sổ mới.');}
+  }
  }
- async save(){if(this.state)await writeDurable(this.file,this.state);}
+ async save(){if(this.state){await writeDurable(this.file,this.state);await writeDurable(this.backupFile,this.state);}}
+ async readInventory(force=false){
+  if(this.inventoryTask)return this.inventoryTask;if(!force&&this.inventory&&Date.now()-this.inventoryAt<10000)return this.inventory;
+  this.inventoryTask=(async()=>{try{const balances=inventoryBalances(await this.execution.holdings(this.owner),this.owner);this.inventory=[...balances].map(([mint,raw])=>({mint,rawQuantity:raw.toString()}));this.inventoryAt=Date.now();this.inventoryError=null;return this.inventory;}catch{this.inventoryError='Chưa đọc được danh sách token thực trong ví; khóa BUY cho đến khi đối soát được.';throw Error(this.inventoryError);}finally{this.inventoryTask=null;}})();return this.inventoryTask;
+ }
+ ledgerGuard(){return this.storageBlockedReason??(this.state?.recoveryRequired?this.state.recoveryReason??'Cần khôi phục nhật ký trước khi BUY.':null)??this.inventoryError;}
+ async previewRecovery(input){return verifyPurchase(this.execution,this.owner,input);}
+ async recoverPurchase(input){return this.serial(async()=>{
+  if(this.storageBlockedReason)throw Error('Gắn Railway Volume trước khi khôi phục để tránh mất vị thế lần nữa.');
+  if(this.state?.running||this.state?.pending)throw Error('Dừng bot và đối soát lệnh chờ trước khi khôi phục.');
+  const proof=await this.previewRecovery(input),balance=await this.execution.balance(this.owner);this.state=adoptPurchase(this.state,this.owner,proof,balance);await this.save();return proof;
+ });}
  trackedMints(){return [...new Set([...(this.state?.positions??[]).map(p=>p.mint),this.state?.pending?.intent?.mint].filter(Boolean))];}
  async restore(s){return this.serial(async()=>{
   if(this.state?.running||this.state?.pending)throw Error('Dừng và đối soát xong trước khi khôi phục.');
@@ -49,10 +64,13 @@ export class OwnerAgent{
  async enable(){return this.serial(async()=>{
   if(!this.vault.keypair)throw Error('Mở khóa bộ ký tự động trước khi chạy.');
   await this.execution.network();const balance=await this.execution.balance(this.owner);
+  const inventory=await this.readInventory(true);
+  if((!this.state||!this.state.trades.length&&!this.state.positions.length&&!this.state.pending)&&inventory.some(a=>a.rawQuantity!=='0'))throw Error('Ví đang có token nhưng nhật ký không có vị thế: khôi phục từ giao dịch mua hoặc bản xuất nhật ký trước, không tạo vốn gốc mới từ số SOL còn lại.');
+  if(this.storageBlockedReason&&!this.state?.positions.length)throw Error(this.storageBlockedReason);
   if(!this.state)this.state=createOwnerLedger(this.owner,balance);
   if(this.state.pending)throw Error('Đợi đối soát giao dịch đang chờ trước khi bật lại.');
   if(this.state.halted&&this.state.haltKind!=='daily'&&!this.state.liquidating)throw Error(this.state.halted);
-  this.state.orderAttempts={};this.state.buyPaused=false;this.state.buyCircuitOpen=false;this.state.executionFailures=0;
+  this.state.storageBlockedReason=this.storageBlockedReason;this.state.orderAttempts={};this.state.buyPaused=!!this.state.recoveryRequired;this.state.buyCircuitOpen=false;this.state.executionFailures=0;
   this.state.running=true;this.state.consecutiveFailures=0;this.lastDecisionFeed=null;this.error=null;event(this.state,'Bộ ký tự động đã bật: ký lệnh bằng ví chủ, không chờ trình duyệt.');try{await this.save();}catch(e){this.state.running=false;this.vault.lock();throw e;}
  });}
  async reviewRisk(feed){return this.serial(async()=>{
@@ -65,11 +83,16 @@ export class OwnerAgent{
  async pause(lock=false){this.commandEpoch++;if(this.state)this.state.running=false;return this.serial(async()=>{if(this.state)this.state.running=false;try{await this.save();}finally{if(lock)this.vault.lock();}});}
  async status(){
   let balanceSol=null,rpcError=null;try{balanceSol=await this.execution.balance(this.owner);}catch{const failures=this.execution.rpc?.rpcDiagnostics?.().failures??[];rpcError='Chưa đọc được số dư qua RPC. '+(failures.length?failures.map(r=>r.host+': '+r.reason).join(' · '):'RPC chưa trả số dư hợp lệ.');}
-  const entryStatus=!this.vault.keypair?{phase:'locked',message:'Bộ ký đang khóa; quét token không đồng nghĩa bot đã được phép mua.'}:!this.state?.running?{phase:'paused',message:'Bot chưa bật; quét token vẫn tiếp tục.'}:rpcError?{phase:'rpc-unavailable',message:rpcError}:this.state.entryStatus??{phase:'checking',message:'Đang kiểm tra điều kiện vào lệnh.'};
-  return {signerAvailable:true,vault:this.vault.status(),telegram:this.telegram.status(this.state),entryStatus,wallet:{...this.direct.configure(),balanceSol,tokenBalances:{},swapReady:balanceSol!==null,unattendedSigning:true},ledger:this.state?{...this.state,pending:this.state.pending?{intent:this.state.pending.intent,signature:this.state.pending.signature,transaction:!!this.state.pending.transaction}:null}:null,audit:this.state?auditDesk(this.state):null,error:rpcError??this.error};
+  try{await this.readInventory();}catch{}
+  const inventory=(this.inventory??[]).map(a=>({...a,tracked:!!this.state?.positions.some(p=>p.mint===a.mint)})),emptyWithAssets=inventory.length&&(!this.state||!this.state.trades.length&&!this.state.positions.length&&!this.state.pending);
+  const recoveryMessage=emptyWithAssets?'Ví có token nhưng sổ giao dịch trống. Không dùng số SOL còn lại làm vốn gốc mới; khôi phục nhật ký/vị thế.':this.state?.recoveryRequired?this.state.recoveryReason:null;
+  const guard=recoveryMessage??this.ledgerGuard();
+  const entryStatus=guard?{phase:'ledger-review',message:guard}:!this.vault.keypair?{phase:'locked',message:'Bộ ký đang khóa; quét token không đồng nghĩa bot đã được phép mua.'}:!this.state?.running?{phase:'paused',message:'Bot chưa bật; quét token vẫn tiếp tục.'}:rpcError?{phase:'rpc-unavailable',message:rpcError}:this.state.entryStatus??{phase:'checking',message:'Đang kiểm tra điều kiện vào lệnh.'};
+  return {signerAvailable:true,vault:this.vault.status(),telegram:this.telegram.status(this.state),storageMode:this.storageMode,recoveryMessage,entryStatus,wallet:{...this.direct.configure(),balanceSol,tokenBalances:Object.fromEntries(inventory.map(a=>[a.mint,a.rawQuantity])),inventory,inventoryAt:this.inventoryAt,inventoryError:this.inventoryError,swapReady:balanceSol!==null,unattendedSigning:true},ledger:this.state?{...this.state,pending:this.state.pending?{intent:this.state.pending.intent,signature:this.state.pending.signature,transaction:!!this.state.pending.transaction}:null}:null,audit:this.state?auditDesk(this.state):null,error:rpcError??this.error};
  }
  async execute(order,feed){
   const s=this.state;if(!s||!this.vault.keypair||s.pending)throw Error('Bộ ký chưa sẵn sàng hoặc còn lệnh chờ.');
+  if(['BUY','PROFIT'].includes(order.side)&&this.ledgerGuard())throw Error(this.ledgerGuard());
   const key=order.side+':'+(order.mint??order.recipient)+':'+(order.amount??'fixed');s.orderAttempts??={};if((s.orderAttempts[key]??0)>=DEFAULTS.maxRetries+1)throw Error('Đã hết 3 lần retry cho lệnh này.');s.orderAttempts[key]=(s.orderAttempts[key]??0)+1;await this.save();
   let prepared;const epoch=this.commandEpoch,started=performance.now(),decisionAt=Date.now();
   try{
@@ -80,6 +103,7 @@ export class OwnerAgent{
    if(tx.message.header.numRequiredSignatures!==1||tx.message.staticAccountKeys[0].toBase58()!==this.owner)throw Error('Sai người ký tự động.');
    if(order.side==='BUY'&&(s.buyPaused||s.buyCircuitOpen||Date.now()-feed.updatedAt>DEFAULTS.maxPriceAgeMs||!rankMarket({...feed.markets.find(m=>m.mint===order.mint),solUsd:feed.solUsd},DEFAULTS).eligible))throw Error('Dữ liệu BUY đã quá 30 giây hoặc kiểm chứng hết hạn; không ký.');
    if(epoch!==this.commandEpoch||!this.vault.keypair)throw Error('Đã dừng bộ ký; không ký lệnh mới.');
+   if(['BUY','PROFIT'].includes(order.side)&&this.ledgerGuard())throw Error(this.ledgerGuard());
    const signStarted=performance.now();tx.sign([this.vault.keypair]);const signMs=performance.now()-signStarted;
    s.pending={attemptKey:key,intent:prepared.intent,transaction:Buffer.from(tx.serialize()).toString('base64'),signature:bs58.encode(tx.signatures[0]),timing:{decisionAt,quoteAgeMs:feed.updatedAt?Math.max(0,decisionAt-feed.updatedAt):null,prepareMs,signMs}};
    await this.save(); // Durable signed journal BEFORE any broadcast, including an uncertain send.
@@ -112,11 +136,12 @@ export class OwnerAgent{
     await this.save();return;
    }
    if(!s.running||!this.vault.keypair)return;
-   const working={...feed,markets:(feed.markets??[]).map(m=>({...m}))};if(!(working.solUsd>0)){working.solUsd=s.positions[0]?.entrySolUsd;working.solUsdEstimated=true;working.error=working.error??'Thiếu giá SOL mới; chỉ quản lý SELL.';}let networkError=null,balance=NaN;
+   s.storageBlockedReason=this.storageBlockedReason;
+   const working={...feed,markets:(feed.markets??[]).map(m=>({...m}))};if(!(working.solUsd>0)){working.solUsd=s.positions[0]?.entrySolUsd??(s.positions.some(p=>p.priceBasis==='sol')?1:null);working.solUsdEstimated=true;working.error=working.error??'Thiếu giá SOL mới; chỉ quản lý SELL.';}let networkError=null,balance=NaN;
    try{balance=await this.execution.balance(this.owner);}catch(e){networkError=e.message;}
    try{
-    const holdings=await this.execution.holdings(this.owner),balances={};
-    for(const a of holdings){const d=a.account.data;if(d.length>=165){const mint=bs58.encode(d.subarray(0,32));balances[mint]=(balances[mint]??0n)+d.readBigUInt64LE(64);}}
+    const holdings=await this.readInventory(true),balances=Object.fromEntries(holdings.map(a=>[a.mint,BigInt(a.rawQuantity)]));
+    if(!s.trades.length&&!s.positions.length&&holdings.length){s.recoveryRequired=true;s.buyPaused=true;s.recoveryReason='Ví có token nhưng nhật ký trống; cần khôi phục trước khi BUY.';}
     for(const p of s.positions)if((balances[p.mint]??0n)<BigInt(p.rawQuantity))throw Error('Token thực tế thấp hơn nhật ký. Kiểm tra giao dịch ngoài ứng dụng.');
    }catch(e){if(/Token thực tế/.test(e.message))throw e;networkError=e.message;}
    for(const p of s.positions){

@@ -44,7 +44,7 @@ const expectedOrigin=process.env.PUBLIC_ORIGIN??(onRailway?'https://'+(process.e
 const auth=new OwnerAuth({owner:DEFAULT_OWNER,origin:expectedOrigin});
 const execution=new SolanaExecution();
 const direct=new DirectWallet(execution);
-const ownerAgent=liveOnly&&process.env.SIGNER_MODE!=='disabled'?new OwnerAgent(dataDir,direct,execution):null;
+const ownerAgent=liveOnly&&process.env.SIGNER_MODE!=='disabled'?new OwnerAgent(dataDir,direct,execution,auth.owner,{storageMode:process.env.RAILWAY_VOLUME_MOUNT_PATH?'persistent-volume':onRailway?'ephemeral':'local-disk'}):null;
 await ownerAgent?.load();
 let feed={markets:[],solUsd:null,updatedAt:null,error:null};
 const verification=new VerificationFeed(globalThis.fetch,execution);
@@ -107,6 +107,8 @@ const server=http.createServer(async(req,res)=>{
         else if(url.pathname==='/api/signer/lock')await ownerAgent.pause(true);
         else if(url.pathname==='/api/signer/close')await ownerAgent.close(input.mint,feed);
         else if(url.pathname==='/api/signer/restore')await ownerAgent.restore(input.ledger);
+        else if(url.pathname==='/api/signer/recovery-preview')return json(res,200,{proof:await ownerAgent.previewRecovery(input)});
+        else if(url.pathname==='/api/signer/recovery-apply')return json(res,200,{ok:true,proof:await ownerAgent.recoverPurchase(input)});
         else if(url.pathname==='/api/signer/export'){res.writeHead(200,{'Content-Type':'application/json','Cache-Control':'no-store'});return res.end(JSON.stringify(ownerAgent.state));}
         else return json(res,404,{error:'Không tìm thấy thao tác bộ ký.'});
         return json(res,200,{ok:true,vault:ownerAgent.vault.status()});
