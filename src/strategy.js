@@ -46,7 +46,7 @@ export function rankMarket(m,s=T,now=Date.now()){
  fail(e.top10ExcludesPool===true&&pct(e.top10Pct)&&e.top10Pct<=35&&pct(e.largestHolderPct)&&e.largestHolderPct<=8,'HOLDER_CONCENTRATION','Top 10 trừ vault/curve phải ≤35%; mỗi ví ≤8%');
  fail(e.devPct==null||pct(e.devPct)&&e.devPct<=5,'DEV_CONCENTRATION','Creator nắm quá 5% hoặc dữ liệu sai');
  fail(e.riskWarningsChecked===true&&Array.isArray(e.criticalWarnings)&&e.criticalWarnings.length===0,'RUG_WARNINGS','Thiếu RugCheck hoặc có rủi ro nghiêm trọng');
- fail(e.roundTripQuoteOk===true&&e.probeSol===.03&&finite(e.roundTripLossPct)&&e.roundTripLossPct>=0&&e.roundTripLossPct<=6&&pct(e.buyImpactPct)&&e.buyImpactPct<=2&&pct(e.sellImpactPct)&&e.sellImpactPct<=2,'ROUND_TRIP_UNVERIFIED','Jupiter quote vòng 0,03 SOL chưa đạt hao hụt ≤6%, impact mỗi chiều ≤2%');
+ fail(e.roundTripQuoteOk===true&&e.probeSol===T.orderSol&&finite(e.roundTripLossPct)&&e.roundTripLossPct>=0&&e.roundTripLossPct<=6&&pct(e.buyImpactPct)&&e.buyImpactPct<=2&&pct(e.sellImpactPct)&&e.sellImpactPct<=2,'ROUND_TRIP_UNVERIFIED','Jupiter quote vòng 0,2 SOL chưa đạt hao hụt ≤6%, impact mỗi chiều ≤2%');
  const h4=e.h4Risk,h4Bound=h4&&typeof h4==='object'&&h4.mint===m.mint&&h4.pairAddress===m.pairAddress&&finite(h4.checkedAt)&&h4.checkedAt<=now;
  const h4Known=h4Bound&&now-h4.checkedAt<=TREND_RULES.h4MaxAgeMs&&['clear','reject'].includes(h4.state);
  const h4Rejected=h4Bound&&h4.state==='reject'&&now-h4.checkedAt<=TREND_RULES.h4RejectMemoryMs;
@@ -73,7 +73,7 @@ export function rankMarket(m,s=T,now=Date.now()){
  fail(score>=60,'LOW_SCORE','Điểm dưới 60/100');
  const blockingStage=!coarse.eligible?'discovery':!roughEligible?'market':safetyReasons.length?'safety':m.signalConfirmed!==true?'confirmation':score<60?'score':'ready';
  const primaryReasons=blockingStage==='discovery'?coarse.reasons:blockingStage==='market'?marketReasons:blockingStage==='safety'?safetyReasons:blockingStage==='confirmation'?['Chờ 2 lần quét liên tiếp cách 10–15 giây']:blockingStage==='score'?['Điểm dưới 60/100']:[];
- return {roughEligible,score,eligible:!reasons.length,reasons,primaryReasons,blockingStage,red_flags,scoreParts:parts,missingScoreData:missing,washPenalty,boostPenalty,h4Penalty,h4Status:h4Rejected?'reject':h4Known?h4.state:'unknown',volumeAcceleration:acceleration,buyShare:trades?m.buys5m/trades:0,orderSol:score>=75&&pct(e.devPct)&&h4Known&&h4.state==='clear'?.03:.02,coarseRejected:!coarse.eligible};
+ return {roughEligible,score,eligible:!reasons.length,reasons,primaryReasons,blockingStage,red_flags,scoreParts:parts,missingScoreData:missing,washPenalty,boostPenalty,h4Penalty,h4Status:h4Rejected?'reject':h4Known?h4.state:'unknown',volumeAcceleration:acceleration,buyShare:trades?m.buys5m/trades:0,orderSol:T.orderSol,coarseRejected:!coarse.eligible};
 }
 export function decideMarket(m,s=T,now=Date.now()){
  const r=rankMarket(m,s,now);

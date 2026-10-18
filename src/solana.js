@@ -6,7 +6,7 @@ import {jupiterSellQuote,jupiterRoundTrip,jupiterEntryQuote} from './sell-quote.
 import {buildPumpSwap,PUMP_PROGRAM} from './pump-swap.js';
 import {SOL} from './engine.js';
 import {keylessConnection,PUBLIC_RPC_ENDPOINTS,MAINNET_GENESIS_HASH} from './rpc.js';
-import {PROFIT_RECIPIENT,PROFIT_RULES,TRADE_RULES,executionSlippageBps} from './desk-rules.js';
+import {PROFIT_RECIPIENT,PROFIT_RULES,TRADE_RULES,BUY_LAMPORTS,executionSlippageBps} from './desk-rules.js';
 export const TOKEN=new PublicKey('TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA');
 export const TOKEN2022=new PublicKey('TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb');
 const ATA=new PublicKey('ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL');
@@ -90,7 +90,7 @@ export class SolanaExecution{
  }
  async entryQuote(mint,amount){const q=await jupiterEntryQuote(mint,amount),slot=await this.rpc.getSlot('confirmed');if(q.contextSlot>slot+20||slot-q.contextSlot>20)throw Error('Jupiter entry quote slot đã cũ.');return q;}
  async prepare({keypair,ownerAddress,input,output,amount,poolAddress,reason='',closeEmptyInput=false,referenceMinOut}){
-  if(input===SOL&&!['20000000','30000000'].includes(String(amount)))throw new TradePolicyError('Chỉ cho lệnh mua 0,02 hoặc 0,03 SOL.');
+  if(input===SOL&&String(amount)!==BUY_LAMPORTS)throw new TradePolicyError('Chỉ cho lệnh mua 0,2 SOL.');
   await this.network();const owner=keypair?.publicKey??new PublicKey(ownerAddress);
   const cap=executionSlippageBps(input===SOL?'BUY':'SELL',reason),emergency=cap===TRADE_RULES.emergencySlippageCapBps;
   const {tx,quote:q,lastValidBlockHeight,closedInputAccount}=await buildPumpSwap(this.rpc,{owner,input,output,amount,poolAddress,slippageBps:emergency?cap:TRADE_RULES.slippageBps,maxReserveFraction:emergency?.1:.02,closeEmptyInput,referenceMinOut});
@@ -126,9 +126,9 @@ export class SolanaExecution{
    return {mint,rawAmount:amount,checkedAt:Date.now(),netSol:Number(p.minNativeOutLamports)/1e9,provider:'PumpSwap',jupiterUnavailable:true,failed:false};
   }
  }
- async prepareProfit(ownerAddress,lamports,initialSol=.3){
+ async prepareProfit(ownerAddress,lamports,initialSol=TRADE_RULES.initialSol){
   if(!Number.isSafeInteger(lamports)||lamports<PROFIT_RULES.minTransferLamports||lamports>PROFIT_RULES.maxTransferLamports)throw new TradePolicyError('Số lãi chuyển không hợp lệ.');
-  if(!Number.isFinite(initialSol)||initialSol<=0||initialSol>.3)throw new TradePolicyError('Ngân sách gốc không hợp lệ.');
+  if(!Number.isFinite(initialSol)||initialSol<=0||initialSol>TRADE_RULES.initialSol)throw new TradePolicyError('Ngân sách gốc không hợp lệ.');
   await this.network();const owner=new PublicKey(ownerAddress),recipient=new PublicKey(PROFIT_RECIPIENT),balance=await this.rpc.getBalance(owner),block=await this.rpc.getLatestBlockhash();
   const tx=new VersionedTransaction(new TransactionMessage({payerKey:owner,recentBlockhash:block.blockhash,instructions:[SystemProgram.transfer({fromPubkey:owner,toPubkey:recipient,lamports})]}).compileToV0Message());
   const fee=await this.rpc.getFeeForMessage(tx.message);

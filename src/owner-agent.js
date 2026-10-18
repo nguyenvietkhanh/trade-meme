@@ -5,7 +5,7 @@ import bs58 from 'bs58';
 import {OwnerSignerVault} from './owner-vault.js';
 import {writeDurable} from './persistence.js';
 import {DEFAULT_OWNER} from './security.js';
-import {createOwnerLedger,nextOwnerOrder,applyOwnerReceipt,ownerExit} from './owner-ledger.js';
+import {createOwnerLedger,nextOwnerOrder,applyOwnerReceipt,ownerExit,allocateOwnerCapital} from './owner-ledger.js';
 import {DEFAULTS,equity,event} from './engine.js';
 import {rankMarket} from './strategy.js';
 import {STRATEGY_VERSION} from './desk-rules.js';
@@ -19,7 +19,7 @@ export function signerRequestAllowed(req,expectedOrigin,onRailway){
  return ['127.0.0.1','::1','::ffff:127.0.0.1'].includes(req.socket.remoteAddress)&&/^127\.0\.0\.1:\d+$/.test(req.headers.host??'');
 }
 function validatedState(s,owner){
- if(s?.owner!==owner||s.ownerLedgerVersion!==1||!Array.isArray(s.positions)||!Array.isArray(s.trades)||!Array.isArray(s.events)||!Array.isArray(s.curve)||!Array.isArray(s.recordedSignatures)||!Number.isFinite(s.cashSol)||s.cashSol<0||!(s.settings?.initialSol>0&&s.settings.initialSol<=.3))throw Error('Nhật ký không thuộc ví chủ hoặc sai cấu trúc.');
+ if(s?.owner!==owner||s.ownerLedgerVersion!==1||!Array.isArray(s.positions)||!Array.isArray(s.trades)||!Array.isArray(s.events)||!Array.isArray(s.curve)||!Array.isArray(s.recordedSignatures)||!Number.isFinite(s.cashSol)||s.cashSol<0||!(s.settings?.initialSol>0&&s.settings.initialSol<=DEFAULTS.initialSol))throw Error('Nhật ký không thuộc ví chủ hoặc sai cấu trúc.');
  for(const p of s.positions)if(typeof p.rawQuantity!=='string'||!/^\d{1,20}$/.test(p.rawQuantity)||BigInt(p.rawQuantity)<=0n||!Number.isInteger(p.decimals)||p.decimals<0||p.decimals>9||!Number.isFinite(p.quantity)||p.quantity<=0||!Number.isFinite(p.costSol)||p.costSol<0)throw Error('Vị thế khôi phục không hợp lệ.');
  for(const p of s.positions)if(p.priceBasis==='sol'&&(!(p.entryPriceSol>0)||!Number.isFinite(p.entryPriceSol)||!(p.peakPriceSol>0)||!Number.isFinite(p.peakPriceSol)||!Number.isFinite(p.lastPriceSol)||p.lastPriceSol<0||p.nextTakeProfitPriceSol!==null&&!(p.nextTakeProfitPriceSol>0)))throw Error('Giá vốn SOL của vị thế khôi phục không hợp lệ.');
  const withdrawnSol=s.withdrawnSol??0,payoutFeesSol=s.payoutFeesSol??0,realizedNetSol=s.realizedNetSol??s.cashSol+s.positions.reduce((sum,p)=>sum+p.costSol,0)+withdrawnSol+payoutFeesSol-s.settings.initialSol;
@@ -68,6 +68,7 @@ export class OwnerAgent{
   if(!this.state){this.state=createOwnerLedger(this.owner,balance);event(this.state,'Bắt đầu sổ mới với ngân sách SOL hiện có; token ngoài sổ không tự động được quản lý.');}
   if(this.state.pending)throw Error('Đợi đối soát giao dịch đang chờ trước khi bật lại.');
   if(this.state.halted&&this.state.haltKind!=='daily'&&!this.state.liquidating)throw Error(this.state.halted);
+  allocateOwnerCapital(this.state,balance);
   this.state.storageBlockedReason=this.storageBlockedReason;this.state.orderAttempts={};this.state.buyPaused=false;this.state.buyCircuitOpen=false;this.state.executionFailures=0;
   delete this.state.entryStatus;this.state.running=true;this.state.consecutiveFailures=0;this.lastDecisionFeed=null;this.error=null;event(this.state,'Bộ ký tự động đã bật: ký lệnh bằng ví chủ, không chờ trình duyệt.');try{await this.save();}catch(e){this.state.running=false;this.vault.lock();throw e;}
  });}
@@ -136,6 +137,7 @@ export class OwnerAgent{
    s.storageBlockedReason=this.storageBlockedReason;
    const working={...feed,markets:(feed.markets??[]).map(m=>({...m}))};if(!(working.solUsd>0)){working.solUsd=s.positions[0]?.entrySolUsd??(s.positions.some(p=>p.priceBasis==='sol')?1:null);working.solUsdEstimated=true;working.error=working.error??'Thiếu giá SOL mới; chỉ quản lý SELL.';}let networkError=null,balance=NaN;
    try{balance=await this.execution.balance(this.owner);}catch(e){networkError=e.message;}
+   if(allocateOwnerCapital(s,balance)>0)await this.save();
    this.refreshInventory();
    for(const p of s.positions){
     let m=working.markets.find(m=>m.mint===p.mint);

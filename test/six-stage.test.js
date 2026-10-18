@@ -9,11 +9,11 @@ import {createOwnerLedger,nextOwnerOrder,applyOwnerReceipt} from '../src/owner-l
 import {jupiterRoundTrip,jupiterSellQuote} from '../src/sell-quote.js';
 import {SOL} from '../src/engine.js';
 const now=Date.now();
-test('six-stage score totals 100, tier size is authoritative, and missing creator reduces size',()=>{
- const m=verifiedMarket({},now);let r=rankMarket(m,R,now);assert.equal(r.score,100);assert.equal(r.orderSol,.03);
+test('six-stage score totals 100, fixed size is authoritative even with optional missing creator data',()=>{
+ const m=verifiedMarket({},now);let r=rankMarket(m,R,now);assert.equal(r.score,100);assert.equal(r.orderSol,.2);
  const e={...m.evidence};delete e.higherLows;delete e.pullback30mPct;delete e.greenCandleConfirmed;
- r=rankMarket({...m,hasProfile:false,sells5m:12,evidence:e},R,now);assert.equal(r.score,73);assert.equal(r.orderSol,.02);assert.equal(r.eligible,true);
- delete e.devPct;r=rankMarket({...m,evidence:e},R,now);assert.equal(r.eligible,true);assert.equal(r.orderSol,.02);
+ r=rankMarket({...m,hasProfile:false,sells5m:12,evidence:e},R,now);assert.equal(r.score,73);assert.equal(r.orderSol,.2);assert.equal(r.eligible,true);
+ delete e.devPct;r=rankMarket({...m,evidence:e},R,now);assert.equal(r.eligible,true);assert.equal(r.orderSol,.2);
  const unsafe=rankMarket({...m,evidence:{...e,top10Pct:36}},R,now);assert.equal(unsafe.eligible,false,'half score never fills mandatory safety');
 });
 test('FDV fallback is limited to pump suffix, legacy scanner cooldown cannot block scoring, quote reserve is mandatory',()=>{
@@ -55,37 +55,35 @@ test('trailing tightens at 4x and 8x, and exhausted volume exits below entry',()
 test('priority and tip share a 0.002 SOL per-side ceiling',()=>{
  assert.doesNotThrow(()=>validatePriorityBudget(1500000,500000));for(const values of [[1500000,500001],[-1,0],[1.5,0],[Infinity,0]])assert.throws(()=>validatePriorityBudget(...values));
 });
-function router(mint,{sellOut='29500000',bad=false}={}){return async url=>{const u=new URL(url),input=u.searchParams.get('inputMint'),amount=u.searchParams.get('amount'),out=input===SOL?'10000000':sellOut,bps=Number(u.searchParams.get('slippageBps'));return new Response(JSON.stringify({inputMint:bad?'wrong':input,outputMint:u.searchParams.get('outputMint'),inAmount:amount,outAmount:out,otherAmountThreshold:(BigInt(out)*BigInt(10000-bps)/10000n).toString(),slippageBps:bps,swapMode:'ExactIn',contextSlot:100,routePlan:[{}],priceImpactPct:'0.01'}));};}
+function router(mint,{sellOut='197000000',bad=false}={}){return async url=>{const u=new URL(url),input=u.searchParams.get('inputMint'),amount=u.searchParams.get('amount'),out=input===SOL?'10000000':sellOut,bps=Number(u.searchParams.get('slippageBps'));return new Response(JSON.stringify({inputMint:bad?'wrong':input,outputMint:u.searchParams.get('outputMint'),inAmount:amount,outAmount:out,otherAmountThreshold:(BigInt(out)*BigInt(10000-bps)/10000n).toString(),slippageBps:bps,swapMode:'ExactIn',contextSlot:100,routePlan:[{}],priceImpactPct:'0.01'}));};}
 test('Jupiter round trip sells the full quoted token output, includes fee allowance and binds both mints',async()=>{
- const mint='token',q=await jupiterRoundTrip(mint,router(mint));assert.equal(q.probeSol,.03);assert.equal(q.buyImpactPct,1);assert.ok(q.roundTripLossPct<6);
- const costly=await jupiterRoundTrip(mint,router(mint,{sellOut:'28000000'}));assert.ok(costly.roundTripLossPct>6);
+ const mint='token',requests=[],base=router(mint),q=await jupiterRoundTrip(mint,async url=>{requests.push(new URL(url));return base(url);});assert.equal(requests[0].searchParams.get('amount'),'200000000');assert.equal(requests[1].searchParams.get('amount'),'10000000');assert.equal(q.probeSol,.2);assert.equal(q.buyImpactPct,1);assert.ok(q.roundTripLossPct<6);
+ const costly=await jupiterRoundTrip(mint,router(mint,{sellOut:'186000000'}));assert.ok(costly.roundTripLossPct>6);
  await assert.rejects(jupiterRoundTrip(mint,router(mint,{bad:true})),/không khớp/);
  const noRoute=await jupiterSellQuote({mint,rawAmount:'10000000'},async()=>new Response(JSON.stringify({errorCode:'COULD_NOT_FIND_ANY_ROUTE'}),{status:400}));assert.equal(noRoute.failed,true);
  await assert.rejects(jupiterSellQuote({mint,rawAmount:'10000000'},async()=>new Response('{}',{status:403})),/HTTP 403/);
 });
-test('a stopped token stays blocked for 24 hours and the entry tier respects the actual reserve',()=>{
+test('a stopped token stays blocked for 24 hours and a 0.2 SOL order cannot consume reserve',()=>{
  const {s,m,p}=position();
  applyOwnerReceipt(s,{intent:{side:'SELL',mint:p.mint,symbol:p.symbol,solUsd:100,priceUsd:.7,reason:'stop-loss'}},{status:'confirmed',signature:'stop-24h',tokenDelta:'-3000000',solDelta:.021,decimals:6,feeSol:.00002});
  assert.ok(s.cooldowns[p.mint]>=Date.now()+R.reentryMs-1000);
- const small=createOwnerLedger('owner',.08),e={...m.evidence};delete e.higherLows;delete e.pullback30mPct;delete e.greenCandleConfirmed;
- const tier={...m,hasProfile:false,sells5m:12,evidence:e,updatedAt:Date.now()};
- const o=nextOwnerOrder(small,{markets:[tier],solUsd:100,updatedAt:Date.now()},.08);assert.equal(o.orderSol,.02);
- assert.equal(nextOwnerOrder(small,{markets:[m],solUsd:100,updatedAt:Date.now()},.08),null,'a 0.03 order must not consume reserve');
+ const small=createOwnerLedger('owner',.08);assert.equal(nextOwnerOrder(small,{markets:[m],solUsd:100,updatedAt:Date.now()},.08),null);
+ const funded=createOwnerLedger('owner',.255);assert.equal(nextOwnerOrder(funded,{markets:[m],solUsd:100,updatedAt:Date.now()},.255).orderSol,.2);
 });
 
 test('owner entry opens more than two positions until SOL reserve and fees prevent the next buy',()=>{
- const s=createOwnerLedger('owner',.3),markets=[],feed=()=>({markets,solUsd:100,updatedAt:Date.now()});
+ const s=createOwnerLedger('owner',1.19),markets=[],feed=()=>({markets,solUsd:100,updatedAt:Date.now()});
  assert.equal(s.settings.maxPositions,null);
  for(let i=0;i<20;i++){
   const m=verifiedMarket({mint:'capital-'+i,priceUsd:1},Date.now());markets.push(m);
   const order=nextOwnerOrder(s,feed(),s.cashSol);
   if(!order)break;
   assert.equal(order.side,'BUY');assert.equal(order.mint,m.mint);
-  const intent={...order,owner:'owner',amount:'30000000',solUsd:100,priceUsd:1};
-  applyOwnerReceipt(s,{intent},{status:'confirmed',signature:'capital-fill-'+i,tokenDelta:'3000000',solDelta:-.0301,decimals:6,feeSol:.00002});
+  const intent={...order,owner:'owner',amount:'200000000',solUsd:100,priceUsd:1};
+  applyOwnerReceipt(s,{intent},{status:'confirmed',signature:'capital-fill-'+i,tokenDelta:'20000000',solDelta:-.2001,decimals:6,feeSol:.00002});
   assert.ok(s.cashSol>=s.settings.reserveSol);
  }
- assert.ok(s.positions.length>5);assert.ok(s.trades.length>5);assert.equal(nextOwnerOrder(s,feed(),s.cashSol),null);
- const position=s.positions[0];applyOwnerReceipt(s,{intent:{side:'SELL',mint:position.mint,symbol:position.symbol,solUsd:100,priceUsd:1,reason:'owner-exit'}},{status:'confirmed',signature:'capital-exit',tokenDelta:'-3000000',solDelta:.0302,decimals:6,feeSol:.00002});
+ assert.ok(s.positions.length>=5);assert.ok(s.trades.length>=5);assert.equal(nextOwnerOrder(s,feed(),s.cashSol),null);
+ const position=s.positions[0];applyOwnerReceipt(s,{intent:{side:'SELL',mint:position.mint,symbol:position.symbol,solUsd:100,priceUsd:1,reason:'owner-exit'}},{status:'confirmed',signature:'capital-exit',tokenDelta:'-20000000',solDelta:.2002,decimals:6,feeSol:.00002});
  const resumed=nextOwnerOrder(s,feed(),s.cashSol);assert.equal(resumed.side,'BUY');assert.equal(resumed.mint,markets.at(-1).mint);
 });

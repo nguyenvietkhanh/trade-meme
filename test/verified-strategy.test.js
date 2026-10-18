@@ -13,7 +13,7 @@ test('all mandatory safety facts remain fail-closed; optional creator and score 
   const e={...m.evidence};delete e[key];const rank=rankMarket({...m,evidence:e},R,now);assert.equal(rank.eligible,false,key);assert.ok(Number.isInteger(rank.score));
  }
  for(const e of [{mintRevoked:false},{freezeRevoked:false},{lpSecuredPct:89.99},{probeSol:.02},{roundTripLossPct:6.01},{buyImpactPct:2.01},{sellImpactPct:2.01},{top10Pct:35.01},{top10ExcludesPool:false},{largestHolderPct:8.01},{devPct:5.01},{checkedAt:now-30001},{checkedAt:now+1},{mint:'other'},{pairAddress:'other'},{criticalWarnings:['danger']}])assert.equal(rankMarket({...m,evidence:{...m.evidence,...e}},R,now).eligible,false,JSON.stringify(e));
- const unknownDev={...m.evidence};delete unknownDev.devPct;const smaller=rankMarket({...m,evidence:unknownDev},R,now);assert.equal(smaller.eligible,true);assert.equal(smaller.orderSol,.02);
+ const unknownDev={...m.evidence};delete unknownDev.devPct;const smaller=rankMarket({...m,evidence:unknownDev},R,now);assert.equal(smaller.eligible,true);assert.equal(smaller.orderSol,.2);
 });
 test('coarse market gates and raw quote liquidity apply independently of USD liquidity',()=>{
  const m=verifiedMarket({},now);
@@ -37,7 +37,7 @@ test('time stop remembers whether the position ever exceeded 20%, and emergency 
  for(const change of [{liquidityUsd:m.liquidityUsd*.599},{evidence:{sellSimulationOk:false}},{evidence:{lpWithdrawn:true}},{evidence:{largeHolderDump:true}}])assert.deepEqual(exitPlan(p,{...m,...change},1,s.settings,now),{reason:'emergency-risk',fraction:1});
 });
 test('daily BUY halt resets at UTC rollover; drawdown stops all automation and never clears itself',()=>{
- const s=freshState(now);s.cashSol=.27;s.running=true;riskCheck(s,[],150,now);assert.equal(s.haltKind,'daily');assert.equal(s.running,true);
+ const s=freshState(now);s.peakEquity=.3;s.dayStartEquity=.3;s.cashSol=.27;s.running=true;riskCheck(s,[],150,now);assert.equal(s.haltKind,'daily');assert.equal(s.running,true);
  riskCheck(s,[],150,now+86400000);assert.equal(s.halted,null);assert.equal(s.dayStartEquity,.27);
  s.cashSol=.254;s.running=true;riskCheck(s,[],150,now+86400001);assert.equal(s.haltKind,'drawdown');assert.equal(s.running,false);
  riskCheck(s,[],150,now+2*86400000);assert.equal(s.haltKind,'drawdown');
@@ -62,7 +62,7 @@ test('normal slippage caps stay separate from emergency exits, with no increase 
 test('stop loss includes SOL/USD opportunity cost and fees rather than testing token USD price alone',()=>{
  const s=freshState(now),m=verifiedMarket({priceUsd:1},now);recordBuy(s,m,100,{quantity:3,costSol:.0301,priceUsd:1},now);
  assert.equal(exitPlan(s.positions[0],m,150,s.settings,now)?.reason,'stop-loss');
- const d=freshState(now);d.cashSol=.254;riskCheck(d,[],150,now);assert.equal(d.haltKind,'drawdown');assert.equal(d.dailyLossBlocked,true);
+ const d=freshState(now);d.peakEquity=.3;d.dayStartEquity=.3;d.cashSol=.254;riskCheck(d,[],150,now);assert.equal(d.haltKind,'drawdown');assert.equal(d.dailyLossBlocked,true);
 });
 test('missing optional structure receives half points; abnormal volume/flow is penalized, not a hard veto',()=>{
  const m=verifiedMarket({},now),e={...m.evidence};delete e.higherLows;delete e.pullback30mPct;delete e.greenCandleConfirmed;

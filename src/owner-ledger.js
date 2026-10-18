@@ -1,12 +1,21 @@
 import {freshState,recordBuy,recordSell,riskCheck,exitPlan,event} from './engine.js';
 import {rankMarket} from './strategy.js';
 import {profitOrder,PROFIT_RECIPIENT} from './profit.js';
-import {STRATEGY_VERSION,positionLimitReached} from './desk-rules.js';
+import {STRATEGY_VERSION,positionLimitReached,canFundBuy,TRADE_RULES,BUY_LAMPORTS} from './desk-rules.js';
 
 export function createOwnerLedger(owner,balance){
- if(!Number.isFinite(balance)||balance<.075)throw Error('Cần ít nhất 0,075 SOL để giữ dự phòng và chuẩn bị lệnh 0,02 SOL.');
- const s=freshState(),budget=Math.min(.3,balance);
+ if(!Number.isFinite(balance)||balance<.075)throw Error('Cần ít nhất 0,075 SOL để khởi động sổ. Chỉ mua 0,2 SOL khi đủ vốn, phí và dự phòng 0,05 SOL.');
+ const s=freshState(),budget=Math.min(TRADE_RULES.initialSol,balance);
  return {...s,strategyVersion:STRATEGY_VERSION,owner,ownerLedgerVersion:1,realizedNetSol:0,withdrawnSol:0,payoutFeesSol:0,payouts:[],expenses:[],cashSol:budget,peakEquity:budget,dayStartEquity:budget,settings:{...s.settings,initialSol:budget},pending:null,recordedSignatures:[],running:false};
+}
+export function allocateOwnerCapital(s,walletBalance,now=Date.now()){
+ if(s.pending||![walletBalance,s.cashSol,s.settings?.initialSol,s.peakEquity,s.dayStartEquity].every(Number.isFinite))return 0;
+ const target=Math.round(TRADE_RULES.initialSol*1e9),initial=Math.round(s.settings.initialSol*1e9),surplus=Math.floor(walletBalance*1e9+1e-6)-Math.round(s.cashSol*1e9);
+ const lamports=Math.min(target-initial,Math.max(0,surplus));if(lamports<=0)return 0;
+ const amount=lamports/1e9;
+ s.cashSol+=amount;s.settings.initialSol=(initial+lamports)/1e9;s.peakEquity+=amount;s.dayStartEquity+=amount;
+ s.capitalAllocations??=[];s.capitalAllocations.push({at:now,amountSol:amount,initialSol:s.settings.initialSol});s.capitalAllocations=s.capitalAllocations.slice(-200);
+ event(s,`Đã bổ sung ${amount.toFixed(6)} SOL vào vốn ứng dụng; không ghi thành lợi nhuận.`,now);return amount;
 }
 export function nextOwnerOrder(s,feed,walletBalance){
  if(s.pending)return null;
@@ -23,8 +32,8 @@ export function nextOwnerOrder(s,feed,walletBalance){
  }
  if(feed.error||!feed.updatedAt||now-feed.updatedAt>s.settings.maxPriceAgeMs||feed.updatedAt>now||!validSol||s.buyPaused||s.buyBlockedReason)return null;
  const payout=s.recoveryRequired?null:profitOrder(s,walletBalance);if(payout)return payout;
- if(!Number.isFinite(walletBalance)||s.halted||s.lossPauseUntil>Date.now()||positionLimitReached(s.positions.length,s.settings)||s.cashSol-.025<.05||walletBalance-.025<.05||s.positions.some(p=>!feed.markets.some(m=>m.mint===p.mint)))return null;
- const m=feed.markets.map(m=>({...m,...rankMarket(m,s.settings)})).filter(m=>m.eligible&&s.cashSol-m.orderSol-.005>=s.settings.reserveSol&&walletBalance-m.orderSol-.005>=s.settings.reserveSol&&!s.positions.some(p=>p.mint===m.mint)&&!(s.cooldowns[m.mint]>Date.now())&&!exhausted({side:'BUY',mint:m.mint})).sort((a,b)=>b.score-a.score)[0];
+ if(!Number.isFinite(walletBalance)||s.halted||s.lossPauseUntil>Date.now()||positionLimitReached(s.positions.length,s.settings)||!canFundBuy(s.cashSol,s.settings.orderSol,s.settings.reserveSol)||!canFundBuy(walletBalance,s.settings.orderSol,s.settings.reserveSol)||s.positions.some(p=>!feed.markets.some(m=>m.mint===p.mint)))return null;
+ const m=feed.markets.map(m=>({...m,...rankMarket(m,s.settings)})).filter(m=>m.eligible&&canFundBuy(s.cashSol,m.orderSol,s.settings.reserveSol)&&canFundBuy(walletBalance,m.orderSol,s.settings.reserveSol)&&!s.positions.some(p=>p.mint===m.mint)&&!(s.cooldowns[m.mint]>Date.now())&&!exhausted({side:'BUY',mint:m.mint})).sort((a,b)=>b.score-a.score)[0];
  return m?{side:'BUY',mint:m.mint,symbol:m.symbol,reason:'autonomous-low-cap',orderSol:m.orderSol,strategyVersion:STRATEGY_VERSION,riskSol:m.orderSol*s.settings.stopLossPct/100}:null;
 }
 export function ownerExit(s,mint,fraction=1,reason='owner-exit',solUsd){
@@ -42,7 +51,7 @@ export function applyOwnerReceipt(s,pending,result){
   s.payouts??=[];s.payouts.unshift({signature:result.signature,amountSol:amount,feeSol:result.feeSol,recipient:PROFIT_RECIPIENT,at:Date.now()});s.payouts=s.payouts.slice(0,500);event(s,'Đã xác nhận chuyển lãi '+amount.toFixed(6)+' SOL về '+PROFIT_RECIPIENT);
  }else if(result.status==='confirmed'){
   const raw=BigInt(result.tokenDelta),quantity=Number(raw<0n?-raw:raw)/10**result.decimals,m={mint:intent.mint,symbol:intent.symbol,priceUsd:intent.priceUsd,liquidityUsd:intent.entryLiquidityUsd,volume5mUsd:intent.entryVolume5mUsd,pairAddress:intent.pairAddress};
-  if(intent.side==='BUY')recordBuy(s,m,intent.solUsd,{quantity,costSol:-result.solDelta,priceUsd:Number(intent.amount??'30000000')/1e9*intent.solUsd/quantity,rawQuantity:raw.toString(),decimals:result.decimals,signature:result.signature,networkFeeSol:result.feeSol??null},Date.now(),intent.reason,'live');
+  if(intent.side==='BUY')recordBuy(s,m,intent.solUsd,{quantity,costSol:-result.solDelta,priceUsd:Number(intent.amount??BUY_LAMPORTS)/1e9*intent.solUsd/quantity,rawQuantity:raw.toString(),decimals:result.decimals,signature:result.signature,networkFeeSol:result.feeSol??null},Date.now(),intent.reason,'live');
   else{
    const p=s.positions.find(p=>p.mint===intent.mint);if(!p||raw>=0n||-raw>BigInt(p.rawQuantity))throw Error('Lượng bán không khớp sổ vị thế của ứng dụng.');
    const remaining=BigInt(p.rawQuantity)+raw;

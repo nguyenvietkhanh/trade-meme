@@ -29,7 +29,7 @@ let state;
 try {state=JSON.parse(await readFile(statePath,'utf8'));if(![1,2].includes(state.version)) throw Error('Unsupported state version');
  if(state.profile!==PROFILE){
   await writeFile(path.join(dataDir,`archive-profile-${Date.now()}.json`),JSON.stringify(state,null,2),{mode:0o600});
-  const previous=state;state=freshState();state.watchlist=previous.watchlist??[];state.automationRequested=previous.automationRequested??false;event(state,'Đã lưu trữ phiên mô phỏng cũ và tạo phiên mới với cấu hình 0,3 SOL / lệnh 0,03 SOL / chốt lời từng phần.');
+  const previous=state;state=freshState();state.watchlist=previous.watchlist??[];state.automationRequested=previous.automationRequested??false;event(state,'Đã lưu trữ phiên mô phỏng cũ và tạo phiên mới với cấu hình 1,19 SOL / lệnh 0,2 SOL / chốt lời từng phần.');
  }}
 catch(e) {if(e.code!=='ENOENT') throw e;state=freshState();}
 // Restart pauses until a fresh feed arrives; explicitly requested automation then resumes.
@@ -176,7 +176,7 @@ const server=http.createServer(async(req,res)=>{
         }else if(action==='reset'){
           if(command.confirm!=='RESET PAPER')throw Error('Thiếu xác nhận reset.');
           await writeFile(path.join(dataDir,`archive-${Date.now()}.json`),JSON.stringify(state,null,2),{mode:0o600});
-          state=freshState();event(state,'Tạo tài khoản mô phỏng mới 0,3 SOL. Lịch sử trước đã lưu trữ.');
+          state=freshState();event(state,'Tạo tài khoản mô phỏng mới 1,19 SOL. Lịch sử trước đã lưu trữ.');
         }else throw Error('Lệnh không được hỗ trợ.');
         await save();return json(res,200,snapshot(req));
       });

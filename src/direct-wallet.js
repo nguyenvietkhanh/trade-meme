@@ -5,6 +5,7 @@ import {DEFAULT_OWNER} from './security.js';
 import {SOL,DEFAULTS} from './engine.js';
 import {rankMarket} from './strategy.js';
 import {LIVE_LIMITS} from './solana.js';
+import {HISTORICAL_BUY_LAMPORTS,canFundBuy} from './desk-rules.js';
 import {availableProfitLamports,PROFIT_RECIPIENT} from './profit.js';
 
 const hash=tx=>createHash('sha256').update(tx.message.serialize()).digest('hex');
@@ -46,7 +47,7 @@ export class DirectWallet{
   if(side==='BUY'){
    const rank=rankMarket({...market,solUsd:feed.solUsd},DEFAULTS);if(!rank.eligible)throw Error('Token chưa đạt toàn bộ bộ lọc.');
    if(held>0n)throw Error('Ví đã giữ token này; không trộn với tài sản có sẵn.');
-   const balance=await this.execution.balance(this.owner);if(balance-rank.orderSol-.005<.05)throw Error('Chưa đủ SOL ngoài khoản dự phòng 0,05 SOL.');
+   const balance=await this.execution.balance(this.owner);if(!canFundBuy(balance,rank.orderSol,DEFAULTS.reserveSol))throw Error('Chưa đủ SOL ngoài khoản dự phòng 0,05 SOL.');
    await this.execution.mintCheck(market.mint);amount=String(Math.round(rank.orderSol*1e9));
   }else{
    if(typeof input.amount!=='string'||!/^\d{1,20}$/.test(input.amount)||BigInt(input.amount)<=0n||BigInt(input.amount)>held)throw Error('Lượng bán vượt số token đang có.');
@@ -86,7 +87,7 @@ export class DirectWallet{
   }
   const receipt=await this.execution.receipt(signed.signature,this.owner,intent.mint);if(!receipt)return {status:'pending'};
   if(!Number.isInteger(receipt.decimals)||receipt.decimals<0||receipt.decimals>9)throw Error('Không xác minh được decimals.');
-  if(intent.side==='BUY'&&(!['20000000','30000000'].includes(intent.amount)||receipt.tokenDelta<=0n||receipt.solDelta>=0||-receipt.solDelta>Number(intent.amount)/1e9+.005))throw Error('Receipt mua không khớp giới hạn.');
+  if(intent.side==='BUY'&&(!HISTORICAL_BUY_LAMPORTS.includes(intent.amount)||receipt.tokenDelta<=0n||receipt.solDelta>=0||-receipt.solDelta>Number(intent.amount)/1e9+.005))throw Error('Receipt mua không khớp giới hạn.');
   if(intent.side==='SELL'&&(receipt.tokenDelta!==-BigInt(intent.amount)||receipt.solDelta<=0))throw Error('Receipt bán không khớp lượng đã ký.');
   clear();return {status:'confirmed',signature:signed.signature,slot:receipt.slot,solDelta:receipt.solDelta,tokenDelta:receipt.tokenDelta.toString(),decimals:receipt.decimals,feeSol:receipt.feeSol??null};
  }

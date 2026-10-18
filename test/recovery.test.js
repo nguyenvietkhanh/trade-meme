@@ -8,11 +8,11 @@ import {SOL,exitPlan,DEFAULTS,recordSell,equity} from '../src/engine.js';
 import {purchaseSignature,verifyPurchase,adoptPurchase,inventoryBalances} from '../src/recovery.js';
 import {createOwnerLedger,nextOwnerOrder} from '../src/owner-ledger.js';
 const signature=bs58.encode(Buffer.alloc(64,7));
-async function fixture(){
+async function fixture(amount='20000000'){
  const f=await pumpFixture(),owner=f.user.toBase58(),mint=f.mint.toBase58(),raw=13523538793n;
- const built=await buildPumpSwap(f.rpc,{owner:f.user,input:SOL,output:mint,amount:'20000000',poolAddress:f.poolKey.toBase58()}),msg=built.tx.message;
+ const built=await buildPumpSwap(f.rpc,{owner:f.user,input:SOL,output:mint,amount,poolAddress:f.poolKey.toBase58()}),msg=built.tx.message;
  const accountKeys=msg.staticAccountKeys.map((pubkey,i)=>({pubkey,signer:msg.isAccountSigner(i),writable:msg.isAccountWritable(i)}));
- const balances=msg.staticAccountKeys.map(()=>0),preBalances=[...balances],postBalances=[...balances];preBalances[0]=300000000;postBalances[0]=278653800;
+ const balances=msg.staticAccountKeys.map(()=>0),preBalances=[...balances],postBalances=[...balances];preBalances[0]=300000000;postBalances[0]=300000000-Number(amount)-1346200;
  const row={accountIndex:msg.staticAccountKeys.findIndex(k=>k.equals(f.baseAta)),mint,owner,uiTokenAmount:{amount:raw.toString(),decimals:6,uiAmount:null,uiAmountString:'13523.538793'}};
  const tx={slot:100,blockTime:Math.floor(Date.now()/1000)-60,transaction:{signatures:[signature],message:{accountKeys,instructions:msg.compiledInstructions.map(ix=>({programId:msg.staticAccountKeys[ix.programIdIndex],accounts:[...ix.accountKeyIndexes].map(i=>msg.staticAccountKeys[i]),data:bs58.encode(ix.data)}))}},meta:{err:null,preBalances,postBalances,preTokenBalances:[],postTokenBalances:[row],fee:20000}};
  let holdings=[{pubkey:f.baseAta,account:f.token(new PublicKey(f.mint),f.user,raw)}],newer=[];const transactions=new Map([[signature,tx]]);
@@ -23,6 +23,12 @@ test('purchase proof binds the owner, exact input, official pool, balances and o
  const f=await fixture(),proof=await verifyPurchase(f.execution,f.owner,f.input);
  assert.equal(proof.rawQuantity,'13523538793');assert.equal(proof.costSol,.0213462);assert.equal(proof.networkFeeSol,.00002);assert.equal(proof.swapInputSol,.02);assert.equal(proof.openedAt,f.tx.blockTime*1000);assert.equal(proof.pairAddress,f.poolKey.toBase58());
  assert.equal(purchaseSignature('https://solscan.io/tx/'+signature),signature);assert.throws(()=>purchaseSignature('https://evil.example/tx/'+signature));assert.throws(()=>purchaseSignature('3c16…UpXN'));
+});
+test('new 0.2 SOL and historical 0.03 SOL purchases both recover with their own confirmed costs',async()=>{
+ for(const amount of ['30000000','200000000']){
+  const f=await fixture(amount),proof=await verifyPurchase(f.execution,f.owner,f.input);
+  assert.equal(proof.swapInputSol,Number(amount)/1e9);assert.ok(Math.abs(proof.costSol-(Number(amount)+1346200)/1e9)<1e-12);assert.equal(proof.rawQuantity,f.raw.toString());
+ }
 });
 test('purchase recovery rejects another owner, failed/missing receipts, wrong pool and changed account quantity',async()=>{
  let f=await fixture();await assert.rejects(verifyPurchase(f.execution,Keypair.generate().publicKey.toBase58(),f.input),/người trả phí/);

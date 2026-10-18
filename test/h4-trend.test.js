@@ -30,10 +30,10 @@ test('a healthy forming H4 candle can pass without requiring four hours of pool 
  for(const rows of [[],[bar(100,90,95,110)],[bar(100,120,95,110),bar(100,120,95,110)],[bar(100,120,95,110,bucket-28800000)]])assert.equal(fourHourRisk(rows,110,created,now).state,'unknown');
 });
 
-test('known bearish H4 cannot be overridden by a high score; unavailable H4 reduces size, never creates a safe flag',()=>{
+test('known bearish H4 cannot be overridden by a high score; unavailable H4 reduces score, never creates a safe flag',()=>{
  const m=verifiedMarket({},now),risk={mint:m.mint,pairAddress:m.pairAddress,checkedAt:now,state:'reject'};
  const blocked=rankMarket({...m,evidence:{...m.evidence,h4Risk:risk}},undefined,now);assert.ok(blocked.score>=75);assert.equal(blocked.eligible,false);assert.ok(blocked.red_flags.includes('H4_DUMP_PATTERN'));
- const unknown=rankMarket({...m,evidence:{...m.evidence,h4Risk:undefined}},undefined,now);assert.equal(unknown.eligible,true);assert.equal(unknown.orderSol,.02);assert.equal(unknown.h4Status,'unknown');assert.equal(unknown.h4Penalty,5);
+ const unknown=rankMarket({...m,evidence:{...m.evidence,h4Risk:undefined}},undefined,now);assert.equal(unknown.eligible,true);assert.equal(unknown.orderSol,.2);assert.equal(unknown.h4Status,'unknown');assert.equal(unknown.h4Penalty,5);
  const stale=rankMarket({...m,evidence:{...m.evidence,h4Risk:{...risk,checkedAt:now-60001}}},undefined,now);assert.equal(stale.eligible,false,'an outage must not clear a recent rejection');
  const mismatched=rankMarket({...m,evidence:{...m.evidence,h4Risk:{...risk,mint:'other'}}},undefined,now);assert.equal(mismatched.h4Status,'unknown');
 });
@@ -70,10 +70,10 @@ test('a failed H4 provider cannot clear a previously observed rejection; fresh r
  assert.equal((await run()).h4Status,'reject');clock+=20001;phase=1;assert.equal((await run()).h4Status,'reject');clock+=20001;phase=2;assert.equal((await run()).h4Status,'clear');
 });
 
-test('a young or undated pool with unavailable H4 remains eligible at reduced size when trend and mandatory safety pass',()=>{
+test('a young or undated pool with unavailable H4 remains eligible at the configured size when trend and mandatory safety pass',()=>{
  for(const pairCreatedAt of [now-1000,undefined,null,0]){
   const m=verifiedMarket({pairCreatedAt},now),h4Risk={...fourHourRisk([bar(100,120,95,115)],115,pairCreatedAt,now),mint:m.mint,pairAddress:m.pairAddress};
   assert.equal(h4Risk.state,'unknown');const rank=rankMarket({...m,evidence:{...m.evidence,h4Risk}},undefined,now);
-  assert.equal(rank.eligible,true);assert.equal(rank.orderSol,.02);assert.equal(rank.h4Status,'unknown');
+  assert.equal(rank.eligible,true);assert.equal(rank.orderSol,.2);assert.equal(rank.h4Status,'unknown');
  }
 });

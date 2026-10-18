@@ -12,10 +12,10 @@ const market={mint,symbol:'TEST',priceUsd:.01,updatedAt:Date.now()};
 async function setup(fn){const dir=await mkdtemp(path.join(tmpdir(),'live-'));try{await fn(dir);}finally{await rm(dir,{recursive:true,force:true});}}
 test('write-ahead signature exists before broadcast; no fill until chain confirmation; reconciliation applies once',async()=>setup(async dir=>{
  let sent=0;const vault={keypair:kp,publicKey:kp.publicKey.toBase58(),apiKey:'fake-test-api'};
- const execution={mintCheck:async()=>({decimals:9}),prepare:async request=>{assert.equal(request.amount,'30000000');return {signature:'test-signature',lastValidBlockHeight:100,bytes:new Uint8Array()};},send:async()=>{const disk=JSON.parse(await readFile(path.join(dir,'live-state.json'),'utf8'));assert.equal(disk.pending.status,'signed');sent++;return 'test-signature';},status:async()=>({confirmationStatus:'confirmed'}),receipt:async()=>({solDelta:-.0301,tokenDelta:450000000000n,rawBalance:'450000000000',decimals:9,slot:10})};
+ const execution={mintCheck:async()=>({decimals:9}),prepare:async request=>{assert.equal(request.amount,'200000000');return {signature:'test-signature',lastValidBlockHeight:100,bytes:new Uint8Array()};},send:async()=>{const disk=JSON.parse(await readFile(path.join(dir,'live-state.json'),'utf8'));assert.equal(disk.pending.status,'signed');sent++;return 'test-signature';},status:async()=>({confirmationStatus:'confirmed'}),receipt:async()=>({solDelta:-.2001,tokenDelta:450000000000n,rawBalance:'450000000000',decimals:9,slot:10})};
  const live=new LiveTrader(dir,vault,execution);live.state.cashSol=.3;
  await live.submit(market,'BUY',1,'test',150);assert.equal(sent,1);assert.equal(live.state.positions.length,0);assert.equal(live.state.pending.status,'broadcast');
- await live.reconcile([market],150);assert.equal(live.state.positions.length,1);assert.equal(live.state.trades[0].mode,'live');assert.equal(live.state.trades[0].signature,'test-signature');assert.ok(Math.abs(live.state.cashSol-.2699)<1e-9);await live.reconcile([market],150);assert.equal(live.state.positions.length,1);assert.equal(live.state.journal.length,1);
+ await live.reconcile([market],150);assert.equal(live.state.positions.length,1);assert.equal(live.state.trades[0].mode,'live');assert.equal(live.state.trades[0].signature,'test-signature');assert.ok(Math.abs(live.state.cashSol-.0999)<1e-9);await live.reconcile([market],150);assert.equal(live.state.positions.length,1);assert.equal(live.state.journal.length,1);
 }));
 test('unknown transaction blocks new orders and is not silently replaced after expiry',async()=>setup(async dir=>{
  let sent=0;const vault={keypair:kp,publicKey:kp.publicKey.toBase58(),apiKey:'fake-test-api'};
@@ -23,10 +23,10 @@ test('unknown transaction blocks new orders and is not silently replaced after e
  const live=new LiveTrader(dir,vault,execution);live.state.pending={signature:'unknown',lastValidBlockHeight:100,status:'broadcast'};live.state.enabled=true;
  await assert.rejects(live.submit(market,'BUY',1,'test',150));await live.reconcile([market],150);assert.equal(live.state.pending,null);assert.equal(live.state.enabled,false);assert.equal(live.state.journal[0].status,'expired');assert.equal(sent,0);
 }));
-test('missing signer/API, oversized initial funding and budget violations cannot send funds',async()=>setup(async dir=>{
- let sent=0;const execution={network:async()=>{},balance:async()=>.31,send:async()=>{sent++;}};
+test('missing signer, oversized initial funding and budget violations cannot send funds',async()=>setup(async dir=>{
+ let sent=0;const execution={network:async()=>{},balance:async()=>1.2,send:async()=>{sent++;}};
  const vault={keypair:null,publicKey:kp.publicKey.toBase58(),apiKey:null};const live=new LiveTrader(dir,vault,execution);
- await assert.rejects(live.enable('ENABLE MAINNET 0.3 SOL'));vault.keypair=kp;await assert.rejects(live.enable('ENABLE MAINNET 0.3 SOL'));vault.apiKey='test-api';await assert.rejects(live.enable('ENABLE MAINNET 0.3 SOL'));live.state.cashSol=.06;await assert.rejects(live.submit(market,'BUY',1,'test',150));assert.equal(sent,0);
+ await assert.rejects(live.enable('ENABLE MAINNET 1.19 SOL'));vault.keypair=kp;await assert.rejects(live.enable('ENABLE MAINNET 1.19 SOL'));vault.apiKey='test-api';await assert.rejects(live.enable('ENABLE MAINNET 1.19 SOL'));live.state.cashSol=.06;await assert.rejects(live.submit(market,'BUY',1,'test',150));assert.equal(sent,0);
 }));
 test('reserve limits stop new buys without disabling management of existing positions',async()=>setup(async dir=>{
  let sends=0;const vault={keypair:kp,publicKey:kp.publicKey.toBase58(),apiKey:'test-key'};

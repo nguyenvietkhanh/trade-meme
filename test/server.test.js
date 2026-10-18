@@ -24,7 +24,7 @@ test('HTTP workflow, CSRF rejection, state persistence, resumed restart and arch
  async function get(){return (await fetch(base+'/api/state')).json();}
  async function command(action,extra={}){const r=await fetch(base+'/api/command',{method:'POST',headers:{'Content-Type':'application/json','X-Requested-With':'meme-desk'},body:JSON.stringify({action,...extra})});return {status:r.status,data:await r.json()};}
  try{
-  await launch();let s=await get();assert.equal(s.mode,'paper');assert.equal(s.cashSol,.3);assert.equal(s.feed.markets.length,1);
+  await launch();let s=await get();assert.equal(s.mode,'paper');assert.equal(s.cashSol,1.19);assert.equal(s.feed.markets.length,1);
   assert.equal((await fetch(base)).status,200);assert.ok((await (await fetch(base+'/app.js')).text()).includes('render'));
   assert.equal((await (await fetch(base+'/api/health')).json()).marketFresh,true);
   const cross=await fetch(base+'/api/command',{method:'POST',headers:{'Content-Type':'application/json','X-Requested-With':'meme-desk',Origin:'https://evil.invalid'},body:'{"action":"start"}'});assert.equal(cross.status,403);
@@ -32,11 +32,11 @@ test('HTTP workflow, CSRF rejection, state persistence, resumed restart and arch
   assert.equal((await command('start')).data.running,true);
   const mint=s.feed.markets[0].mint;
   const results=await Promise.all([command('buy',{mint}),command('buy',{mint})]);assert.equal(results.filter(x=>x.status===200).length,1);assert.equal(results.filter(x=>x.status===400).length,1);
-  s=await get();assert.equal(s.positions.length,1);assert.ok(s.cashSol<.3);
+  s=await get();assert.equal(s.positions.length,1);assert.ok(s.cashSol<1.19);
   await stop();base=null;await launch();s=await get();assert.equal(s.running,true);assert.equal(s.positions.length,1);
   const sold=await command('sell',{mint});assert.equal(sold.status,200);assert.equal(sold.data.positions.length,0);assert.ok(sold.data.trades[0].pnlSol<0);
   const exported=await (await fetch(base+'/api/export')).json();assert.equal(exported.mode,'paper');assert.equal(exported.trades.length,2);
   assert.equal((await command('reset')).status,400);
-  const reset=await command('reset',{confirm:'RESET PAPER'});assert.equal(reset.data.cashSol,.3);assert.equal(reset.data.trades.length,0);assert.ok((await readdir(dir)).some(x=>x.startsWith('archive-')));
+  const reset=await command('reset',{confirm:'RESET PAPER'});assert.equal(reset.data.cashSol,1.19);assert.equal(reset.data.trades.length,0);assert.ok((await readdir(dir)).some(x=>x.startsWith('archive-')));
  }finally{if(child?.exitCode===null)await stop();await rm(dir,{recursive:true,force:true});}
 });

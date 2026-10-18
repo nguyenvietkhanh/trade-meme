@@ -7,8 +7,8 @@ const market=(overrides={})=>verifiedMarket(overrides,now);
 const close=(actual,expected)=>assert.ok(Math.abs(actual-expected)<1e-10,`${actual} != ${expected}`);
 test('round trip deducts slippage and fees on both sides; no fabricated profit',()=>{
  const s=freshState(now),m=market();buy(s,m,sol,now);assert.equal(s.positions.length,1);
- close(s.cashSol,.3-.03-.0001);sell(s,m,sol,now+1);
- close(s.cashSol,.3-.03-.0001+.03/1.015*.985-.0001);assert.ok(s.trades[0].pnlSol<0);assert.equal(s.positions.length,0);
+ close(s.cashSol,1.19-.2-.0001);sell(s,m,sol,now+1);
+ close(s.cashSol,1.19-.2-.0001+.2/1.015*.985-.0001);assert.ok(s.trades[0].pnlSol<0);assert.equal(s.positions.length,0);
 });
 test('fresh quotes and minimum liquidity required for buys',()=>{
  for(const m of [market({updatedAt:now-90001}),market({priceUsd:NaN}),market({liquidityUsd:-1}),market({volume24hUsd:-1})])assert.throws(()=>buy(freshState(now),m,sol,now));
@@ -25,10 +25,10 @@ test('a pause stops automatic exits and entries but manual exit works',()=>{
 });
 test('daily loss and drawdown circuit breaker persists and disallows buys',()=>{
  const s=freshState(now);s.cashSol=.269;riskCheck(s,[],sol,now);assert.ok(s.halted);assert.throws(()=>buy(s,market(),sol,now));
- const d=freshState(now);d.peakEquity=.4;riskCheck(d,[],sol,now);assert.ok(d.halted);
+ const d=freshState(now);d.peakEquity=DEFAULTS.initialSol*1.2;riskCheck(d,[],sol,now);assert.ok(d.halted);
 });
 test('UTC day rollover resets daily baseline but never silently clears a halt',()=>{
- const s=freshState(now);s.halted='risk';s.cashSol=.28;riskCheck(s,[],sol,now+86400000);close(s.dayStartEquity,.28);assert.equal(s.halted,'risk');
+ const s=freshState(now);s.halted='risk';s.cashSol=.28;s.peakEquity=.3;riskCheck(s,[],sol,now+86400000);close(s.dayStartEquity,.28);assert.equal(s.halted,'risk');
 });
 test('strategy selects momentum and rejects missing signal',()=>{
  const s=freshState(now);s.running=true;tick(s,[market({signalConfirmed:false})],sol,now);assert.equal(s.positions.length,0);
@@ -45,5 +45,5 @@ test('equity includes SOL/USD change and open marked value',()=>{
  assert.ok(equity(s,[market()],300)<equity(s,[market()],150));
 });
 test('default budget reserves at least 0.05 SOL and fees reduce fills',()=>{
- assert.equal(DEFAULTS.initialSol,.3);assert.equal(DEFAULTS.maxPositions,null);assert.ok(DEFAULTS.orderSol*2+DEFAULTS.feeSol*2+DEFAULTS.reserveSol<DEFAULTS.initialSol);
+ assert.equal(DEFAULTS.initialSol,1.19);assert.equal(DEFAULTS.maxPositions,null);assert.ok(DEFAULTS.orderSol*2+DEFAULTS.feeSol*2+DEFAULTS.reserveSol<DEFAULTS.initialSol);
 });

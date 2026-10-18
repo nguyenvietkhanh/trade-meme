@@ -1,3 +1,4 @@
+import {TRADE_RULES,BUY_LAMPORTS} from './desk-rules.js';
 import {SOL} from './engine.js';
 async function quote(inputMint,outputMint,amount,slippageBps,fetcher){
  const url=new URL('https://lite-api.jup.ag/swap/v1/quote');for(const [k,v]of Object.entries({inputMint,outputMint,amount,slippageBps,swapMode:'ExactIn'}))url.searchParams.set(k,v);
@@ -15,11 +16,11 @@ export async function jupiterSellQuote({mint,rawAmount},fetcher=globalThis.fetch
  return {mint,rawAmount,checkedAt:now,contextSlot:q.contextSlot,netSol:Number(lamports)/1e9,provider:'Jupiter',feeAllowanceSol:.000025,failed:false};
 }
 export async function jupiterRoundTrip(mint,fetcher=globalThis.fetch){
- const at=Date.now(),buy=await quote(SOL,mint,'30000000',400,fetcher);if(buy.failed)throw Error('Không có route mua.');
+ const at=Date.now(),buy=await quote(SOL,mint,BUY_LAMPORTS,400,fetcher);if(buy.failed)throw Error('Không có route mua.');
  const sell=await quote(mint,SOL,buy.outAmount,300,fetcher);if(sell.failed)throw Error('Không có route bán.');
  const impact=q=>q.priceImpactPct==null?NaN:Number(q.priceImpactPct)*100,net=BigInt(sell.outAmount)-50000n;
  if(net<0n||net>BigInt(Number.MAX_SAFE_INTEGER)||![impact(buy),impact(sell)].every(Number.isFinite)||Date.now()-at>30000||Math.abs(sell.contextSlot-buy.contextSlot)>20)throw Error('Quote vòng thiếu impact/đã cũ.');
- return {roundTripQuoteOk:true,probeSol:.03,roundTripLossPct:Math.max(0,(30000000-Number(net))/30000000*100),buyImpactPct:impact(buy),sellImpactPct:impact(sell),quoteCheckedAt:at,quoteContextSlot:Math.min(buy.contextSlot,sell.contextSlot)};
+ return {roundTripQuoteOk:true,probeSol:TRADE_RULES.orderSol,roundTripLossPct:Math.max(0,(Number(BUY_LAMPORTS)-Number(net))/Number(BUY_LAMPORTS)*100),buyImpactPct:impact(buy),sellImpactPct:impact(sell),quoteCheckedAt:at,quoteContextSlot:Math.min(buy.contextSlot,sell.contextSlot)};
 }
 export async function jupiterEntryQuote(mint,amount,fetcher=globalThis.fetch){
  const at=Date.now(),q=await quote(SOL,mint,amount,400,fetcher);if(q.failed||Date.now()-at>30000)throw Error('Không có báo giá vào lệnh mới.');

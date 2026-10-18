@@ -6,7 +6,7 @@ const quote={inputMint:SOL,outputMint:'token',swapMode:'ExactIn',inAmount:'30000
 test('quote cannot change input, mint, amount, price impact or slippage bounds',()=>{
  assert.doesNotThrow(()=>validateQuote(quote,SOL,'token','30000000'));
  for(const changed of [{inAmount:'300000000'},{inputMint:'another'},{outputMint:'other'},{priceImpactPct:'.5'},{slippageBps:500},{otherAmountThreshold:'0'},{routePlan:[]}])assert.throws(()=>validateQuote({...quote,...changed},SOL,'token','30000000'));
- assert.equal(LIVE_LIMITS.orderSol,.03);assert.equal(LIVE_LIMITS.budgetSol,.3);
+ assert.equal(LIVE_LIMITS.orderSol,.2);assert.equal(LIVE_LIMITS.budgetSol,1.19);
 });
 test('simulation rejects excessive native spend, unrelated asset mutation and missing output',()=>{
  const base={beforeSol:300000000,afterSol:269000000,before:[null],after:[{mint:'token',owner:'owner',amount:'1000',delegate:'none'}],input:SOL,output:'token',amount:'30000000',minOut:'985'};
