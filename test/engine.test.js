@@ -23,9 +23,9 @@ test('stop loss exits after fees at a loss past 20%',()=>{const s=freshState(now
 test('a pause stops automatic exits and entries but manual exit works',()=>{
  const s=freshState(now);buy(s,market(),sol,now);tick(s,[market({priceUsd:.005})],sol,now+1);assert.equal(s.positions.length,1);sell(s,market({priceUsd:.005}),sol,now+2);assert.equal(s.positions.length,0);
 });
-test('drawdown circuit breaker persists and disallows buys',()=>{
- const s=freshState(now);s.cashSol=.269;riskCheck(s,[],sol,now);assert.ok(s.halted);assert.throws(()=>buy(s,market(),sol,now));
- const d=freshState(now);d.peakEquity=DEFAULTS.initialSol*1.2;riskCheck(d,[],sol,now);assert.ok(d.halted);
+test('drawdown remains measured without locking entries',()=>{
+ const s=freshState(now);s.cashSol=.269;riskCheck(s,[],sol,now);assert.equal(s.halted,null);assert.ok(s.maxDrawdownObservedPct>15);
+ const d=freshState(now);d.peakEquity=DEFAULTS.initialSol*1.2;riskCheck(d,[],sol,now);assert.equal(d.halted,null);assert.ok(d.maxDrawdownObservedPct>15);
 });
 test('UTC day rollover resets daily baseline but never silently clears a halt',()=>{
  const s=freshState(now);s.halted='risk';s.cashSol=.28;s.peakEquity=.3;riskCheck(s,[],sol,now+86400000);close(s.dayStartEquity,.28);assert.equal(s.halted,'risk');

@@ -35,7 +35,7 @@ export class DirectWallet{
   if(input.side==='PROFIT'){
    const balance=await this.execution.balance(this.owner),allowed=availableProfitLamports(input.profitState??{},balance);
    if(!allowed||String(input.amount)!==String(allowed)||input.recipient!==PROFIT_RECIPIENT)throw Error('Chưa có đủ lãi đã chốt sau dự phòng vốn và phí.');
-   const prepared=await this.execution.prepareProfit(this.owner,allowed,Math.max(.05,input.profitState.initialSol-(input.profitState.remainingCostSol??0))),tx=VersionedTransaction.deserialize(prepared.bytes);
+   const prepared=await this.execution.prepareProfit(this.owner,allowed,Math.max(DEFAULTS.reserveSol,input.profitState.initialSol-(input.profitState.remainingCostSol??0))),tx=VersionedTransaction.deserialize(prepared.bytes);
    this.intent={id:randomBytes(16).toString('hex'),owner:this.owner,side:'PROFIT',symbol:'SOL',recipient:PROFIT_RECIPIENT,amount:String(allowed),reason:'realized-profit',lastValidBlockHeight:prepared.lastValidBlockHeight,messageHash:hash(tx),at:Date.now()};
    return {intent:this.intent,transaction:Buffer.from(prepared.bytes).toString('base64')};
   }
@@ -49,7 +49,7 @@ export class DirectWallet{
   if(side==='BUY'){
    const rank=rankMarket({...market,solUsd:feed.solUsd},DEFAULTS);if(!rank.eligible)throw Error('Token chưa đạt toàn bộ bộ lọc.');
    if(held>0n)throw Error('Ví đã giữ token này; không trộn với tài sản có sẵn.');
-   const balance=await this.execution.balance(this.owner,input.minContextSlot),size=walletOrderSol(balance,curve?CURVE_RULES.orderFraction:WALLET_ORDER_FRACTION);if(!size)throw Error('Chưa đủ SOL ngoài khoản dự phòng 0,05 SOL và phí.');
+   const balance=await this.execution.balance(this.owner,input.minContextSlot),size=walletOrderSol(balance,curve?CURVE_RULES.orderFraction:WALLET_ORDER_FRACTION);if(!size)throw Error('Chưa đủ SOL ngoài khoản dự phòng 0,1 SOL và phí.');
    if(input.orderSol!=null&&Math.round(input.orderSol*1e9)!==Math.round(size*1e9))throw Object.assign(Error('Số dư đã đổi; tính lại cỡ lệnh theo thị trường và quote.'),{code:'BALANCE_CHANGED'});
    amount=String(Math.round(size*1e9));
    const proof=!curve&&this.execution.roundTripQuote?await this.execution.roundTripQuote(market.mint,amount,market):market.evidence;

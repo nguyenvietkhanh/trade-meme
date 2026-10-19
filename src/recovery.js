@@ -30,7 +30,7 @@ export async function verifyPurchase(execution,owner,input){
  if(!decoded||!['buyExactQuoteIn','buyExactQuoteInV2'].includes(decoded.name))reject('không phải lệnh mua exact-quote được hỗ trợ.');
  const spec=program.idl.instructions.find(i=>i.name===decoded.name),account=name=>ix.accounts[spec.accounts.findIndex(a=>a.name===name)]?.toBase58();
  if(account('user')!==owner||account('baseMint')!==mint||account('quoteMint')!==SOL)reject('lệnh mua không khớp ví/token/SOL.');
- const inputLamports=Number(decoded.data.spendableQuoteIn.toString());if(!HISTORICAL_BUY_LAMPORTS.includes(String(inputLamports))&&inputLamports!==Math.round(walletOrderSol(tx.meta.preBalances[0]/1e9)*1e9))reject('lệnh mua không thuộc cỡ hiện tại hoặc lịch sử của bot.');
+ const inputLamports=Number(decoded.data.spendableQuoteIn.toString());if(!HISTORICAL_BUY_LAMPORTS.includes(String(inputLamports))&&inputLamports!==Math.round(walletOrderSol(tx.meta.preBalances[0]/1e9,.2)*1e9)&&inputLamports!==Math.round(walletOrderSol(tx.meta.preBalances[0]/1e9)*1e9))reject('lệnh mua không thuộc cỡ hiện tại hoặc lịch sử của bot.');
  const pairAddress=account('pool'),info=await rpc.getAccountInfo(new PublicKey(pairAddress),'confirmed');
  if(!info?.owner.equals(PUMP_AMM_PROGRAM_ID))reject('pool không thuộc PumpSwap.');
  const pool=program.coder.accounts.decode('pool',info.data);

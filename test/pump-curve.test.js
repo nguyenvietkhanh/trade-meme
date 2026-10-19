@@ -9,7 +9,7 @@ import {PUMP_PROGRAM} from '../src/pump-swap.js';
 import {OFFLINE_PUMP_AMM_PROGRAM} from '@pump-fun/pump-swap-sdk';
 import {curveFixture} from './fixtures/curve-rpc.js';
 import {pumpFixture} from './fixtures/pump-rpc.js';
-import {walletOrderSol,validHistoricalBuy,WALLET_SIZING_VERSION,CURVE_RULES} from '../src/desk-rules.js';
+import {walletOrderSol,validHistoricalBuy,LEGACY_WALLET_SIZING_VERSION,CURVE_RULES} from '../src/desk-rules.js';
 
 test('low-level execution rejects every curve BUY before any RPC or simulation, including Token-2022',async()=>{
  for(const token2022 of [false,true]){const f=await curveFixture({token2022}),e=new SolanaExecution();let calls=0;e.network=async()=>{calls++;};
@@ -33,8 +33,8 @@ test('a completed curve never auto-buys the migrated pool, but sells resolve onl
  const pool=canonicalPumpPoolPda(f.mint);f.map.set(pool.toBase58(),f.info(PUMP_PROGRAM,Buffer.alloc(0)));assert.deepEqual(await e.curveRoute(f.mint.toBase58(),'SELL',f.address.toBase58()),{venue:'pumpswap',poolAddress:pool.toBase58()});
 });
 test('curve allocation is 5% without reintroducing daily/streak pauses, and versioned receipts bind size to the venue',()=>{
- assert.equal(CURVE_RULES.orderFraction,.05);assert.equal(walletOrderSol(1,.05),.05);assert.equal(walletOrderSol(2,.05),.1);assert.equal(walletOrderSol(.05,.05),0);assert.equal(walletOrderSol(1),.2);
- const intent={sizingVersion:WALLET_SIZING_VERSION,walletBalanceLamports:1000000000,venue:'pumpfun',amount:'50000000'};assert.equal(validHistoricalBuy(intent),true);assert.equal(validHistoricalBuy({...intent,amount:'200000000'}),false);assert.equal(validHistoricalBuy({...intent,venue:'pumpswap'}),false);
+ assert.equal(CURVE_RULES.orderFraction,.05);assert.equal(walletOrderSol(1,.05),.05);assert.equal(walletOrderSol(2,.05),.1);assert.equal(walletOrderSol(.05,.05),0);assert.equal(walletOrderSol(1),.6);
+ const intent={sizingVersion:LEGACY_WALLET_SIZING_VERSION,walletBalanceLamports:1000000000,venue:'pumpfun',amount:'50000000'};assert.equal(validHistoricalBuy(intent),true);assert.equal(validHistoricalBuy({...intent,amount:'200000000'}),false);assert.equal(validHistoricalBuy({...intent,venue:'pumpswap'}),false);
 });
 
 test('a curve position can actually build and simulate its sale through the canonical migrated PumpSwap pool',async()=>{

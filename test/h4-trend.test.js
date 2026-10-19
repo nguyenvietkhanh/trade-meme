@@ -33,7 +33,7 @@ test('a healthy forming H4 candle can pass without requiring four hours of pool 
 test('known bearish H4 cannot be overridden by a high score; unavailable H4 reduces score, never creates a safe flag',()=>{
  const m=verifiedMarket({},now),risk={mint:m.mint,pairAddress:m.pairAddress,checkedAt:now,state:'reject'};
  const blocked=rankMarket({...m,evidence:{...m.evidence,h4Risk:risk}},undefined,now);assert.ok(blocked.score>=75);assert.equal(blocked.eligible,false);assert.ok(blocked.red_flags.includes('H4_DUMP_PATTERN'));
- const unknown=rankMarket({...m,evidence:{...m.evidence,h4Risk:undefined}},undefined,now);assert.equal(unknown.eligible,true);assert.equal(unknown.orderSol,.2);assert.equal(unknown.h4Status,'unknown');assert.equal(unknown.h4Penalty,5);
+ const unknown=rankMarket({...m,evidence:{...m.evidence,h4Risk:undefined}},undefined,now);assert.equal(unknown.eligible,true);assert.equal(unknown.orderSol,.6);assert.equal(unknown.h4Status,'unknown');assert.equal(unknown.h4Penalty,5);
  const stale=rankMarket({...m,evidence:{...m.evidence,h4Risk:{...risk,checkedAt:now-60001}}},undefined,now);assert.equal(stale.eligible,false,'an outage must not clear a recent rejection');
  const mismatched=rankMarket({...m,evidence:{...m.evidence,h4Risk:{...risk,mint:'other'}}},undefined,now);assert.equal(mismatched.h4Status,'unknown');
 });
@@ -74,6 +74,6 @@ test('a young or undated pool with unavailable H4 remains eligible at the config
  for(const pairCreatedAt of [now-1000,undefined,null,0]){
   const m=verifiedMarket({pairCreatedAt},now),h4Risk={...fourHourRisk([bar(100,120,95,115)],115,pairCreatedAt,now),mint:m.mint,pairAddress:m.pairAddress};
   assert.equal(h4Risk.state,'unknown');const rank=rankMarket({...m,evidence:{...m.evidence,h4Risk}},undefined,now);
-  assert.equal(rank.eligible,true);assert.equal(rank.orderSol,.2);assert.equal(rank.h4Status,'unknown');
+  assert.equal(rank.eligible,true);assert.equal(rank.orderSol,.6);assert.equal(rank.h4Status,'unknown');
  }
 });

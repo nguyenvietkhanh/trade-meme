@@ -1,4 +1,4 @@
-import {TRADE_RULES as DEFAULTS,positionLimitReached,clearLegacyDailyHalt,clearLegacyLossPause,CURVE_RULES} from './desk-rules.js';
+import {TRADE_RULES as DEFAULTS,positionLimitReached,clearLegacyDailyHalt,clearLegacyLossPause,clearLegacyDrawdownHalt,CURVE_RULES} from './desk-rules.js';
 import {rankMarket} from './strategy.js';
 import {recordEvaluation} from './scanner.js';
 export const SOL = 'So11111111111111111111111111111111111111112';
@@ -19,13 +19,11 @@ export function assertMarket(m,now,s,exit=false){
 export function riskCheck(state,markets,solUsd,now=Date.now()){
  if(!Number.isFinite(solUsd)||solUsd<=0)throw Error('Thiếu giá SOL.');
  const value=equity(state,markets,solUsd,now),day=new Date(now).toISOString().slice(0,10);
- clearLegacyDailyHalt(state);clearLegacyLossPause(state);
+ clearLegacyDailyHalt(state);clearLegacyLossPause(state);clearLegacyDrawdownHalt(state);
  if(day!==state.day){state.day=day;state.dayStartEquity=value;}
  state.peakEquity=Math.max(state.peakEquity,value);
  state.maxDrawdownObservedPct=Math.max(state.maxDrawdownObservedPct??0,state.peakEquity>0?(1-value/state.peakEquity)*100:0);
- if(state.peakEquity>0&&value<=state.peakEquity*(1-state.settings.maxDrawdownPct/100)){
-  state.halted='Drawdown ≥15%: đóng toàn bộ vị thế, khóa BUY; chờ bật lại thủ công.';state.haltKind='drawdown';state.liquidating=state.positions.length>0;if(!state.liquidating)state.running=false;
- }
+
 
  return value;
 }
@@ -112,7 +110,7 @@ export function sell(state,m,solUsd,now=Date.now(),reason='manual',fraction=1){
  recordSell(state,m,solUsd,{quantity,proceedsSol:proceeds,priceUsd:fill,closed:fraction===1},now,reason);
 }
 export function recordSell(state,m,solUsd,fill,now=Date.now(),reason='manual',mode='paper'){
- clearLegacyLossPause(state);
+ clearLegacyLossPause(state);clearLegacyDrawdownHalt(state);
  const p=state.positions.find(p=>p.mint===m.mint);if(!p)throw Error('Không có vị thế cho fill.');
  const fraction=fill.closed?1:Math.min(1,fill.quantity/p.quantity),quantity=p.quantity*fraction,proceeds=fill.proceedsSol,allocatedCost=p.costSol*fraction,allocatedUsd=p.costUsd*fraction;
  if(!(fraction>0&&fraction<=1&&proceeds>=0))throw Error('Fill bán không hợp lệ.');

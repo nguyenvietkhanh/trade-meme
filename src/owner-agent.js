@@ -8,7 +8,7 @@ import {DEFAULT_OWNER} from './security.js';
 import {createOwnerLedger,nextOwnerOrder,applyOwnerReceipt,ownerExit,allocateOwnerCapital} from './owner-ledger.js';
 import {DEFAULTS,equity,event} from './engine.js';
 import {rankMarket} from './strategy.js';
-import {STRATEGY_VERSION,clearLegacyDailyHalt,clearLegacyLossPause,walletOrderSol,WALLET_SIZING_VERSION,WALLET_ORDER_FRACTION} from './desk-rules.js';
+import {STRATEGY_VERSION,clearLegacyDailyHalt,clearLegacyLossPause,clearLegacyDrawdownHalt,walletOrderSol,WALLET_SIZING_VERSION,WALLET_ORDER_FRACTION} from './desk-rules.js';
 import {CURVE_RULES} from './desk-rules.js';
 import {auditDesk} from './auditor.js';
 import {diagnoseOwnerEntry} from './diagnostics.js';
@@ -36,8 +36,7 @@ function validatedState(s,owner){
   for(const p of s.positions)if(p.phase==='runner'&&p.entryPriceUsd>0){const filled=s.trades.filter(t=>t.mint===p.mint&&t.side==='SELL'&&t.reason==='runner-double'&&t.at>=p.openedAt).map(t=>t.priceUsd).filter(Number.isFinite);const anchor=Math.max(p.entryPriceUsd,...filled);p.nextTakeProfitPriceUsd=p.entryPriceUsd*2**Math.max(1,Math.floor(Math.log2(anchor/p.entryPriceUsd))+1);}
  }
  s.cooldowns??={};for(const t of s.trades)if(t.side==='SELL'&&t.reason==='stop-loss'&&t.closed&&Number.isFinite(t.at))s.cooldowns[t.mint]=Math.max(s.cooldowns[t.mint]??0,t.at+DEFAULTS.reentryMs);
- clearLegacyDailyHalt(s);clearLegacyLossPause(s);
- if(s.haltKind==='drawdown'&&s.positions.length)s.liquidating=true;
+ clearLegacyDailyHalt(s);clearLegacyLossPause(s);clearLegacyDrawdownHalt(s);
  return {...s,strategyVersion:STRATEGY_VERSION,withdrawnSol,externalWithdrawnSol,payoutFeesSol,realizedNetSol,payouts:s.payouts??[],settings:{...DEFAULTS,initialSol:s.settings.initialSol,orderSol:walletOrderSol(s.cashSol),smallOrderSol:walletOrderSol(s.cashSol),orderFraction:WALLET_ORDER_FRACTION,sizingVersion:WALLET_SIZING_VERSION},running:false};
 }
 export class OwnerAgent{
@@ -75,7 +74,7 @@ export class OwnerAgent{
   this.refreshInventory();
   if(!this.state){this.state=createOwnerLedger(this.owner,balance);event(this.state,'Bắt đầu sổ mới với ngân sách SOL hiện có; token ngoài sổ không tự động được quản lý.');}
   if(this.state.pending)throw Error('Đợi đối soát giao dịch đang chờ trước khi bật lại.');
-  clearLegacyDailyHalt(this.state);clearLegacyLossPause(this.state);
+  clearLegacyDailyHalt(this.state);clearLegacyLossPause(this.state);clearLegacyDrawdownHalt(this.state);
   if(this.state.halted&&!this.state.liquidating)throw Error(this.state.halted);
   allocateOwnerCapital(this.state,balance);
   this.state.storageBlockedReason=this.storageBlockedReason;this.state.orderAttempts={};this.state.buyPaused=false;this.state.buyCircuitOpen=false;this.state.buyCircuitKind=null;this.state.networkHealthyScans=0;this.state.executionFailures=0;

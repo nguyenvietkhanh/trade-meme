@@ -19,13 +19,13 @@ test('three losing positions keep their actual losses but permit the next eligib
  const m=verifiedMarket({mint:'next-token'},now),feed={markets:[m],solUsd:100,updatedAt:now};
  assert.equal(nextOwnerOrder(s,feed,s.cashSol).side,'BUY');assert.equal(diagnoseOwnerEntry(s,feed,s.cashSol).phase,'ready');assert.equal(TRADE_RULES.lossPauseMs,0);assert.equal(TRADE_RULES.lossStreakLimit,null);
 });
-test('an obsolete future timer cannot block another mint, while token re-entry, manual pause, drawdown and reserve remain enforced',()=>{
+test('an obsolete future timer cannot block another mint, while token re-entry, manual pause and reserve remain enforced',()=>{
  const now=Date.now(),s=createOwnerLedger('owner',1.19),m=verifiedMarket({},now),feed={markets:[m],solUsd:150,updatedAt:now};s.running=true;s.lossPauseUntil=now+7200000;
  assert.equal(diagnoseOwnerEntry(s,feed,1.19,now).phase,'ready');assert.equal(nextOwnerOrder(s,feed,1.19).side,'BUY');assert.equal(s.lossPauseUntil,0);
  s.cooldowns[m.mint]=now+86400000;assert.equal(nextOwnerOrder(s,feed,1.19),null);delete s.cooldowns[m.mint];
  s.buyPaused=true;assert.equal(nextOwnerOrder(s,feed,1.19),null);s.buyPaused=false;
  assert.equal(nextOwnerOrder(s,feed,.06),null);assert.equal(nextOwnerOrder(s,{...feed,updatedAt:now-31000},1.19),null);
- s.cashSol=1;riskCheck(s,[],150,now);assert.equal(s.haltKind,'drawdown');assert.equal(nextOwnerOrder(s,feed,1),null);
+ s.cashSol=1;riskCheck(s,[],150,now);assert.equal(s.halted,null);assert.equal(nextOwnerOrder(s,feed,1).side,'BUY');
 });
 test('restore clears only the old loss-pause timer/status and preserves accounting, pending orders and other stops',async()=>{
  const dir=await mkdtemp('/tmp/meme-no-loss-pause-');try{
@@ -33,7 +33,7 @@ test('restore clears only the old loss-pause timer/status and preserves accounti
   s.recordedSignatures=['previous-fill'];s.cooldowns.token=Date.now()+86400000;s.pending={transaction:'fixture-signed-bytes',intent:{owner,side:'BUY',amount:'200000000'}};
   const before=structuredClone(s),agent=new OwnerAgent(dir,{}, {},owner);await agent.restore(s);
   const restarted=new OwnerAgent(dir,{}, {},owner);await restarted.load();const restored=restarted.state;
-  assert.equal(restored.lossPauseUntil,0);assert.equal(restored.entryStatus,undefined);assert.equal(restored.running,false);
-  for(const key of ['lossStreak','cashSol','realizedNetSol','positions','trades','pending','recordedSignatures','cooldowns','buyPaused','buyCircuitOpen','halted','haltKind','peakEquity','dayStartEquity'])assert.deepEqual(restored[key],before[key],key);
+  assert.equal(restored.halted,null);assert.equal(restored.haltKind,null);assert.equal(restored.lossPauseUntil,0);assert.equal(restored.entryStatus,undefined);assert.equal(restored.running,false);
+  for(const key of ['lossStreak','cashSol','realizedNetSol','positions','trades','pending','recordedSignatures','cooldowns','buyPaused','buyCircuitOpen','peakEquity','dayStartEquity'])assert.deepEqual(restored[key],before[key],key);
  }finally{await rm(dir,{recursive:true,force:true});}
 });

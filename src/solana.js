@@ -10,13 +10,13 @@ import {SOL} from './engine.js';
 import {isPumpCurve} from './venues.js';
 import {curveState,curveRoundTrip,quoteCurve,decodeCurve,bondingCurvePda,canonicalPumpPoolPda,buildPumpCurve,CURVE_PROGRAM} from './pump-curve.js';
 import {keylessConnection,rpcConfiguration,MAINNET_GENESIS_HASH} from './rpc.js';
-import {PROFIT_RECIPIENT,PROFIT_RULES,TRADE_RULES,executionSlippageBps,walletOrderSol,validBuyLamports,WALLET_ORDER_FRACTION,CURVE_RULES} from './desk-rules.js';
+import {PROFIT_RECIPIENT,PROFIT_RULES,TRADE_RULES,executionSlippageBps,walletOrderSol,validBuyLamports,WALLET_ORDER_FRACTION,CURVE_RULES,MAINNET_ORDER_SOL} from './desk-rules.js';
 export const TOKEN=new PublicKey('TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA');
 export const TOKEN2022=new PublicKey('TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb');
 const ATA=new PublicKey('ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL');
 const PROGRAMS=new Set(['11111111111111111111111111111111','ComputeBudget111111111111111111111111111111',TOKEN.toBase58(),TOKEN2022.toBase58(),ATA.toBase58(),PUMP_PROGRAM.toBase58(),CURVE_PROGRAM.toBase58()]);
 export class TradePolicyError extends Error{}
-export const LIVE_LIMITS=Object.freeze({budgetSol:null,orderSol:null,orderFraction:WALLET_ORDER_FRACTION,reserveSol:TRADE_RULES.reserveSol,maxPositions:TRADE_RULES.maxPositions,maxDailyLossSol:TRADE_RULES.maxDailyLossSol,maxOverheadLamports:5000000,maxPriorityLamports:20000,maxPriceImpact:.02,slippageBps:TRADE_RULES.slippageBps});
+export const LIVE_LIMITS=Object.freeze({budgetSol:null,orderSol:MAINNET_ORDER_SOL,orderFraction:WALLET_ORDER_FRACTION,reserveSol:TRADE_RULES.reserveSol,maxPositions:TRADE_RULES.maxPositions,maxDailyLossSol:TRADE_RULES.maxDailyLossSol,maxOverheadLamports:5000000,maxPriorityLamports:20000,maxPriceImpact:.02,slippageBps:TRADE_RULES.slippageBps});
 const atomic=s=>{if(!/^\d+$/.test(String(s)))throw new TradePolicyError('Số lượng token không hợp lệ.');return BigInt(s);};
 export function validateQuote(q,input,output,amount,maxSlippageBps=LIVE_LIMITS.slippageBps,maxImpact=LIVE_LIMITS.maxPriceImpact){
  if(q.inputMint!==input||q.outputMint!==output||q.swapMode!=='ExactIn'||atomic(q.inAmount)!==atomic(amount)||atomic(q.outAmount)<=0n||atomic(q.otherAmountThreshold)<=0n||atomic(q.otherAmountThreshold)>atomic(q.outAmount))throw new TradePolicyError('Báo giá không khớp lệnh đã cho phép.');
@@ -146,7 +146,7 @@ export class SolanaExecution{
   if(input===SOL&&venue==='pumpfun')throw new TradePolicyError('Đã tắt BUY pump.fun trước migrate; SELL vị thế cũ vẫn hoạt động.');
   if(input===SOL&&!validBuyLamports(String(amount)))throw new TradePolicyError('Cỡ lệnh SOL không hợp lệ.');
   await this.network();const owner=keypair?.publicKey??new PublicKey(ownerAddress);
-  if(input===SOL){const size=walletOrderSol(await this.balance(owner,minContextSlot),venue==='pumpfun'?CURVE_RULES.orderFraction:WALLET_ORDER_FRACTION);if(!size||String(amount)!==String(Math.round(size*1e9)))throw new TradePolicyError('Số dư đã đổi hoặc cỡ lệnh không bằng 20% ví sau dự phòng gas; tính lại quote trước khi ký.');}
+  if(input===SOL){const size=walletOrderSol(await this.balance(owner,minContextSlot),venue==='pumpfun'?CURVE_RULES.orderFraction:WALLET_ORDER_FRACTION);if(!size||String(amount)!==String(Math.round(size*1e9)))throw new TradePolicyError('Số dư đã đổi hoặc cỡ lệnh không khớp trần 0,6 SOL và dự phòng gas 0,1 SOL; tính lại quote trước khi ký.');}
   const cap=executionSlippageBps(input===SOL?'BUY':'SELL',reason),emergency=cap===TRADE_RULES.emergencySlippageCapBps;
   const route=venue==='pumpfun'?await this.curveRoute(input===SOL?output:input,input===SOL?'BUY':'SELL',poolAddress):{venue:'pumpswap',poolAddress};
   const build=route.venue==='pumpfun'?buildPumpCurve:buildPumpSwap;

@@ -38,7 +38,7 @@ export function diagnoseOwnerEntry(s,feed,balance,now=Date.now()){
  const eligible=feed.markets.map(m=>({...m,...rankMarket(m,s.settings,now)})).filter(m=>m.eligible);
  if(!eligible.length)return result('waiting-signal','Chưa có token qua hết các tầng; xem số lượng bị chặn và lý do phía dưới.');
  const funded=eligible.filter(m=>{const size=walletOrderSol(balance,isPumpCurve(m)?CURVE_RULES.orderFraction:WALLET_ORDER_FRACTION);return size>0&&canFundBuy(s.cashSol,size,s.settings.reserveSol);});
- if(!funded.length)return result('reserve','Không đủ ngân sách cho cỡ lệnh và phí mà vẫn giữ 0,05 SOL dự phòng.');
+ if(!funded.length)return result('reserve','Không đủ ngân sách cho cỡ lệnh và phí mà vẫn giữ 0,1 SOL dự phòng.');
  if(s.positions.some(p=>!feed.markets.some(m=>m.mint===p.mint)))return result('position-data','Chưa có dữ liệu cho toàn bộ vị thế đang mở.');
  const unheld=funded.filter(m=>!s.positions.some(p=>p.mint===m.mint));
  if(!unheld.length)return result('already-held','Token đạt điều kiện đã có vị thế; không mua trùng.');

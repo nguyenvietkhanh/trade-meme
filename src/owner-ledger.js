@@ -1,7 +1,7 @@
 import {freshState,recordBuy,recordSell,riskCheck,exitPlan,event} from './engine.js';
 import {rankMarket} from './strategy.js';
 import {profitOrder,PROFIT_RECIPIENT} from './profit.js';
-import {STRATEGY_VERSION,positionLimitReached,canFundBuy,BUY_LAMPORTS,walletOrderSol,WALLET_SIZING_VERSION,WALLET_ORDER_FRACTION,CURVE_RULES} from './desk-rules.js';
+import {STRATEGY_VERSION,clearLegacyDrawdownHalt,positionLimitReached,canFundBuy,BUY_LAMPORTS,walletOrderSol,WALLET_SIZING_VERSION,WALLET_ORDER_FRACTION,CURVE_RULES} from './desk-rules.js';
 import {isPumpCurve} from './venues.js';
 import {enqueueTrainingRecord} from './training-records.js';
 
@@ -23,6 +23,7 @@ export function allocateOwnerCapital(s,walletBalance,now=Date.now()){
  event(s,amount>0?`Đã bổ sung ${amount.toFixed(6)} SOL vào vốn ứng dụng; không ghi thành lợi nhuận.`:`Ví giảm ${(-amount).toFixed(6)} SOL ngoài sổ lệnh; ghi dòng tiền ra, không tính là lỗ giao dịch.`,now);return amount;
 }
 export function nextOwnerOrder(s,feed,walletBalance){
+ clearLegacyDrawdownHalt(s);
  if(s.pending)return null;
  const now=Date.now(),validSol=Number.isFinite(feed.solUsd)&&feed.solUsd>0;
  if(validSol&&(!feed.solUsdEstimated&&now-feed.updatedAt<=s.settings.maxPriceAgeMs||s.positions.length&&s.positions.every(p=>{const q=feed.markets.find(m=>m.mint===p.mint)?.exitQuote;return q?.mint===p.mint&&q.rawAmount===p.rawQuantity&&q.checkedAt<=now&&now-q.checkedAt<=s.settings.maxPriceAgeMs&&Number.isFinite(q.netSol);})))riskCheck(s,feed.markets,feed.solUsd);
@@ -41,7 +42,7 @@ export function nextOwnerOrder(s,feed,walletBalance){
  }
  if(s.positions.some(p=>p.exitBlocked)||feed.error||!feed.updatedAt||now-feed.updatedAt>s.settings.maxPriceAgeMs||feed.updatedAt>now||!validSol||s.buyPaused||s.buyBlockedReason)return null;
  const payout=s.recoveryRequired?null:profitOrder(s,walletBalance);if(payout)return payout;
- if(!walletOrderSol(walletBalance,CURVE_RULES.orderFraction)||s.halted||positionLimitReached(s.positions.length,s.settings)||s.positions.some(p=>!feed.markets.some(m=>m.mint===p.mint)))return null;
+ if(!walletOrderSol(walletBalance)||s.halted||positionLimitReached(s.positions.length,s.settings)||s.positions.some(p=>!feed.markets.some(m=>m.mint===p.mint)))return null;
  const m=feed.markets.map(m=>({...m,...rankMarket(m,s.settings)})).filter(m=>m.eligible&&canFundBuy(s.cashSol,walletOrderSol(walletBalance,isPumpCurve(m)?CURVE_RULES.orderFraction:WALLET_ORDER_FRACTION),s.settings.reserveSol)&&walletOrderSol(walletBalance,isPumpCurve(m)?CURVE_RULES.orderFraction:WALLET_ORDER_FRACTION)>0&&!s.positions.some(p=>p.mint===m.mint)&&!(s.cooldowns[m.mint]>Date.now())&&!exhausted({side:'BUY',venue:isPumpCurve(m)?'pumpfun':'pumpswap',mint:m.mint})).sort((a,b)=>b.score-a.score)[0];
  const size=m?walletOrderSol(walletBalance,isPumpCurve(m)?CURVE_RULES.orderFraction:WALLET_ORDER_FRACTION):0;
  return m?{side:'BUY',venue:isPumpCurve(m)?'pumpfun':'pumpswap',mint:m.mint,symbol:m.symbol,reason:'autonomous-low-cap',orderSol:size,minContextSlot:s.lastReceiptSlot,strategyVersion:STRATEGY_VERSION,riskSol:size*s.settings.stopLossPct/100}:null;

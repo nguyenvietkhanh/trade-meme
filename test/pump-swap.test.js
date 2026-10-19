@@ -29,8 +29,8 @@ test('unsupported pools and excessive reserve impact stop before a wallet reques
  const f=await pumpFixture();await assert.rejects(buildPumpSwap(f.rpc,{...request(f),amount:'1000000000'}),/2%/);
 });
 test('simulation rejects insufficient output and excess SOL even for locally built PumpSwap instructions',async()=>{
- const f=await pumpFixture(),execution=new SolanaExecution();execution.rpc=f.rpc;const original=f.rpc.simulateTransaction;
- const r={ownerAddress:f.user.toBase58(),input:SOL,output:f.mint.toBase58(),amount:'200000000',poolAddress:f.poolKey.toBase58()};
+ const f=await pumpFixture(),execution=new SolanaExecution();execution.rpc=f.rpc;f.map.get(f.pool.poolQuoteTokenAccount.toBase58()).data.writeBigUInt64LE(1000000000000n,64);const original=f.rpc.simulateTransaction;
+ const r={ownerAddress:f.user.toBase58(),input:SOL,output:f.mint.toBase58(),amount:'600000000',poolAddress:f.poolKey.toBase58()};
  f.rpc.simulateTransaction=async(...args)=>{const sim=await original(...args);sim.value.accounts[0].lamports=90000000;return sim;};await assert.rejects(execution.prepare(r),/quá giới hạn/);
  f.rpc.simulateTransaction=async(...args)=>{const sim=await original(...args),data=Buffer.from(sim.value.accounts[1].data[0],'base64');data.writeBigUInt64LE(1n,64);sim.value.accounts[1].data[0]=data.toString('base64');return sim;};await assert.rejects(execution.prepare(r),/không nhận đủ/);
 });
@@ -48,10 +48,10 @@ test('a local pool cannot relax the owner entry price reference supplied by Jupi
 });
 
 test('official SDK simulation checks referenced accounts without depending on full-wallet inventory',async()=>{
- const f=await pumpFixture(),execution=new SolanaExecution();execution.rpc=f.rpc;
+ const f=await pumpFixture(),execution=new SolanaExecution();execution.rpc=f.rpc;f.map.get(f.pool.poolQuoteTokenAccount.toBase58()).data.writeBigUInt64LE(1000000000000n,64);
  execution.holdings=async()=>{throw Error('Global wallet inventory must not be required by prepare');};
- const result=await execution.prepare({ownerAddress:f.user.toBase58(),input:SOL,output:f.mint.toBase58(),amount:'200000000',poolAddress:f.poolKey.toBase58()});
- assert.ok(result.bytes.length>0);assert.equal(result.quote.inAmount,'200000000');assert.equal(result.signature,null);
+ const result=await execution.prepare({ownerAddress:f.user.toBase58(),input:SOL,output:f.mint.toBase58(),amount:'600000000',poolAddress:f.poolKey.toBase58()});
+ assert.ok(result.bytes.length>0);assert.equal(result.quote.inAmount,'600000000');assert.equal(result.signature,null);
 });
 
 test('new BUY preparation refuses invalid amounts before any RPC call',async()=>{

@@ -5,7 +5,7 @@ import {STRATEGY_VERSION} from './desk-rules.js';
 import {writeDurable} from './persistence.js';
 export const PAPER_CONFIG=Object.freeze({version:1,initialSol:1,minDelayMs:2000,quoteIntervalMs:10000,feeAllowanceSol:.000025,refundableRentSol:.003,minimumClosedPerArm:100,arms:[{id:'baseline-5pct',fraction:.05,maxExposure:null},{id:'candidate-2pct',fraction:.02,maxExposure:.1}]});
 const fresh=(at,now,ms=30000)=>Number.isFinite(at)&&at<=now&&now-at<=ms;
-const initial=()=>({version:1,createdAt:Date.now(),arms:PAPER_CONFIG.arms.map(config=>({config:{...config},ledger:{...freshState(),strategyVersion:STRATEGY_VERSION,cashSol:1,peakEquity:1,settings:{...freshState().settings,initialSol:1}},pending:null,metrics:{closed:0,wins:0,losses:0,grossProfit:0,grossLoss:0,netPnl:0},gaps:0}))});
+const initial=()=>({version:1,createdAt:Date.now(),arms:PAPER_CONFIG.arms.map(config=>({config:{...config},ledger:{...freshState(),strategyVersion:STRATEGY_VERSION,cashSol:1,peakEquity:1,settings:{...freshState().settings,initialSol:1,maxDrawdownPct:15,reserveSol:.05}},pending:null,metrics:{closed:0,wins:0,losses:0,grossProfit:0,grossLoss:0,netPnl:0},gaps:0}))});
 /** Read-only runtime archive of the retired curve study; no quote worker or new fills. */
 export class PaperResearch{
  constructor(dir,quoteReadOnly,journal){this.dir=path.join(dir,'research');this.file=path.join(this.dir,'paper-state.json');this.journal=journal;this.state=initial();this.busy=null;this.lastQuoteAt=0;this.error=null;this.storageFailed=false;this.pausedForLive=false;}

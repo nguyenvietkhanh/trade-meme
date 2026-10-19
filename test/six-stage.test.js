@@ -10,10 +10,10 @@ import {jupiterRoundTrip,jupiterSellQuote} from '../src/sell-quote.js';
 import {SOL} from '../src/engine.js';
 const now=Date.now();
 test('six-stage score totals 100, fixed size is authoritative even with optional missing creator data',()=>{
- const m=verifiedMarket({},now);let r=rankMarket(m,R,now);assert.equal(r.score,100);assert.equal(r.orderSol,.2);
+ const m=verifiedMarket({},now);let r=rankMarket(m,R,now);assert.equal(r.score,100);assert.equal(r.orderSol,.6);
  const e={...m.evidence};delete e.higherLows;delete e.pullback30mPct;delete e.greenCandleConfirmed;
- r=rankMarket({...m,hasProfile:false,sells5m:12,evidence:e},R,now);assert.equal(r.score,73);assert.equal(r.orderSol,.2);assert.equal(r.eligible,true);
- delete e.devPct;r=rankMarket({...m,evidence:e},R,now);assert.equal(r.eligible,true);assert.equal(r.orderSol,.2);
+ r=rankMarket({...m,hasProfile:false,sells5m:12,evidence:e},R,now);assert.equal(r.score,73);assert.equal(r.orderSol,.6);assert.equal(r.eligible,true);
+ delete e.devPct;r=rankMarket({...m,evidence:e},R,now);assert.equal(r.eligible,true);assert.equal(r.orderSol,.6);
  const unsafe=rankMarket({...m,evidence:{...e,top10Pct:36}},R,now);assert.equal(unsafe.eligible,false,'half score never fills mandatory safety');
 });
 test('FDV fallback is limited to pump suffix, legacy scanner cooldown cannot block scoring, quote reserve is mandatory',()=>{
@@ -41,12 +41,14 @@ test('maximum hold and stale-data SELL are independent of entry feed availabilit
  assert.equal(order.side,'SELL');assert.equal(order.reason,'max-hold');assert.equal(order.closeEmptyInput,true);
  const empty=createOwnerLedger('owner',.3);assert.equal(nextOwnerOrder(empty,{markets:[m],solUsd:100,updatedAt:now-30001},.3),null);
 });
-test('drawdown liquidates each tracked position before stopping, and never records an unconfirmed exit',()=>{
- const {s,m,p}=position();s.running=true;s.cashSol=.20;s.peakEquity=.3;
- const f={markets:[m],solUsd:100,updatedAt:Date.now()};riskCheck(s,[m],100);assert.equal(s.haltKind,'drawdown');assert.equal(s.liquidating,true);assert.equal(s.running,true);
- const order=nextOwnerOrder(s,f,.23);assert.equal(order.reason,'drawdown-close');assert.equal(s.positions.length,1);
- applyOwnerReceipt(s,{intent:{...order,solUsd:100,priceUsd:1}},{status:'confirmed',signature:'liquidated',tokenDelta:'-3000000',solDelta:.03,decimals:6,feeSol:.00002});
- assert.equal(s.positions.length,0);assert.equal(s.running,false);assert.equal(s.liquidating,false);assert.equal(s.haltKind,'drawdown');
+test('old drawdown liquidation retires without losing positions, and individual stop-loss remains executable',()=>{
+ const {s,m,p}=position();Object.assign(s,{running:true,cashSol:.20,peakEquity:.3,haltKind:'drawdown',halted:'old drawdown',liquidating:true});
+ const f={markets:[m],solUsd:100,updatedAt:Date.now()};riskCheck(s,[m],100);assert.equal(s.haltKind,null);assert.equal(s.liquidating,false);assert.equal(s.running,true);assert.ok(s.maxDrawdownObservedPct>15);
+ assert.equal(nextOwnerOrder(s,f,.23),null);assert.equal(s.positions.length,1);
+ const exit={...m,exitQuote:{mint:p.mint,rawAmount:p.rawQuantity,netSol:.02,checkedAt:Date.now()}};
+ const order=nextOwnerOrder(s,{...f,markets:[exit]},.23);assert.equal(order.reason,'stop-loss');assert.equal(s.positions.length,1);
+ applyOwnerReceipt(s,{intent:{...order,solUsd:100,priceUsd:1}},{status:'confirmed',signature:'stopped',tokenDelta:'-3000000',solDelta:.02,decimals:6,feeSol:.00002});
+ assert.equal(s.positions.length,0);assert.equal(s.running,true);assert.equal(s.haltKind,null);
 });
 test('trailing tightens at 4x and 8x, and exhausted volume exits below entry',()=>{
  for(const [peak,price]of [[3,2.1],[4,3],[8,6.4]]){const {s,p,m}=position();p.phase='runner';p.peakPriceUsd=peak;p.nextTakeProfitPriceUsd=peak*2;assert.equal(exitPlan(p,{...m,priceUsd:price},100,R,now).reason,'runner-trailing');}
@@ -68,11 +70,11 @@ test('a stopped token stays blocked for 24 hours and a 0.2 SOL order cannot cons
  applyOwnerReceipt(s,{intent:{side:'SELL',mint:p.mint,symbol:p.symbol,solUsd:100,priceUsd:.7,reason:'stop-loss'}},{status:'confirmed',signature:'stop-24h',tokenDelta:'-3000000',solDelta:.021,decimals:6,feeSol:.00002});
  assert.ok(s.cooldowns[p.mint]>=Date.now()+R.reentryMs-1000);
  const small=createOwnerLedger('owner',.06);assert.equal(nextOwnerOrder(small,{markets:[m],solUsd:100,updatedAt:Date.now()},.06),null);
- const funded=createOwnerLedger('owner',.255);assert.equal(nextOwnerOrder(funded,{markets:[m],solUsd:100,updatedAt:Date.now()},.255).orderSol,.051);
+ const funded=createOwnerLedger('owner',.255);assert.equal(nextOwnerOrder(funded,{markets:[m],solUsd:100,updatedAt:Date.now()},.255).orderSol,.15);
 });
 
 test('owner entry opens more than two positions until SOL reserve and fees prevent the next buy',()=>{
- const s=createOwnerLedger('owner',1.19),markets=[],feed=()=>({markets,solUsd:100,updatedAt:Date.now()});
+ const s=createOwnerLedger('owner',4),markets=[],feed=()=>({markets,solUsd:100,updatedAt:Date.now()});
  assert.equal(s.settings.maxPositions,null);
  for(let i=0;i<20;i++){
   const m=verifiedMarket({mint:'capital-'+i,priceUsd:1},Date.now());markets.push(m);

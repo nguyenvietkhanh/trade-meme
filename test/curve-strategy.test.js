@@ -22,9 +22,9 @@ test('curve confirmation requires distinct observations and supports new coins w
  const now=Date.now(),state={},m=curveMarket(now,{activityWatermark:'slot:trade:0'});assert.equal(observeMarkets(state,[m],now)[0].signalConfirmed,false);assert.equal(observeMarkets(state,[{...m,updatedAt:now+10000,activityCheckedAt:now+10000,activityWatermark:'slot:new-trade:0',priceUsd:m.priceUsd*1.01}],now+10000)[0].signalConfirmed,true);
  assert.equal(observeMarkets(state,[{...m,change1mPct:-1}],now+15000)[0].signalConfirmed,false);
 });
-test('owner ledger refuses new curve entries while retaining PumpSwap allocation at 20%',()=>{
+test('owner ledger refuses new curve entries while retaining PumpSwap cap at 0.6 SOL',()=>{
  const s=createOwnerLedger('owner',1),now=Date.now(),curve=curveMarket(now),f={solUsd:100,updatedAt:now,markets:[curve]};s.running=true;
- assert.equal(nextOwnerOrder(s,f,1),null);f.markets=[verifiedMarket({},now)];assert.equal(nextOwnerOrder(s,f,1).orderSol,.2);
+ assert.equal(nextOwnerOrder(s,f,1),null);f.markets=[verifiedMarket({},now)];assert.equal(nextOwnerOrder(s,f,1).orderSol,.6);
 });
 test('direct curve verifier uses official ownership/complete reserves and aggregates holders excluding curve vault',async()=>{
  const f=await curveFixture(),e=new SolanaExecution();e.rpc=f.rpc;const m=curveMarket(Date.now(),{mint:f.mint.toBase58(),pairAddress:f.address.toBase58()});
@@ -44,8 +44,8 @@ test('curve early profit and +80% recovery account for previous proceeds rather 
  recordSell(s,{mint:p.mint,priceUsd:1},100,{quantity:25,proceedsSol:.016875,priceUsd:1,rawBalance:'75000000',closed:false},now,plan.reason,'live');assert.equal(p.earlyProfitTaken,true);assert.equal(p.phase,'initial');
  const m=quote(p,1.8,now+1000);plan=exitPlan(p,m,100,s.settings,now+1000);assert.equal(plan.reason,'recover-capital');const remainingTarget=.05*1.4-.016875;assert.ok(Math.abs(m.exitQuote.netSol*plan.fraction-remainingTarget)<1e-12);assert.ok(plan.fraction<1);
 });
-test('curve exit quotes must be fresh, drawdown policy stays unchanged, and time/max holds differ only for curve positions',()=>{
+test('curve exit quotes must be fresh, drawdown enforcement is disabled, and time/max holds differ only for curve positions',()=>{
  const {s,p}=position(),now=Date.now(),bad=quote(p,.5,now-5001);assert.equal(exitPlan(p,bad,100,s.settings,now),null);
  assert.equal(exitPlan(p,quote(p,.5,now),100,s.settings,now).reason,'stop-loss');assert.equal(exitPlan(p,quote(p,1.1,now+900001),100,s.settings,p.openedAt+900001).reason,'time-stop');
- p.maxGainPct=50;assert.equal(exitPlan(p,quote(p,1.2,now+3600001),100,s.settings,p.openedAt+3600001).reason,'max-hold');assert.equal(s.settings.maxDrawdownPct,15);
+ p.maxGainPct=50;assert.equal(exitPlan(p,quote(p,1.2,now+3600001),100,s.settings,p.openedAt+3600001).reason,'max-hold');assert.equal(s.settings.maxDrawdownPct,null);
 });

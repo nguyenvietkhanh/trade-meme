@@ -13,7 +13,7 @@ import {OwnerAuth,DEFAULT_OWNER} from './security.js';
 import {SolanaExecution} from './solana.js';
 import {DirectWallet} from './direct-wallet.js';
 import {VerificationFeed} from './verification.js';
-import {STRATEGY_VERSION} from './desk-rules.js';
+import {STRATEGY_VERSION,MAINNET_ORDER_SOL,WALLET_SIZING_VERSION} from './desk-rules.js';
 import {OwnerAgent,signerRequestAllowed} from './owner-agent.js';
 import {initializeStorage} from './storage.js';
 import {withRpcPriority} from './rpc-priority.js';
@@ -81,7 +81,7 @@ function snapshot(req){
   if(liveOnly){
     const authenticated=auth.authenticated(req);
     const diagnostics={...diagnose({...state,running:false},feed,rankings),phase:authenticated?'owner-wallet':'owner-required',message:authenticated?ownerAgent?'Mở khóa bộ ký để bot tự giao dịch trên server; không chờ ký từng lệnh.':'Ví chủ ký trực tiếp. Mỗi giao dịch cần xác nhận trong ví.':'Kết nối đúng ví chủ để đọc số dư và giao dịch trực tiếp.'};
-    return {research:{journal:research.status(),paper:paperResearch.status()},mode:'live',walletMode:'owner',ownerAuthenticated:authenticated,readOnly:true,running:false,automationRequested:false,settings:{...DEFAULTS,initialSol:null,orderSol:null,smallOrderSol:null,orderFraction:.2,sizingVersion:'wallet-balance-v1'},rankings,diagnostics,feed,buildRevision:process.env.RAILWAY_GIT_COMMIT_SHA??'local',cashSol:null,equitySol:null,pnlSol:null,positions:[],trades:[],curve:[],events:[],watchlist:[],halted:null,peakEquity:null,maxDrawdownObservedPct:null,closedCount:0,winRate:null,decisionStats:state.decisionStats,decisions:state.decisions};
+    return {research:{journal:research.status(),paper:paperResearch.status()},mode:'live',walletMode:'owner',ownerAuthenticated:authenticated,readOnly:true,running:false,automationRequested:false,settings:{...DEFAULTS,initialSol:null,orderSol:MAINNET_ORDER_SOL,smallOrderSol:MAINNET_ORDER_SOL,orderFraction:null,sizingVersion:WALLET_SIZING_VERSION},rankings,diagnostics,feed,buildRevision:process.env.RAILWAY_GIT_COMMIT_SHA??'local',cashSol:null,equitySol:null,pnlSol:null,positions:[],trades:[],curve:[],events:[],watchlist:[],halted:null,peakEquity:null,maxDrawdownObservedPct:null,closedCount:0,winRate:null,decisionStats:state.decisionStats,decisions:state.decisions};
   }
   return {...state,rankings,diagnostics:diagnose(state,feed,rankings),buildRevision:process.env.RAILWAY_GIT_COMMIT_SHA??'local',mode:'paper',readOnly,feed,equitySol:feed.solUsd?value:null,pnlSol:feed.solUsd?value-state.settings.initialSol:null,winRate:closed.length?closed.filter(t=>(t.positionPnlSol??t.pnlSol)>0).length/closed.length:null,closedCount:closed.length};
 }
