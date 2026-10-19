@@ -69,3 +69,12 @@ test('more than six tracked holdings cannot hide a new candidate from safety ver
  await feed.enrichCached([...held,candidate],held.map(m=>m.mint),now);await Promise.all([...feed.jobs.values()]);
  assert.deepEqual(called,[candidate.mint]);assert.equal(feed.jobs.size,0);
 });
+test('paper refreshes expired quotes after 10 seconds while keeping report and facts cached for 20 seconds',async t=>{
+ const {rankPaperMarket}=await import('../src/paper-policy.js');let time=now,reports=0,facts=0,quotes=0;t.mock.method(Date,'now',()=>time);
+ const current=()=>verifiedMarket({mint,change5mPct:27,scalpConfirmed:true},time);
+ const execution={inspectMarketFacts:async()=>{facts++;const {roundTripQuoteOk,roundTripLossPct,probeSol,buyImpactPct,sellImpactPct,quoteCheckedAt,...rest}=current().evidence;return rest;},inspectMarketQuote:async()=>{quotes++;return {roundTripQuoteOk:true,roundTripLossPct:3,probeSol:.6,buyImpactPct:1,sellImpactPct:1,quoteCheckedAt:time};}};
+ const feed=new VerificationFeed(async url=>{if(String(url).includes('api.rugcheck.xyz'))reports++;return new Response(JSON.stringify(report));},execution,{rankMarket:rankPaperMarket,ignoreH4:true,cacheMs:10000});
+ await feed.enrich([current()],[],time);assert.equal(quotes,1);assert.equal(reports,1);assert.equal(facts,1);
+ time=now+9000;await feed.enrich([current()],[],time);assert.equal(quotes,1);
+ time=now+11000;await feed.enrich([current()],[],time);assert.equal(quotes,2);assert.equal(reports,1);assert.equal(facts,1);
+});

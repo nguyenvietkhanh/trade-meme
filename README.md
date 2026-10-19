@@ -1,9 +1,48 @@
 # Meme Pilot · Paper 20 SOL
 
 Bản hiện tại chạy hoàn toàn bằng **20 SOL mô phỏng**, dùng dữ liệu thị trường
-thật. Không ký/gửi giao dịch hoặc chuyển SOL thật. Bộ lọc vào lệnh paper được nới
-để thu thập dữ liệu, có ghi nhãn so sánh bộ luật gốc; không tự huấn luyện hay
+thật. Không ký/gửi giao dịch hoặc chuyển SOL thật. Bản hiện tại ưu tiên gainers 5 phút
+để thử giao dịch ngắn, có ghi nhãn so sánh bộ luật gốc; không tự huấn luyện hay
 triển khai tham số mới bằng tiền thật.
+
+## Gainers 5M · `paper-5m-scalp-v1`
+
+These are **unvalidated research parameters**, not estimates of optimal returns.
+The strategy ranks observed PumpSwap pools by 5-minute percent gain descending,
+then score and volume. This is a rank within the bot's discovery universe,
+**not** an integration of DexScreener's entire in-app New Gainers table. The same
+DexScreener/GeckoTerminal discovery, RugCheck, Jupiter and configured RPC sources
+remain in use; there is no undocumented gainers endpoint or new paid data feed.
+
+| Rule | New paper entries |
+|---|---|
+| Five-minute gain | +5% to +100% |
+| Volume / activity 5m | ≥$500, ≥5 buys, ≥10 trades, buy/sell ratio ≥1.1 |
+| Context | H1/H4 are recorded; green H1 and green H4 are not required |
+| Score | ≥40; momentum 30, flow 25, acceleration 20, depth 15, cost 10; wash/boost penalties retained |
+| Confirmation | Two fresh snapshots 5–15s apart with changed price/volume/counts, price retention ≥99.5%, liquidity retention ≥90% |
+| Security / execution gates | Existing authority, token program/extensions, LP, holders, cap/depth, round-trip ≤6%, impact ≤2%, real quote and capital checks retained |
+| Stop | −12% using net executable SELL quote against allocated cost |
+| Profit | +15% net sells 50%; +30% net closes remainder (a jump directly to ≥30% closes all) |
+| Trailing | 8% below peak net value per token after the first sale actually fills |
+| Stall / hold | 3 minutes without an observed net gain ≥5% exits; maximum hold 10 minutes |
+
+Market shortlisting and BUY selection both use the 5m policy, so an old
+H1/liquidity-only shortlist does not discard the desired gainers before checking.
+Held pools remain pinned and included. The verification decision cache is 10s
+for paper; reports/facts keep their existing 20s cache. Two verification workers,
+SELL-priority quote queue, serialized reads, provider backoff and slippage caps
+remain enforced; API outages can delay/miss entries and exits.
+
+Every new position, pending order and archived fill pins its strategy, entry and
+exit policy. Restarts preserve capital, quantities, first-profit state and
+trailing peak. Unfilled BUY intents from a previous policy are canceled on
+upgrade; existing SELL intents and open positions keep their old policy.
+A partial day's daily report separates results by strategy. These groups share
+virtual capital and are not independent backtests; per-group drawdown remains
+unknown. Fee, latency and fill assumptions still apply, and fast exits may lose
+to fees or execute well beyond a stop during a price gap. Collect at least 100
+closed trades per strategy and use a later time period before judging an edge.
 
 ## Chạy
 
@@ -34,13 +73,14 @@ sold or managed** by paper mode; inspect any remaining real holdings separately.
 The new ledger is `<DATA_DIR>/paper20/ledger.json`, with a durable backup and
 separate immutable fill archives. Initial capital is 20 virtual SOL **once**;
 restart never reissues capital. PumpSwap discovery, 5s scans, safety gates, capped/adaptive 0.6 SOL sizing,
-0.1 SOL reserve and exits reuse the current rules. Entry selection uses the
-separately versioned paper exploration policy described below. Daily loss, loss-streak pause and drawdown enforcement stay off,
+0.1 SOL reserve remain unchanged. New paper entries and exits use the versioned
+5-minute scalp policy below; open positions keep their original exit policy. Daily loss, loss-streak pause and drawdown enforcement stay off,
 as previously configured; drawdown is still measured. No curve or GMGN source
 is enabled by this change. Previously paused RugCheck diagnostics remain separate.
 
 Paper fills require a fresh real Jupiter quote after a modeled 2s delay, within
-the original intent's slippage limit, with at most 3 attempts and 30s expiry.
+the original intent's slippage limit, with at most 3 attempts; new BUY intents expire after 10s and SELL intents after
+30s. New-strategy executable quotes and round-trip evidence must be ≤10s old.
 The conservative model discounts the new quote's expected output by 1.5%
 (normally) or 10% (emergency), bounded below by the fresh quote's minimum and
 the original intent's limit (4% BUY / 3% regular SELL / 10% emergency). A fresh
@@ -82,7 +122,7 @@ ledgers, journals, report archives and notification settings. The UI explicitly
 shows ephemeral storage; a backup in the same container does not solve this.
 
 
-Paper exploration policy (`paper-exploration-v1`, requested for broader research):
+Previous exploration policy (`paper-exploration-v1`, historical comparison; new entries use the scalp policy above):
 
 | Entry gate | Baseline | Paper experiment |
 |---|---|---|

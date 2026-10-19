@@ -72,3 +72,11 @@ test('zero-like cap strings cannot disguise an FDV fallback as an actual market 
  t.mock.method(globalThis,'fetch',async url=>new Response(JSON.stringify({pairs:String(url).endsWith(SOL)?[{...pair(SOL,'SOL',999999),priceUsd:'150'}]:[{...pair('ordinary-mint','SMALL',200000),marketCap:'0',fdv:123456},{...pair('samplepump','SMALL2',200000),marketCap:null,fdv:234567}]})));
  const f=await loadMarkets();assert.equal(f.markets.find(m=>m.mint==='ordinary-mint').valuationSource,'fdv');assert.equal(f.markets.find(m=>m.mint==='samplepump').valuationSource,'pump-fdv');
 });
+test('paper gainer shortlist includes low-liquidity +54% token outside the old first 60, retaining held pools',async t=>{
+ const {rankPaperMarket}=await import('../src/paper-policy.js'),{compare5m}=await import('../src/paper-scalp.js');
+ const list=Array.from({length:65},(_,i)=>({...pair('slow-'+i,'MEME'+i,200000+i),liquidity:{usd:200000+i,quote:100},marketCap:1000000,volume:{h24:100000,h1:10000,m5:1000},priceChange:{m5:3,h1:10},txns:{m5:{buys:20,sells:10},h1:{buys:100,sells:50}}}));
+ list.push({...pair('gainer','FAST',10000),marketCap:30000,volume:{h24:100000,h1:10000,m5:1000},priceChange:{m5:54,h1:-20},txns:{m5:{buys:20,sells:10},h1:{buys:100,sells:50}}});
+ t.mock.method(globalThis,'fetch',async url=>new Response(JSON.stringify({pairs:String(url).endsWith(SOL)?[{...pair(SOL,'SOL',999999),priceUsd:'150'}]:list})));
+ const baseline=await loadMarkets();assert.equal(baseline.markets.some(m=>m.mint==='gainer'),false);
+ const scalp=await loadMarkets(['slow-9'],{'slow-9':'pair-200009'},null,{rankMarket:rankPaperMarket,compare:compare5m});assert.equal(scalp.markets[0].mint,'gainer');assert.ok(scalp.markets.some(m=>m.mint==='slow-9'));assert.equal(scalp.markets.length,61);
+});

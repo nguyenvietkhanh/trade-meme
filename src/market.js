@@ -5,7 +5,7 @@ export async function fetchJson(url,{timeoutMs=12000,...options}={}) {
   if(!response.ok) throw Error(`Dịch vụ bên ngoài trả HTTP ${response.status}`);
   return response.json();
 }
-export async function loadMarkets(extraMints=[],preferredPools={},discovery=null) {
+export async function loadMarkets(extraMints=[],preferredPools={},discovery=null,options={}) {
   const queries=['pumpswap','pump','solana'];
   const discover=()=>Promise.allSettled([
     ...queries.map(q=>fetchJson('https://api.dexscreener.com/latest/dex/search?q='+q)),
@@ -52,7 +52,8 @@ export async function loadMarkets(extraMints=[],preferredPools={},discovery=null
     if(!prior||(m.dexId==='pumpswap'&&prior.dexId!=='pumpswap')||((m.dexId==='pumpswap')===(prior.dexId==='pumpswap')&&prior.liquidityUsd<m.liquidityUsd))seen.set(m.mint,m);
   }
   const all=[...seen.values()].filter(m=>m.dexId==='pumpswap'||extraMints.includes(m.mint));discovery?.remember(all.filter(m=>m.dexId==='pumpswap'));
-  const priority=new Map(all.map(m=>[m,rankMarket(m).roughEligible?2:coarseMarket(m).eligible?1:0]));
-  const markets=all.sort((a,b)=>priority.get(b)-priority.get(a)||b.liquidityUsd-a.liquidityUsd).filter((m,i)=>i<60||extraMints.includes(m.mint));
+  const analyst=typeof options.rankMarket==='function'?options.rankMarket:rankMarket,compare=typeof options.compare==='function'?options.compare:(a,b)=>b.liquidityUsd-a.liquidityUsd;
+  const priority=new Map(all.map(m=>[m,analyst(m).roughEligible?2:coarseMarket(m).eligible?1:0]));
+  const markets=all.sort((a,b)=>priority.get(b)-priority.get(a)||compare(a,b)).filter((m,i)=>i<60||extraMints.includes(m.mint));
   return {solUsd,markets,updatedAt:Date.now(),warnings,sources:{searches:good.length,newSolanaProfiles:profileMints.length,newPumpSwapPools:newPoolMints.length,revisitedTokens:revisited.length,discoveryQueue:discovery?.entries.size??0,preMigrationEnabled:false,discoveredCandidates:all.length,shortlistedCandidates:markets.length}};
 }

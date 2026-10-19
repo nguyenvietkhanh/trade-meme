@@ -15,7 +15,7 @@ const scenarios=[
 for(const scenario of scenarios)test(scenario.name,async()=>{
  const dir=await mkdtemp(path.join(tmpdir(),'meme-public-'));
  if(scenario.halted){const saved=freshState();saved.halted='existing-risk-halt';await writeFile(path.join(dir,'paper-state.json'),JSON.stringify(saved));}
- const child=spawn(process.execPath,['--import','./test/fixtures/feed.js','src/'+scenario.entry],{cwd:new URL('../',import.meta.url),env:{...process.env,PAPER_WORKSPACE:'true',PAPER_AUTOSTART:'true',PORT:'0',DATA_DIR:dir,...scenario.env},stdio:['ignore','pipe','pipe']});
+ const child=spawn(process.execPath,['--import','./test/fixtures/scalp-feed.js','src/'+scenario.entry],{cwd:new URL('../',import.meta.url),env:{...process.env,PAPER_WORKSPACE:'true',PAPER_AUTOSTART:'true',PORT:'0',DATA_DIR:dir,...scenario.env},stdio:['ignore','pipe','pipe']});
  let output='';child.stdout.on('data',c=>{output+=c;});
  try{
   let base;

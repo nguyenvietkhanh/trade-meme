@@ -27,27 +27,27 @@ export function rugEvidence(report,market,now=Date.now()){
 }
 export class VerificationFeed{
  constructor(fetcher=globalThis.fetch,execution=null,options={}){
-  const {rankMarket:analyst=rankMarket,ignoreH4=false,...providerOptions}=options;this.rank=analyst;this.ignoreH4=ignoreH4;
+  const {rankMarket:analyst=rankMarket,ignoreH4=false,compareCandidates=null,cacheMs=VERIFICATION_CACHE_MS,...providerOptions}=options;this.rank=analyst;this.ignoreH4=ignoreH4;this.compareCandidates=compareCandidates;if(!Number.isFinite(cacheMs)||cacheMs<SCAN_RULES.intervalMs||cacheMs>VERIFICATION_CACHE_MS)throw Error('Invalid verification cache lifetime');this.cacheMs=cacheMs;
   this.fetcher=fetcher;this.reportFetch=backoffFetch(fetcher,{provider:'RugCheck',...providerOptions});this.structureFetch=backoffFetch(fetcher,{provider:'OHLCV',...providerOptions});this.execution=execution;
   this.cache=new Map();this.reports=new Map();this.facts=new Map();this.structures=new Map();this.jobs=new Map();this.h4Memory=new Map();
  }
  targets(markets,tracked,now){return markets.filter(m=>m.dexId==='pumpswap'&&!isPumpCurve(m)&&(tracked.includes(m.mint)||this.rank(m,undefined,now).roughEligible));}
  async enrichCached(markets,tracked=[],now=Date.now()){
   const checkedAt=m=>this.cache.get(m.mint+':'+m.pairAddress)?.at??0;
-  const targets=this.targets(markets,tracked,now).sort((a,b)=>checkedAt(a)-checkedAt(b)||Number(tracked.includes(b.mint))-Number(tracked.includes(a.mint))||b.volume5mUsd-a.volume5mUsd);
+  const targets=this.targets(markets,tracked,now).sort((a,b)=>checkedAt(a)-checkedAt(b)||Number(tracked.includes(b.mint))-Number(tracked.includes(a.mint))||(this.compareCandidates?.(a,b)??b.volume5mUsd-a.volume5mUsd));
   for(const m of targets){
    const key=m.mint+':'+m.pairAddress,cached=this.cache.get(key);if(this.jobs.size>=2)break;
-   if(this.jobs.has(key)||reusable(cached,now))continue;
+   if(this.jobs.has(key)||reusable(cached,now,this.cacheMs))continue;
    // A candidate is not a tracked holding. Recheck its cheap gates inside the worker.
    const job=this.enrich([m],tracked.includes(m.mint)?[m.mint]:[],now).catch(()=>{}).finally(()=>this.jobs.delete(key));this.jobs.set(key,job);
   }
   return markets.map(m=>({...m,...this.cache.get(m.mint+':'+m.pairAddress)?.value}));
  }
  async enrich(markets,tracked=[],now=Date.now()){
-  const targets=this.targets(markets,tracked,now).filter(m=>tracked.includes(m.mint)||m.liquidityUsd>=20*m.solUsd).sort((a,b)=>Number(tracked.includes(b.mint))-Number(tracked.includes(a.mint))||b.volume5mUsd-a.volume5mUsd).slice(0,6),results=new Map();
+  const targets=this.targets(markets,tracked,now).filter(m=>tracked.includes(m.mint)||m.liquidityUsd>=20*m.solUsd).sort((a,b)=>Number(tracked.includes(b.mint))-Number(tracked.includes(a.mint))||(this.compareCandidates?.(a,b)??b.volume5mUsd-a.volume5mUsd)).slice(0,6),results=new Map();
   for(let i=0;i<targets.length;i+=2)await Promise.all(targets.slice(i,i+2).map(async m=>{
    if(!/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(m.mint))return;
-   const key=m.mint+':'+m.pairAddress,cached=this.cache.get(key);if(reusable(cached,now)){results.set(key,cached.value);return;}
+   const key=m.mint+':'+m.pairAddress,cached=this.cache.get(key);if(reusable(cached,now,this.cacheMs)){results.set(key,cached.value);return;}
    let value;
    try{
     // Retain a successful report even when the later Jupiter stage fails.
