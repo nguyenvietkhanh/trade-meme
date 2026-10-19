@@ -27,10 +27,11 @@ export function rugEvidence(report,market,now=Date.now()){
 }
 export class VerificationFeed{
  constructor(fetcher=globalThis.fetch,execution=null,options={}){
-  this.fetcher=fetcher;this.reportFetch=backoffFetch(fetcher,{provider:'RugCheck',...options});this.structureFetch=backoffFetch(fetcher,{provider:'OHLCV',...options});this.execution=execution;
+  const {rankMarket:analyst=rankMarket,ignoreH4=false,...providerOptions}=options;this.rank=analyst;this.ignoreH4=ignoreH4;
+  this.fetcher=fetcher;this.reportFetch=backoffFetch(fetcher,{provider:'RugCheck',...providerOptions});this.structureFetch=backoffFetch(fetcher,{provider:'OHLCV',...providerOptions});this.execution=execution;
   this.cache=new Map();this.reports=new Map();this.facts=new Map();this.structures=new Map();this.jobs=new Map();this.h4Memory=new Map();
  }
- targets(markets,tracked,now){return markets.filter(m=>m.dexId==='pumpswap'&&!isPumpCurve(m)&&(tracked.includes(m.mint)||rankMarket(m,undefined,now).roughEligible));}
+ targets(markets,tracked,now){return markets.filter(m=>m.dexId==='pumpswap'&&!isPumpCurve(m)&&(tracked.includes(m.mint)||this.rank(m,undefined,now).roughEligible));}
  async enrichCached(markets,tracked=[],now=Date.now()){
   const checkedAt=m=>this.cache.get(m.mint+':'+m.pairAddress)?.at??0;
   const targets=this.targets(markets,tracked,now).sort((a,b)=>checkedAt(a)-checkedAt(b)||Number(tracked.includes(b.mint))-Number(tracked.includes(a.mint))||b.volume5mUsd-a.volume5mUsd);
@@ -63,13 +64,13 @@ export class VerificationFeed{
     if(current&&['clear','reject'].includes(current.state))this.h4Memory.set(key,current);
     else if(previous?.state==='reject'&&now-previous.checkedAt<=TREND_RULES.h4RejectMemoryMs)value.evidence.h4Risk=previous;
     const h4=value.evidence.h4Risk,h4Rejected=h4?.state==='reject'&&h4.mint===m.mint&&h4.pairAddress===m.pairAddress&&h4.checkedAt<=now&&now-h4.checkedAt<=TREND_RULES.h4RejectMemoryMs;
-    if(!h4Rejected)try{
+    if(!h4Rejected||this.ignoreH4)try{
      // Production separates full owner aggregation/program checks from the quote stage.
      let facts=this.facts.get(key);const creator=value.evidence.creatorAddress;
      if(!reusable(facts,now)||facts.creator!==creator){const inspect=this.execution.inspectMarketFacts??this.execution.inspectMarket;if(inspect){facts={at:now,creator,value:await inspect.call(this.execution,{...m,creatorAddress:creator})};this.facts.set(key,facts);}}
      if(facts)value.evidence={...value.evidence,...facts.value,checkedAt:Math.min(value.evidence.rugFetchedAt,facts.at),mint:m.mint,pairAddress:m.pairAddress,source:'rugcheck+solana-rpc'};
      // No quote for a cheap-filter failure, unsafe holders/LP/program, or a score below entry.
-     if(this.execution.inspectMarketQuote&&rankMarket({...m,evidence:value.evidence,verificationError:null},undefined,Date.now()).preQuoteEligible){
+     if(this.execution.inspectMarketQuote&&this.rank({...m,evidence:value.evidence,verificationError:null},undefined,Date.now()).preQuoteEligible){
       const proof=await this.execution.inspectMarketQuote(m);value.evidence={...value.evidence,...proof,source:'rugcheck+solana-rpc+jupiter'};
      }
     }catch(error){value.verificationError=providerFailure('On-chain / quote Jupiter',error);}

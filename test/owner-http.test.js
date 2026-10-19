@@ -10,7 +10,7 @@ import bs58 from 'bs58';
 import {DEFAULT_OWNER} from '../src/security.js';
 test('production pins the sole owner and rejects wrong wallets, forged sessions and cross-origin live control',async()=>{
  const dir=await mkdtemp(path.join(tmpdir(),'owner-http-')),wrong=Keypair.generate().publicKey.toBase58();
- const child=spawn(process.execPath,['--import','./test/fixtures/feed.js','src/server.js'],{cwd:new URL('../',import.meta.url),env:{...process.env,PORT:'0',DATA_DIR:dir,OWNER_SOLANA_ADDRESS:wrong,RAILWAY_SERVICE_ID:'test'},stdio:['ignore','pipe','pipe']});
+ const child=spawn(process.execPath,['--import','./test/fixtures/feed.js','src/mainnet-server.js'],{cwd:new URL('../',import.meta.url),env:{...process.env,PORT:'0',DATA_DIR:dir,OWNER_SOLANA_ADDRESS:wrong,RAILWAY_SERVICE_ID:'test'},stdio:['ignore','pipe','pipe']});
  let output='';child.stdout.on('data',c=>{output+=c;});
  try{
   let base;for(let i=0;i<100;i++){const m=output.match(/0\.0\.0\.0:(\d+)/);if(m){base='http://127.0.0.1:'+m[1];break;}await delay(20);}assert.ok(base);

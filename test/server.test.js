@@ -10,7 +10,7 @@ test('HTTP workflow, CSRF rejection, state persistence, resumed restart and arch
  const dir=await mkdtemp(path.join(tmpdir(),'meme-test-'));
  let child,base;
  async function launch(){
-  child=spawn(process.execPath,['--import','./test/fixtures/feed.js','src/server.js'],{cwd:root,env:{...process.env,PAPER_WORKSPACE:'true',HOST:'127.0.0.1',PORT:'0',DATA_DIR:dir},stdio:['ignore','pipe','pipe']});
+  child=spawn(process.execPath,['--import','./test/fixtures/feed.js','src/mainnet-server.js'],{cwd:root,env:{...process.env,PAPER_WORKSPACE:'true',HOST:'127.0.0.1',PORT:'0',DATA_DIR:dir},stdio:['ignore','pipe','pipe']});
   let output='';
   child.stdout.on('data',chunk=>{output+=chunk;});
   for(let i=0;i<100;i++){

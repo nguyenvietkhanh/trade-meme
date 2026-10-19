@@ -61,7 +61,7 @@ test('HTTP scanner clears persisted 30-minute waits and the 10,000 counter, then
  saved.coarseCooldowns={EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v:Date.now()+1800000};
  saved.decisionStats={evaluated:9999,rejected:9999,bought:0};saved.decisions=[{reason:'old cycle'}];
  await writeFile(dir+'/scanner-state.json',JSON.stringify(saved));
- const child=spawn(process.execPath,['--import','./test/fixtures/scanner-feed.js','src/server.js'],{cwd:new URL('../',import.meta.url),env:{...process.env,PAPER_WORKSPACE:'false',SIGNER_MODE:'disabled',HOST:'127.0.0.1',PORT:'0',DATA_DIR:dir},stdio:['ignore','pipe','pipe']});
+ const child=spawn(process.execPath,['--import','./test/fixtures/scanner-feed.js','src/mainnet-server.js'],{cwd:new URL('../',import.meta.url),env:{...process.env,PAPER_WORKSPACE:'false',SIGNER_MODE:'disabled',HOST:'127.0.0.1',PORT:'0',DATA_DIR:dir},stdio:['ignore','pipe','pipe']});
  let output='',errors='';child.stdout.on('data',c=>output+=c);child.stderr.on('data',c=>errors+=c);
  try{
   let base;for(let n=0;n<150;n++){const port=output.match(/127\.0\.0\.1:(\d+)/)?.[1];if(port){base='http://127.0.0.1:'+port;break;}if(child.exitCode!==null)throw Error(errors);await delay(20);}assert.ok(base);

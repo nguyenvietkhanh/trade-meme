@@ -10,7 +10,7 @@ import {verifiedMarket} from './fixtures/verified-market.js';
 test('an existing position still takes profit when new entries are blocked by incomplete safety evidence',async()=>{
  const dir=await mkdtemp(path.join(tmpdir(),'meme-roundtrip-'));
  const initial=freshState(),m=verifiedMarket({mint:'11111111111111111111111111111112',pairAddress:'test-pair',priceUsd:.01});recordBuy(initial,m,150,{quantity:450,costSol:.03,priceUsd:.01},Date.now(),'fixture-confirmed-entry');await writeFile(path.join(dir,'paper-state.json'),JSON.stringify(initial));
- const child=spawn(process.execPath,['--import','./test/fixtures/roundtrip-feed.js','src/server.js'],{cwd:new URL('../',import.meta.url),env:{...process.env,PAPER_WORKSPACE:'true',PORT:'0',DATA_DIR:dir,RAILWAY_SERVICE_ID:'isolated-test'},stdio:['ignore','pipe','pipe']});
+ const child=spawn(process.execPath,['--import','./test/fixtures/roundtrip-feed.js','src/mainnet-server.js'],{cwd:new URL('../',import.meta.url),env:{...process.env,PAPER_WORKSPACE:'true',PORT:'0',DATA_DIR:dir,RAILWAY_SERVICE_ID:'isolated-test'},stdio:['ignore','pipe','pipe']});
  let output='';child.stdout.on('data',chunk=>{output+=chunk;});
  try{
   let base;

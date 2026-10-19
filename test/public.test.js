@@ -26,12 +26,14 @@ for(const scenario of scenarios)test(scenario.name,async()=>{
   assert.ok(state.feed.updatedAt,'feed was actually loaded');
   assert.equal(state.readOnly,true);assert.equal(state.mode,'paper');
   assert.equal(state.running,true);
-  if(scenario.halted){assert.equal(state.halted,'existing-risk-halt');assert.equal(state.positions.length,0);}
-  else{assert.equal(state.positions.length,0,'incomplete external data must never create an entry');assert.ok(state.decisionStats.evaluated>0);assert.ok(state.decisions.some(d=>d.reason.includes('kiểm chứng')||d.reason.includes('xác nhận')));}
+  if(scenario.halted){assert.equal(state.cashSol,20);assert.equal(state.positions.length,0);}
+  else{assert.equal(state.positions.length,0,'incomplete external data must never create an entry');assert.ok(state.decisionStats.evaluated>0);assert.ok(state.decisions.some(d=>d.blockingStage==='safety'));}
   for(const action of ['reset','pause','buy','sell','add-token']){
    const r=await fetch(base+'/api/command',{method:'POST',headers:{'Content-Type':'application/json','X-Requested-With':'meme-desk'},body:JSON.stringify({action,confirm:'RESET PAPER'})});assert.equal(r.status,403);
   }
-  const health=await (await fetch(base+'/api/health')).json();assert.equal(health.running,true);assert.equal(health.readOnly,true);
+  const health=await (await fetch(base+'/api/health')).json();assert.equal(health.running,true);assert.equal(health.readOnly,true);assert.equal(health.realTradingEnabled,false);assert.equal(health.unattendedSigningAvailable,false);assert.equal(state.settings.initialSol,20);assert.equal(state.cashSol,20);assert.equal(state.realTradingEnabled,false);
+  for(const p of ['/api/direct/prepare','/api/direct/submit','/api/signer/unlock','/api/signer/enable','/api/live/enable']){const r=await fetch(base+p,{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});assert.equal(r.status,410);}
+  const page=await(await fetch(base)).text();assert.match(page,/MÔ PHỎNG 20 SOL/);assert.ok(!page.includes('/wallet.js'));assert.equal((await fetch(base+'/wallet.js')).status,404);
   assert.equal((await fetch(base)).status,200);
  }finally{const exited=new Promise(r=>child.once('exit',r));child.kill('SIGTERM');await exited;await rm(dir,{recursive:true,force:true});}
 });

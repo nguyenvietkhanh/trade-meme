@@ -41,3 +41,14 @@ export async function jupiterEntryQuote(mint,amount,fetcher=globalThis.fetch){
  const at=Date.now(),q=await quote(SOL,mint,amount,400,fetcher);if(q.failed||Date.now()-at>30000)throw Error('Không có báo giá vào lệnh mới.');
  return {minOut:q.otherAmountThreshold,contextSlot:q.contextSlot,checkedAt:Math.min(at,q.observedAt)};
 }
+
+/** Read-only paper execution benchmark. Never requests swap bytes or signs/broadcasts. */
+export async function paperMarketQuote({mint,side,amount,slippageBps},fetcher=globalThis.fetch){
+ const validAmount=side==='BUY'?validBuyLamports(amount):typeof amount==='string'&&/^[1-9]\d{0,19}$/.test(amount)&&BigInt(amount)<=18446744073709551615n;
+ if(!['BUY','SELL'].includes(side)||!validAmount||!Number.isInteger(slippageBps)||slippageBps<1||slippageBps>(side==='BUY'?400:1000))throw Error('Invalid paper quote request');
+ const q=await quote(side==='BUY'?SOL:mint,side==='BUY'?mint:SOL,amount,slippageBps,fetcher);
+ if(q.failed)throw Error('NO_ROUTE: không có quote; không tạo fill mô phỏng.');
+ const impact=Number(q.priceImpactPct)*100;
+ if(q.priceImpactPct==null||!Number.isFinite(impact)||impact<0)throw Error('Quote thiếu price impact.');
+ return {mint,side,inAmount:amount,outAmount:q.outAmount,minOut:q.otherAmountThreshold,checkedAt:q.observedAt,contextSlot:q.contextSlot,impactPct:impact,provider:'Jupiter',slippageBps};
+}

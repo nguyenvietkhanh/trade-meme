@@ -3,3 +3,4 @@ node_modules/
 .data/
 public/wallet.js
 *.log
+public/paper-wallet.js

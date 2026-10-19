@@ -1,0 +1,35 @@
+import path from 'node:path';
+import {mkdir,readFile,readdir} from 'node:fs/promises';
+import {createHash} from 'node:crypto';
+import {writeDurable} from './persistence.js';
+import {reportEnd,validReportRef,REPORT_TIMEZONE} from './training-archive.js';
+const DAY=86400000,MAX=8*1024*1024;
+export function paperSummary(fills,bucket={}){
+ const closed=fills.filter(f=>f.side==='SELL'&&f.closed),wins=closed.filter(f=>f.positionPnlSol>0),losses=closed.filter(f=>f.positionPnlSol<0),net=closed.reduce((n,f)=>n+f.positionPnlSol,0),profit=wins.reduce((n,f)=>n+f.positionPnlSol,0),loss=-losses.reduce((n,f)=>n+f.positionPnlSol,0),byExit={};
+ for(const f of fills.filter(f=>f.side==='SELL')){const x=byExit[f.reason]??={fills:0,pnlSol:0};x.fills++;x.pnlSol+=f.pnlSol;}
+ const cohorts={};for(const f of closed){const label=f.baselineAtEntry?.eligible===true?'baseline-eligible':f.baselineAtEntry?.eligible===false?'exploration-only':'unknown';const c=cohorts[label]??={closed:0,pnlSol:0};c.closed++;c.pnlSol+=f.positionPnlSol;}
+ return {...bucket,entryCohorts:cohorts,cohortCaution:'Subsets within one exploration portfolio, not independent strategy backtests; different trade opportunities/capital allocation cause selection bias.',mode:'paper',fills:fills.length,closedPositions:closed.length,wins:wins.length,losses:losses.length,winRate:closed.length?wins.length/closed.length:null,netClosedPnlSol:net,realizedPnlSol:fills.filter(f=>f.side==='SELL').reduce((n,f)=>n+f.pnlSol,0),expectancySol:closed.length?net/closed.length:null,profitFactor:loss>0?profit/loss:null,profitFactorNote:loss===0?'undefined: no realized losing positions':null,modeledFeesSol:fills.reduce((n,f)=>n+(f.modeledFeeSol??0),0),byExit,statisticalConclusion:closed.length<100?'INSUFFICIENT_SAMPLE: fewer than 100 closed positions; no optimization claim':'Requires out-of-time comparison and confidence intervals; sample size alone proves no edge'};
+}
+export class PaperReports{
+ constructor(dir,research=null){this.dir=path.join(dir,'archive');this.research=research;this.busy=false;this.error=null;}
+ async archive(f){const dir=path.join(this.dir,'fills',new Date(f.at).toISOString().slice(0,10));await mkdir(dir,{recursive:true,mode:0o700});const file=path.join(dir,createHash('sha256').update(f.id).digest('hex')+'.json');try{const old=JSON.parse(await readFile(file,'utf8'));if(old.id!==f.id||JSON.stringify(old)!==JSON.stringify(f))throw Error('Paper archive collision');}catch(e){if(e.code!=='ENOENT')throw e;await writeDurable(file,f,{exclusive:true});}}
+ async records(end){const rows=[];for(const day of new Set([new Date(end-DAY).toISOString().slice(0,10),new Date(end-1).toISOString().slice(0,10)])){const dir=path.join(this.dir,'fills',day);let files;try{files=await readdir(dir);}catch(e){if(e.code==='ENOENT')continue;throw e;}for(const f of files.filter(f=>/^[a-f0-9]{64}\.json$/.test(f))){const r=JSON.parse(await readFile(path.join(dir,f),'utf8'));if(r.at>=end-DAY&&r.at<end)rows.push(r);}}return rows.sort((a,b)=>a.at-b.at);}
+ file(ref){if(!validReportRef(ref))throw Error('Invalid paper report reference');return path.join(this.dir,'reports',ref.end+'-'+ref.part+'.json');}
+ async document(ref){const content=await readFile(this.file(ref));const doc=JSON.parse(content);if(doc.reportEnd!==ref.end||doc.part!==ref.part||doc.mode!=='paper')throw Error('Invalid paper report');return {filename:`meme-pilot-paper-${new Date(ref.end+7*3600000).toISOString().slice(0,10)}-${ref.part}.json`,content};}
+ async tick(desk,now=Date.now()){
+  if(this.busy)return;this.busy=true;
+  try{await desk.serial(async()=>{
+   const s=desk.state;for(const f of s.archiveOutbox)await this.archive(f);if(s.archiveOutbox.length){s.archiveOutbox=[];await desk.save();}
+   const end=s.reportLastEnd+DAY;if(end>reportEnd(now))return;
+   const fills=await this.records(end),summary=paperSummary(fills,s.periods[end]);
+   const groups=[[]];let bytes=0;for(const f of fills){const n=Buffer.byteLength(JSON.stringify(f));if(n>MAX)throw Error('Paper fill too large');if(bytes+n>MAX){groups.push([]);bytes=0;}groups.at(-1).push(f);bytes+=n;}
+   await this.research?.flush();const journalFiles=(await this.research?.files()??[]).filter(f=>f.slice(0,10)>=new Date(end-DAY).toISOString().slice(0,10)&&f.slice(0,10)<=new Date(end-1).toISOString().slice(0,10));
+   const docs=groups.map((fills,i)=>({mode:'paper',schemaVersion:1,reportEnd:end,part:i+1,session:s.session,summary,from:new Date(Math.max(s.startedAt,end-DAY)).toISOString(),to:new Date(end).toISOString(),interval:'[from,to)',timezone:REPORT_TIMEZONE,partialFirstDay:s.startedAt>end-DAY,initialVirtualSol:20,entryPolicy:s.entryPolicy,passiveOutcomeStatsAtReportGeneration:s.paperOutcomeStats??null,model:s.model,capitalSnapshotAt:now,valuationAtReportGeneration:desk.valuation(now),unresolvedPending:s.pending?{side:s.pending.side,mint:s.pending.mint,decisionAt:s.pending.decisionAt}:null,unresolvedTelegram:s.telegramOutbox.filter(m=>m.status==='failed').length,allFillsIncludingLosses:fills,journalStatus:this.research?.status()??null,journalFiles,journalNote:'Full scan logs attached separately as base64 gzip; UTC files may span outside the reporting interval; filter rows by at. Missing records are disclosed by journalStatus. Paper quotes do not prove actual execution or profitability.'}));
+   // Attach complete scan data as JSON/base64 gzip, keeping the existing Telegram transport.
+   for(const name of journalFiles){const buf=await this.research.document(name);const partBytes=5*1024*1024;for(let start=0;start<buf.length;start+=partBytes)docs.push({mode:'paper',schemaVersion:1,reportEnd:end,part:docs.length+1,kind:'research-journal-gzip',name,encoding:'base64',byteOffset:start,totalBytes:buf.length,sha256:createHash('sha256').update(buf).digest('hex'),content:buf.subarray(start,start+partBytes).toString('base64'),decode:'Concatenate decoded chunks by name and byteOffset, verify sha256, gunzip concatenated gzip stream, parse JSONL, filter at within [reportEnd-86400000,reportEnd).'});}
+   await mkdir(path.join(this.dir,'reports'),{recursive:true,mode:0o700});for(const doc of docs){doc.parts=docs.length;await writeDurable(this.file({end,part:doc.part}),doc);}
+   for(const doc of docs){const id=`paper-daily:${s.session}:${end}:${doc.part}`;if(!s.telegramOutbox.some(m=>m.id===id))s.telegramOutbox.push({id,report:{end,part:doc.part},createdAt:now,attempts:0,nextAttemptAt:0,status:'queued',text:`Meme Pilot · MÔ PHỎNG 20 SOL · 23:00 giờ Việt Nam\nPhần ${doc.part}/${docs.length} · Đóng ${summary.closedPositions} · Thắng ${summary.wins} · Thua ${summary.losses}\nPnL vị thế đóng sau phí giả định: ${summary.netClosedPnlSol.toFixed(6)} SOL\nSKIP ${summary.skips??0}/${summary.evaluations??0}. Tệp gồm cả lệnh lỗ và dữ liệu quét. Chưa phải kết quả tiền thật.`});}
+   s.reportLastEnd=end;await desk.save();
+  });this.error=null;}catch{this.error='Chưa lưu báo cáo paper; sẽ thử lại, không tự xóa dữ liệu.';}finally{this.busy=false;}
+ }
+}

@@ -1,147 +1,112 @@
-# Meme Pilot — Solana spot
+# Meme Pilot · Paper 20 SOL
 
-Bot chỉ chọn token PumpSwap, tự ký từ ví chủ **7JePGU7MFtRo9z5jMh2486UniD4EB4PpRd8tv2Jhqpsy**. Hỗ trợ Helius API key tùy chọn phía server, không tạo ví phụ.
+Bản hiện tại chạy hoàn toàn bằng **20 SOL mô phỏng**, dùng dữ liệu thị trường
+thật. Không ký/gửi giao dịch hoặc chuyển SOL thật. Bộ lọc vào lệnh paper được nới
+để thu thập dữ liệu, có ghi nhãn so sánh bộ luật gốc; không tự huấn luyện hay
+triển khai tham số mới bằng tiền thật.
 
-**Kết nối ví chỉ xác thực chủ.** Muốn tự giao dịch không chờ ký, chủ nhập private key của đúng ví một lần qua giao diện đã đăng nhập trên Railway HTTPS hoặc localhost 127.0.0.1. Két AES-256-GCM/scrypt giữ bản mã hóa; mở khóa nạp khóa ký vào RAM. Không nhập seed phrase, không gửi khóa/mật khẩu trong chat hoặc Git. Private key có quyền với toàn bộ ví; cỡ lệnh tối đa 0,6 SOL và dự phòng gas do phần mềm thực thi, không phải hạn mức on-chain. Không dùng ví này giữ tài sản vượt mức chấp nhận rủi ro của bạn.
+## Chạy
 
-## Sử dụng
-
-1. Mở website HTTPS trong Phantom/Solflare hoặc trình duyệt có extension. Kết nối đúng ví chủ và ký thông điệp đăng nhập.
-2. Mạng Solana kết nối tự động. Muốn dùng Helius, đặt `HELIUS_API_KEY` trong Railway Variables; không nhập key trên giao diện hoặc gửi qua chat.
-3. Trong **BỘ KÝ TỰ ĐỘNG**, nhập khóa riêng base58 hoặc JSON 64 byte của đúng ví chủ, đặt mật khẩu mã hóa ít nhất 12 ký tự, bấm **Mã hóa và lưu bộ ký**. Các ô nhập được xóa sau yêu cầu; không lưu vào localStorage.
-4. Bấm **Bật tự giao dịch**. Server tự quét, chọn, ký, gửi và đối soát mua/bán/chuyển lãi. Không gọi `signTransaction` của extension mỗi lệnh. Đóng tab hoặc session giao diện hết hạn không làm bot ngừng chạy.
-5. **Dừng theo dõi** ngừng lệnh mới; **Dừng và khóa bộ ký** bỏ khóa đã mở khỏi bộ ký. Vị thế vẫn tồn tại. Có thể bán toàn bộ phần token ứng dụng quản lý bằng nút ở vị thế khi bộ ký đang mở.
-6. Sau restart bộ ký luôn khóa và ngừng chạy: kết nối chủ, mở bằng mật khẩu rồi bật lại. Pending đã ký vẫn đối soát khi két đang khóa. Không tự bật hoặc tự ký lại một giao dịch chưa rõ kết quả.
-
-Chỉ SOL native khả dụng hiển thị trong số dư ví. P&L/đường vốn tính ngân sách, giá vị thế và lãi đã chuyển; không tính mọi token khác trong ví. Không mua trộn hoặc tự bán token đã có sẵn. Browser signing cũ chỉ còn fallback khi server bật `SIGNER_MODE=disabled`; không chạy hai ngân sách đồng thời.
-
-## Độ ổn định API/RPC
-
-Yêu cầu đọc trùng đang chạy được gộp; không cache giá/số dư RPC đã trả về hoặc kéo dài hạn kiểm chứng 30 giây. RPC đọc thử nguồn dự phòng đã xác minh mainnet. Nguồn 429/quá tải/lỗi mạng được giảm tần suất theo backoff tăng dần có jitter; tôn trọng `Retry-After` tới 10 phút. Lỗi 403 chờ ít nhất 30 giây, không đổi IP hay bỏ xác thực để vượt chặn. Phương thức/index không được RPC hỗ trợ nghỉ riêng 60 giây mà không chặn các phương thức còn dùng được. RugCheck và Jupiter có backoff riêng; vòng quét giá vẫn đặt mục tiêu 5 giây.
-
-Khóa BUY do lỗi mạng lúc chuẩn bị lệnh có thể tự gỡ sau hai vòng RPC/số dư/thị trường khỏe và có quote an toàn mới được kiểm chứng sau lúc khóa. Không tự gỡ khóa do giao dịch on-chain lỗi/hết hạn liên tiếp, khóa cũ chưa rõ nguyên nhân hoặc pause thủ công. Giới hạn retry theo từng lệnh vẫn giữ; giao dịch đã ký chưa rõ kết quả luôn đối soát, không gửi lại qua RPC khác. Lỗi mạng khi đối soát không tự làm mất lệnh chờ hoặc khóa vĩnh viễn bot. RPC công khai có thể thiếu chỉ mục holder; backoff không tạo ra dữ liệu thiếu hoặc khắc phục được quyền truy cập bị từ chối.
-
-## Tốc độ
-
-Quét DexScreener mục tiêu mỗi **5 giây**, bộ điều phối mỗi **2 giây** và chỉ đánh giá giá mới; thời gian API/RPC có thể làm vòng quét lâu hơn. Không còn thời gian chờ người ký. Giao diện đo riêng thời gian chuẩn bị, ký, phản hồi gửi RPC và xác nhận của lệnh gần nhất; không dùng thời gian ký để quảng cáo thời gian khớp. Đây **chưa phải hạ tầng mili giây**: chưa tích hợp feed gRPC/shred/WebSocket pool, colocation hay Jito. Không hứa latency hoặc khả năng khớp trước đối thủ. Muốn tiến tới mục tiêu đó cần dữ liệu on-chain, RPC chuyên dụng và đo tín hiệu → gửi → xác nhận; không thể suy ra từ thời gian ký cục bộ.
-
-Khám phá tìm kiếm/profiles/pool mới chạy nền mỗi 30 giây sau lần khởi tạo đầu, để nguồn phụ chậm không giữ vòng giá. Giá token và giá SOL vẫn được lấy lại mỗi vòng, deadline 4 giây mỗi đợt; không dùng giá tìm kiếm đã lưu làm giá mới. Danh sách nhớ tối đa 600 mint, lưu cùng trạng thái quét: pool mới và cũ đều được tái xét ngay, không chờ đủ tuổi và không bị loại vì đã tồn tại quá 24 giờ. Mỗi vòng thêm tối đa 30 mint cũ theo lượt; đây không phải cam kết cập nhật cả 600 mint mỗi 5 giây. Ưu tiên token đạt tầng vốn hóa/DEX và xu hướng giá trước khi cắt danh sách 60 token, luôn giữ token vị thế đang theo dõi.
-
-## Kết nối không dùng key
-
-Server dùng `https://api.mainnet-beta.solana.com` và `https://solana-rpc.publicnode.com`. Trước dùng một RPC, kiểm tra genesis mainnet. RPC đọc lỗi/quá tải có thể chuyển sang nguồn dự phòng. Lệnh gửi không tự chuyển endpoint khi chưa rõ kết quả: giữ signature để đối soát, không gửi lệnh thay thế. Cả hai RPC vẫn có thể cùng lỗi hoặc rate-limit; không bảo đảm kết nối miễn phí luôn khả dụng.
-
-`HELIUS_API_KEY` là biến server tùy chọn: ưu tiên `mainnet.helius-rpc.com`, đọc lỗi chuyển sang hai RPC công khai, quay lại Helius khi hết cooldown. Các RPC đều phải xác minh genesis mainnet; giao dịch gửi chưa rõ kết quả không replay. Key không xuất vào health/status/browser/log; chỉ hostname và mã lỗi được hiển thị. `JUPITER_API_KEY` và RPC URL tùy ý từ env vẫn không được dùng. Không gửi khóa/seed qua chat hoặc Git. Quét thị trường vẫn dùng DexScreener; RPC không thay thế nguồn dữ liệu giá.
-
-## Quy tắc và thuật toán
-
-Bản `solana-six-stage-desk-v4`; chi tiết và giới hạn: [DESK_RULES.md](DESK_RULES.md). Sáu tầng thực thi bằng code, không phải AI được tự bỏ qua hard limits.
-
-- Khám phá pool PumpSwap mới qua GeckoTerminal, DexScreener và profiles. Tầng nhanh lọc vốn hóa **$3k–$5m**, không giới hạn tuổi pool, quote reserve ≥20 SOL, tổng liquidity/cap ≥3%, nhịp giao dịch và blacklist tên token lớn. FDV chỉ thay cap khi mint kết thúc `pump`. Đánh giá lại mỗi 5 giây, không nghỉ token 30 phút vì trượt tầng lọc; thời hạn cũ được xóa khi cập nhật. API chậm có thể kéo dài vòng quét, không chạy chồng yêu cầu.
-- Tuổi pool không chặn BUY và không cộng/trừ điểm. Trọng số: động lượng 30, dòng tiền 20, cấu trúc giá 20, thanh khoản/vốn hóa 15, phân bổ holder 10, cộng đồng 5. Ngưỡng 60 điểm, xác nhận hai lần quét và kiểm chứng an toàn vẫn áp dụng. Chỉ dùng thời điểm tạo pool để đánh giá dữ liệu nến H4; thiếu lịch sử nến được ghi chưa biết, không trở thành lệnh cấm theo tuổi.
-- Mỗi 10.000 lượt đánh giá, xóa danh sách đánh giá và đặt bộ đếm vòng về 0 rồi tiếp tục quét. Đây là lượt đánh giá, có thể lặp cùng token. Giữ tổng lượt toàn thời gian, số vòng, blacklist, tín hiệu xác nhận, lịch sử khớp lệnh, vị thế, lệnh đang chờ và mọi giới hạn rủi ro. Lỗi kiểm chứng dịch vụ được ghi rõ nguồn/trạng thái HTTP và có thể thử lại từ vòng quét sau; không bỏ kiểm chứng để ép mua.
-- On-chain/RugCheck/Jupiter bắt buộc xác minh authority, Token-2022 extensions, LP ≥90%, top 10 trừ vault/curve ≤35%, mỗi ví ≤8%, rủi ro nghiêm trọng và quote vòng theo đúng cỡ lệnh dự kiến hao hụt ≤6%, impact mỗi chiều ≤2%. Không đủ kiểm chứng → SKIP. Creator không rõ vẫn nhận điểm holder thấp hơn; không tự đặt tỷ lệ bằng 0.
-- DexScreener thiếu trường `liquidity.quote` thì vẫn đưa token tới bước đọc pool on-chain; BUY chỉ qua khi số dư quote SOL thực được xác minh ≥20 SOL, đúng mint/pool và còn mới. Không dùng tổng USD để suy ra số dư. RPC không có chỉ mục tài khoản sẽ thử nguồn đọc dự phòng; nếu cả hai không đọc đủ holder thì vẫn khóa BUY và ghi đúng lý do.
-- Điểm 30/20/20/15/10/5. Thiếu dữ liệu chấm điểm nhận nửa điểm thành phần; an toàn bắt buộc vẫn không được bỏ qua. Hai lần quét cách 10–15 giây. Mọi BUY mới dùng tối đa 0,6 SOL và kiểm tra số dư SOL native trước lệnh khi đạt ≥60 điểm; các điểm trừ và kiểm tra an toàn giữ nguyên. Không có trần vốn cố định, số vị thế theo vốn khả dụng thay vì giới hạn cố định 2; luôn giữ dự phòng 0,1 SOL và phí trước từng lệnh. Vị thế thả nổi vẫn được giữ và theo dõi.
-- Chỉ mua khi M5 và H1 đều dương và giá không giảm giữa hai quan sát xác nhận. H4 dùng OHLCV 4 giờ thực, bao gồm nến đang hình thành của pool mới: tránh thân đỏ giảm ≥20% đóng gần đáy, hoặc tăng ≥50% rồi tụt ≥35% từ đỉnh với râu trên ≥55% biên nến. H4 chưa đủ dữ liệu trừ 5 điểm; không bắt pool mới chờ đủ bốn giờ. Một tín hiệu H4 xấu đã thấy được giữ tối đa bốn giờ nếu nguồn lỗi, cho đến khi có nến mới xác minh phục hồi. Mint ví dụ chủ yêu cầu tránh nằm trong `ENTRY_EXCLUDED_MINTS`; quy tắc này không ngăn bán vị thế đang có.
-- Stop −20% theo quote bán ròng; +80% bán 78%; moonbag bán nửa tại 2×/4×/8× giá vào. Trailing −30%, siết −25% từ 4×, −20% từ 8×. Time-stop 45 phút chưa từng đạt +20%; giữ tối đa sáu giờ; volume suy kiệt dưới 30% lúc vào và giá dưới entry thì thoát. Token đã stop-loss khóa 24 giờ.
-- Đã bỏ giới hạn lỗ/ngày và gỡ khóa BUY loại `daily` cũ khi đọc sổ/kiểm tra rủi ro; không tự bật bộ ký đang khóa hoặc xóa các giới hạn khác. Drawdown 15% đóng hết vị thế rồi dừng, cần bật lại thủ công. Đã bỏ nghỉ BUY sau chuỗi thua; vẫn ghi số vị thế thua liên tiếp và gỡ thời hạn nghỉ cũ khi đọc sổ/kiểm tra rủi ro. Dữ liệu cũ >30 giây hoặc lỗi liên tiếp khóa BUY nhưng vẫn quản lý SELL. Có nút pause BUY riêng và dừng/khóa toàn bộ bộ ký.
-- Slippage mua/bán/khẩn ≤4/3/10%; priority+tip ≤0,002 SOL/chiều (thực tế dùng mức thấp hơn, không gửi Jito tip). Tối đa ba retry sau lần đầu, luôn đối soát giao dịch chưa rõ kết quả. Bán hết sẽ đóng ATA trống do vị thế ứng dụng quản lý để thu hồi rent khi an toàn.
-
-Jupiter chỉ cung cấp báo giá và mức nhận tối thiểu; SDK PumpSwap dựng và mô phỏng giao dịch trên pool. Token cổ điển và Token-2022 với extension thụ động được hỗ trợ; fee/hook/permanentDelegate và extension chưa hiểu bị từ chối. Quote chưa phải giá khớp thật. Cấu trúc nến lấy OHLCV 1 phút; nếu không đủ nến hợp lệ thì chỉ nhận nửa điểm, không dựng nến từ snapshot.
-
-Giao diện đếm riêng số token bị chặn ở tầng nguồn, thị trường, an toàn, xác nhận và điểm. Lý do chính không tính các kiểm chứng chưa được yêu cầu cho token đã bị loại ở tầng trước. Ví chủ có trạng thái riêng cho bộ ký khóa/chưa bật, pause BUY, RPC lỗi, hạn mức vốn, cooldown và hết retry. Quét tăng không chứng minh đã bật thực thi.
-
-**Chưa xác nhận trực tiếp mainnet/Railway:** API/RPC có thể bị chặn hoặc rate-limit. Môi trường Codex từng trả `CONNECT 403` từ proxy Envoy trước khi tới Railway/DexScreener/RugCheck/Jupiter; điều này không chứng minh dịch vụ trên Railway trả 403. Khi dữ liệu an toàn không có, bot không mua. Nguồn HTTP không bảo đảm bắt đủ mọi pool migrate hoặc tốc độ mili giây. Chưa có bằng chứng sinh lợi thực tế.
-
-## Chuyển lãi
-
-Đích cố định: **5uYdJyFmZkvZT5S3A7iq1kLx2aLwcMgVXMfxjdGf5qVZ**. Các API/UI không cho đổi đích.
-
-## Báo cáo Telegram
-
-Đăng nhập đúng ví chủ → mở khóa bộ ký → mục **Telegram · Báo cáo giao dịch** → nhập bot token và Chat ID → **Lưu và bật báo cáo Telegram** → **Gửi tin thử**. Trước đó bấm **Start** trong bot Telegram để bot có thể nhắn riêng. Chỉ chủ đã xác thực và đúng origin HTTPS/loopback được lưu cấu hình hoặc gửi thử. Token không được nhúng vào Git, trả về API, ghi log, localStorage hay bản xuất nhật ký.
-
-`telegram-config.json` trong DATA_DIR mã hóa AES-256-GCM, khóa HKDF từ khóa ví chủ, salt/IV ngẫu nhiên và AAD ràng buộc ví; file 0600. Sau restart, cần mở khóa bộ ký để đọc cấu hình. Tắt Telegram xóa cấu hình hoạt động; lưu cấu hình mới cho phép thử lại tin từng thất bại. Volume giữ cả cấu hình và hàng đợi qua redeploy.
-
-Sau mỗi BUY/SELL **đã xác nhận**, hàng đợi được ghi cùng cập nhật receipt trước khi gửi: SOL chi/nhận thực, phí mạng, PnL lần bán, PnL đã chốt của vị thế/tổng tài khoản, ngân sách còn lại và link giao dịch. Không biến yêu cầu lệnh hay lợi nhuận chưa chốt thành báo cáo thành công. Gửi HTTP bên ngoài hàng đợi giao dịch, tối đa sáu lần thử; lỗi Telegram không tắt bot hoặc tạo lại giao dịch. Telegram không có khóa idempotency cho sendMessage: nếu đã nhận tin nhưng phản hồi bị mất, retry có thể tạo tin trùng cùng signature. API chỉ dùng `api.telegram.org`, không theo redirect; lỗi hiển thị không chứa token. Chưa xác minh gửi tới bot/chat thật từ môi trường này.
-
-**Báo cáo ngày tự động lúc 23:00 giờ Việt Nam (`Asia/Ho_Chi_Minh`, UTC+7)** dùng chính bot/chat đã cấu hình. Kỳ là `[23h hôm trước, 23h hôm nay)`; một vị thế chỉ là thắng khi đã bán hết và `positionPnlSol > 0` sau chi phí giao dịch. Một lần bán lời khi vị thế chưa đóng không được tính là thắng. Tổng kết gồm thắng/thua/hòa, win rate, tổng PnL các vị thế đóng; kèm tệp `meme-pilot-winners-YYYY-MM-DD-N.json` qua `sendDocument`. Không có lệnh thắng vẫn gửi tệp rỗng và tổng kết. Tệp lớn chia phần dưới 8 MiB. PnL vị thế không bao gồm phí chuyển lãi/chi phí giao dịch thất bại cấp tài khoản; không lấy nạp/rút ví hoặc lãi chưa chốt làm lợi nhuận.
-
-Ghi đầy đủ BUY/SELL đã xác nhận, gồm lệnh thua, vào `DATA_DIR/training/fills/YYYY-MM-DD/<hash-signature>.json` (0600, atomic/fsync). Hàng đợi log ghi cùng receipt; worker độc lập chuyển ra kho lâu dài, không cắt theo giới hạn 500 lệnh giao diện. Ghi trùng signature không ghi đè bản gốc. Có snapshot **trước khi mua**: thanh khoản/vốn hóa, volume, biến động, số lệnh mua/bán, holder/LP, quote theo cỡ lệnh, điểm thành phần và phiên bản thuật toán; bản đóng có các lần mua/bán của vị thế. Không xuất khóa ví, token API hoặc giao dịch ký dạng bytes. Lịch sử cũ còn trong sổ được nhập vào kho với dữ liệu thiếu là `null`; không bịa lại tín hiệu và không thể khôi phục lịch sử đã mất. Bộ lệnh thắng là dữ liệu thiên lệch chọn mẫu; training cần đối chiếu toàn kho gồm cả lệnh thua và kiểm định theo thời gian, không tự sửa thuật toán từ báo cáo.
-
-`training/reports/` giữ bản JSON đã chốt, hàng đợi Telegram chỉ lưu tham chiếu kỳ/phần. Lịch gửi và trạng thái đã xác nhận nằm trong sổ, tránh tạo lại cùng kỳ sau restart; gửi HTTP nằm ngoài khóa giao dịch. Bắt đầu lên lịch từ mốc 23h kế tiếp khi sổ được worker khởi tạo. Nếu service tắt đúng giờ, kỳ còn thiếu được tạo khi chạy lại; nếu chưa mở khóa cấu hình Telegram, tệp chờ trong hàng đợi. Telegram không bảo đảm exactly-once: mất phản hồi sau khi đã nhận tệp có thể gây gửi trùng, nhận biết bằng ngày/phần. **Cần Volume để giữ lịch/kho log/két qua redeploy**; ổ tạm có thể mất hết. Báo cáo dùng sổ receipt trên Railway, không cần trình duyệt mở, không ký giao dịch, không đổi điều kiện BUY/SELL hay giới hạn rủi ro.
-
-Sau khi lệnh bán xác nhận, sổ tính lãi ròng bằng SOL sau giá vốn/chi phí và phí giao dịch thất bại. Trước mua tiếp, bot xét chuyển phần nhỏ hơn của lãi chưa chuyển và tiền mặt vượt phần vốn gốc chưa nằm trong token; đồng thời giữ ngân sách gốc tính theo tiền mặt cộng giá vốn token còn giữ, và tối thiểu 0,1 SOL native thực tế, dự phòng phí 0,00001 SOL. Tối thiểu chuyển 0,001 SOL, tối đa 0,3 SOL/lần. Chỉ lãi đã chốt, không dựa trên tăng giá chưa bán. Lỗ trước phải được bù lại; phần lợi nhuận còn nằm trong token được giữ đến khi có đủ tiền mặt.
-
-Lệnh chuyển dùng ví chủ làm fee payer, đúng đích cố định, kiểm tra phí/số dư/simulation. Bộ ký đã mở tự ký; không chờ xác nhận từng lần. Chỉ ghi đã chuyển khi receipt xác nhận cả số dư giảm, số dư tăng của đích và fee. Kết quả chưa rõ được đối soát sau restart/reload mà không ký/gửi lại. Khoản chuyển được cộng lại khi tính tổng hiệu quả vốn để không hiện thành lỗ; phí chuyển vẫn làm giảm P&L.
-
-Nguồn tính vốn/lãi là nhật ký `owner-agent-state.json` trên server. Sổ chỉ lưu bền vững khi đặt trên ổ dữ liệu/Volume; đây không phải hợp đồng giới hạn chi tiêu on-chain. Không sửa số liệu bằng tay hoặc chạy nhiều service/replica độc lập cho cùng ví. Chuyển/rút tài sản ngoài ứng dụng làm lệch sổ và phải kiểm tra trước khi tiếp tục.
-
-## Nhật ký, kiểm toán và bảo mật
-
-Nhật ký server gắn theo chủ, chứa vị thế, phí đo được, trades/payouts và pending transaction; không chứa private key hoặc mật khẩu. Trình duyệt server mode không lưu khóa hay journal cá nhân vào localStorage. Bộ ký chỉ ký giao dịch chuẩn bị bởi chính policy/execution nội bộ, đúng fee payer; server vẫn xác minh signer Ed25519/hash trước gửi. Ghi signed bytes/signature và fsync **trước broadcast**. Chỉ ghi fill sau xác nhận. Kết quả chưa rõ khóa lệnh mới cho tới đối soát; expiry chờ block height finalized. Lỗi token trước gửi được bỏ qua/cooldown; 3 lệnh lỗi/hết hạn liên tiếp dừng bộ điều phối. Lỗi lưu trữ dừng ký. Nút khóa ngăn ký tiếp ngay cả khi lưu lỗi. Ngừng trong lúc chuẩn bị sẽ hủy trước ký; đã ký nhưng chưa gửi vẫn giữ để đối soát/hết hạn.
-
-Xuất nhật ký trước khi redeploy hoặc di chuyển dữ liệu. Xuất chỉ chứa state, không xuất két hoặc khóa. Khôi phục chỉ khi dừng và không có pending đang xử lý, phải cùng chủ, đúng schema; không reset budget khi còn vị thế. `owner-signer.json` chỉ chứa bản mã hóa; không tự tạo đè két có sẵn. Sau restart không có khóa trong RAM, kể cả sổ trước đó đang chạy. Dùng một service/replica.
-
-**Lưu trữ Railway:** có volume thì két và sổ nằm trong `RAILWAY_VOLUME_MOUNT_PATH/meme-pilot`. Volume không còn là điều kiện bật bot, BUY hoặc khôi phục vị thế. Không có Volume vẫn giao dịch nhưng dữ liệu có thể mất khi thay container. Danh sách toàn ví cập nhật nền, không khóa BUY và không kéo dài vòng giao dịch; trước ký đọc số dư riêng của mint liên quan và mô phỏng mọi tài khoản token thuộc chủ có mặt trong giao dịch. Lỗi đọc số dư riêng hoặc mô phỏng vẫn ngăn chính lệnh đó, không giả định số dư bằng không. Gắn Volume `/data` vào đúng service; Railway tự đặt `RAILWAY_VOLUME_MOUNT_PATH`, ứng dụng ghi `/data/meme-pilot`. Trước khi gắn Volume/redeploy, dừng bot và xuất nhật ký: ổ mới không tự sao chép dữ liệu của container cũ. Cần giữ khóa gốc, mật khẩu và cấu hình Telegram để nhập lại nếu két/cấu hình cũ mất. Không chạy nhiều replica cho cùng ví.
-
-### Khôi phục vị thế bị mất sổ
-
-Sổ chính và `owner-agent-state.backup.json` được ghi atomic/fsync trước broadcast. Bản sao nằm cùng ổ nên không thay thế Volume hoặc bản xuất bên ngoài. Nếu mất file chính nhưng còn bản sao, khởi động dừng như thông thường; chủ mở khóa và bật lại BUY/SELL, pending vẫn được đối soát và không gửi lại. Lịch sử chưa đầy đủ thì chưa tự chuyển lãi. File chính hỏng không bị ghi đè. Sổ còn tồn tại luôn được giữ nguyên. Nếu sổ mất, chủ có thể bật một sổ mới từ ngân sách SOL hiện có; lịch sử trước đó không được bịa lại và token ngoài sổ không tự trở thành vị thế. Chỉ quản lý lại vị thế cũ khi chủ khôi phục nó.
-
-Đăng nhập ví chủ → **Đối soát token trong ví** → nhập mint và link giao dịch mua → **Kiểm tra giao dịch mua** → **Khôi phục vị thế đã xác minh**. Có thể điền sẵn bằng query `recoverMint` và `recoverTx`; chỉ chứa thông tin công khai. Hai endpoint `/api/signer/recovery-preview` và `/api/signer/recovery-apply` đều yêu cầu chủ đã xác thực, đúng origin. Chức năng này chỉ đọc RPC và ghi sổ, không ký/gửi giao dịch; không tự bán token chưa được chủ nhận vào sổ.
-
-Receipt phải là lệnh PumpSwap exact-quote thành công, cỡ lệnh theo trần 0,6 SOL và dự phòng 0,1 + 0,005 SOL, cỡ lệnh lịch sử 20% số dư trước giao dịch hoặc cỡ lịch sử 0,02/0,03/0,2 SOL, đúng người ký/payer, mint, pool/PDA; trước mua không có token đó. Số token còn nguyên, không có giao dịch token xen kẽ (kiểm tra tối đa 50 giao dịch mới hơn của tài khoản token, gồm cả chuyển qua delegate); thiếu/mâu thuẫn dữ liệu thì yêu cầu nhật ký đầy đủ. Khôi phục vốn bằng chênh lệch SOL thực của receipt, không cộng phí/rent lần hai, không trừ giá vốn mua thêm khỏi tiền mặt hiện tại. Ghi BUY lịch sử đúng thời gian blockchain, khôi phục một lần theo signature, không gửi thông báo giả như vừa thực hiện lệnh mới.
-
-Không suy ra SOL/USD quá khứ từ receipt. Vị thế khôi phục dùng giá vốn/quote ròng bằng SOL cho stop/TP/runner. Không giả định đỉnh giá trong thời gian sổ mất: time-stop 45 phút cần ít nhất 45 phút theo dõi từ lúc khôi phục; max-hold 6 giờ vẫn tính từ block time gốc. Lịch sử tài khoản chưa đầy đủ thì P&L tổng hiển thị chưa xác định và chưa tự chuyển lãi; chủ mở khóa và bật lại BUY/SELL mà không cần hoàn tất khôi phục thủ công. Một receipt mua không chứng minh toàn bộ P&L/ngưỡng lỗ trước đó. Giới hạn vốn/vị thế và lỗ vẫn áp dụng cho sổ đang quản lý; tài sản ngoài sổ không được tính là đã khôi phục.
-
-Auditor hiển thị 7 ngày gần nhất: lệnh đóng, win rate, kỳ vọng R theo rủi ro ban đầu, max drawdown và vị thế >72h. Thiếu dữ liệu thì báo thiếu, không tự đặt fee/slippage bằng 0 hoặc bịa giao dịch giả định. Tham chiếu: ≥40 vị thế đóng đo được, win rate ≥33%, expectancy ≥+0,4R, max DD ≤15%. Không tự đổi ngưỡng sau khi xem kết quả, không tự bật quyền giao dịch vì báo cáo đạt. Chưa có đủ mẫu không phải bằng chứng có lãi.
-
-Tài liệu đính kèm mô tả futures short/alerts-only; chỉ dùng ý tưởng phân vai, quy tắc chung và kiểm toán. Không nhập quy tắc short/FVG hoặc quyền hạn của tài liệu thay cho yêu cầu Solana spot.
-
-Chủ cố định; nonce một lần 3 phút, session 15 phút; cookie HttpOnly/SameSite=Strict/Secure HTTPS; POST đúng origin/JSON/header. Tài chính chủ chỉ hiển thị sau đăng nhập. Legacy ví phụ chỉ giữ để khôi phục dữ liệu cũ; không xóa két/sổ cũ. `/api/live/backup` có bảo vệ chủ; API điều khiển ví phụ trả 410. Production dùng `OwnerAgent`/`OwnerSignerVault`; các module ví phụ cũ không được khởi tạo.
-
-Vốn tài khoản vẫn đọc từ số dư SOL native thực, không giới hạn tổng vốn. Cỡ BUY = `min(0.6, max(0, số dư - 0.1 - 0.005))` SOL, tính nguyên lamport. Luôn giữ 0,1 SOL gas và đệm 0,005 SOL cho chi phí trước lệnh. Ví 1 SOL → mua 0,6; ví 0,5 → mua 0,395; ví 0,2 → mua 0,095; ≤0,105 SOL → không BUY. Quote vòng, impact, số dư trước ký và simulation đều dùng cỡ thực. Metadata `capped-sol-06-reserve-01-v1` phân biệt với `wallet-balance-v1` lịch sử. Pending đã ký theo 20%/5% vẫn đối soát bằng quy tắc lịch sử với dự phòng 0,05 SOL cũ, không tính lại theo cỡ mới. Tiền nạp/rút hạch toán riêng khỏi PnL; thay size không xóa vị thế, lịch sử hay pending. Chuyển lãi cũng phải giữ dự phòng 0,1 SOL. Giá trị orderSol trong engine paper cũ là tham số mô phỏng riêng, không quyết định cỡ lệnh mainnet.
-
-## Chạy và Railway
-
-Node.js 24+:
-
-```bash
-npm ci --ignore-scripts --include=dev
+```sh
+npm ci --ignore-scripts
 npm run build
-npm run check
 npm test
 npm start
 ```
 
-Railway auto-deploy nhánh `codex/meme-pilot-railway` bằng Dockerfile/railway.json; một replica. Không dùng Docker secret mounts vì builder Railway hiện chỉ hỗ trợ cache mounts. Volume lưu sổ và két của bộ ký; thiếu Volume chỉ cảnh báo dữ liệu có thể mất, không khóa BUY. `PUBLIC_ORIGIN` cần đúng HTTPS origin khi dùng domain riêng. Egress: api.dexscreener.com, api.geckoterminal.com, api.rugcheck.xyz, lite-api.jup.ag, mainnet.helius-rpc.com và hai RPC trên. Helius tùy chọn, cấu hình Jupiter giữ nguyên. Install scripts tắt; SDK transitive TOML/BigInt dùng các bản override đã kiểm tra.
+Node.js ≥24. Quét PumpSwap mỗi 5 giây. Có thể dùng `HELIUS_API_KEY` phía server
+như trước; không cần private key để chạy paper. Dashboard xác thực ví chủ bằng
+ký thông điệp chỉ khi điều khiển hoặc cấu hình/xuất báo cáo. Đặt Telegram và
+Volume như mô tả dưới để lưu và gửi báo cáo sau restart.
 
-`/api/health`: `mode=live`, `rpcMode=public` hoặc `helius-with-public-fallback`, `heliusConfigured` chỉ báo cấu hình, chưa chứng minh kết nối, `signingMode=owner-agent` và `unattendedSigningAvailable=true`, `strategyVersion=pumpswap-capped-06sol-reserve-01-v7`. Đây là HTTP/feed readiness, không chứng minh giao dịch/lợi nhuận. `/api/direct/status` cần đăng nhập chủ.
+Tài liệu mainnet cũ được lưu ở [docs/mainnet-archive.md](docs/mainnet-archive.md)
+để tra cứu; đó không phải hướng dẫn cho chế độ production hiện tại.
 
-Kiểm thử dùng fixture, chữ ký ví thử và RPC giả lập. Chưa gửi giao dịch SOL thật, chưa kiểm chứng hiệu quả thị trường hoặc trạng thái Railway Online từ môi trường này.
+### Production paper mode (20 SOL)
 
-## Pipeline PumpSwap và hạn mức API
+The production entry points (`npm start`, Docker, Railway) now always run the
+paper-only server. `PAPER_WORKSPACE`, signer settings and existing real ledgers
+cannot enable real trades. `/api/direct/*`, `/api/signer/*`, `/api/live/*` return
+410. The former server is retained as `src/mainnet-server.js` for regression tests;
+it is not a production route or mode switch. Existing real positions are **not
+sold or managed** by paper mode; inspect any remaining real holdings separately.
 
-- Đã tắt nguồn pump.fun trước migrate, BUY curve và worker paper curve. Chốt chặn nằm ở bộ lọc, DirectWallet và bộ dựng giao dịch. Vị thế curve cũ vẫn SELL qua curve/canonical PumpSwap sau migrate; signed pending và sổ giá vốn vẫn đối soát. Không xóa dữ liệu cũ. `/api/research/paper` chỉ xuất kho paper cũ, không chạy quote/fill mới.
-- Vốn hóa, xu hướng M5/H1, hoạt động, độ sâu và độ mới chạy trước các provider. Ứng viên không đạt không gọi RugCheck/on-chain/Jupiter. Vị thế đang giữ có thể được đọc an toàn để quản lý thoát, nhưng không tốn quote vào lệnh nếu không qua gate.
-- RugCheck LP/cảnh báo → cấu trúc nến/H4 → program/authority, dự trữ SOL thực và phân bổ holder theo chủ → Jupiter quote khứ hồi đúng cỡ lệnh. Không quote token không đạt holder/LP/program/thanh khoản hoặc điểm <60. Dex quote reserve không thay thế bằng chứng dự trữ SOL on-chain.
-- Mint/program facts đã xác minh bất biến được lưu theo mint trong tiến trình. Report RugCheck, holder/pool facts và cấu trúc được lưu riêng tối đa 20 giây; Jupiter lỗi không làm tải lại tất cả các bước đã thành công. LP/holder có thể đổi từng giây nên không dùng cache 5–15 phút làm bằng chứng BUY. Tuổi kiểm chứng tổng lấy mốc cũ nhất, không đóng dấu mới cho dữ liệu cache. Quote có thời gian riêng và phải ≤30 giây, vẫn kiểm tra slot trước vào lệnh.
-- Jupiter đọc từng request, tối thiểu 1,1 giây giữa lượt, tối đa tám lượt chờ với hạn chờ tám giây. SELL vượt các BUY/background đang chờ; request đang chạy có timeout. Chỉ quote cùng mint/hướng/cỡ lệnh/slippage được gộp và lưu tối đa hai giây, giữ thời gian gốc. Quote lỗi không cache như thành công; không dùng swap transaction cache.
-- 429/5xx có backoff 30–60 giây kèm jitter và `Retry-After` (tới 10 phút). Không tự replay giao dịch. SELL có RPC ưu tiên và quote pool trực tiếp dự phòng; không bảo đảm bán được khi mất route/RPC. Helius API key hiện có vẫn là RPC chính, không thay hạn mức quote Jupiter.
-- Quét vẫn mục tiêu 5 giây; chỉ gộp dòng SKIP hiển thị giống nhau trong 30 giây và hiện số lần lặp. Thay gate/lý do sẽ hiện ngay; các counter và log nghiên cứu vẫn ghi từng lần đánh giá. Mốc 10.000 chỉ xóa hiển thị, không reset vị thế/rủi ro/kho nghiên cứu.
-- Log thêm sáu ký tự cuối mint, điểm/ngưỡng, gate chặn và trạng thái chờ dữ liệu/không đạt. Thiếu vốn hóa, dưới $3k, trên $5m và FDV không hợp lệ có mã riêng. Điểm cao không vượt qua gate bắt buộc.
-- Chưa nới H1 đi ngang lên tiền thật: cần lịch sử đủ và paper/backtest theo thời gian trước. Bản này tối ưu thực thi và giảm gọi thừa; chưa có bằng chứng tăng expectancy/profit factor. Cỡ lệnh tối đa 0,6 SOL giảm theo vốn, dự phòng 0,1 SOL cộng đệm 0,005 SOL. Khóa drawdown đã tắt theo yêu cầu chủ ví; slippage và luật thoát từng vị thế PumpSwap giữ nguyên. Daily-loss/loss-streak pause vẫn tắt theo lựa chọn chủ ví.
+The new ledger is `<DATA_DIR>/paper20/ledger.json`, with a durable backup and
+separate immutable fill archives. Initial capital is 20 virtual SOL **once**;
+restart never reissues capital. PumpSwap discovery, 5s scans, safety gates, capped/adaptive 0.6 SOL sizing,
+0.1 SOL reserve and exits reuse the current rules. Entry selection uses the
+separately versioned paper exploration policy described below. Daily loss, loss-streak pause and drawdown enforcement stay off,
+as previously configured; drawdown is still measured. No curve or GMGN source
+is enabled by this change. Previously paused RugCheck diagnostics remain separate.
 
-## Kho nghiên cứu và vận hành
+Paper fills require a fresh real Jupiter quote after a modeled 2s delay, within
+the original intent's slippage limit, with at most 3 attempts and 30s expiry.
+The conservative model discounts the new quote's expected output by 1.5%
+(normally) or 10% (emergency), bounded below by the fresh quote's minimum and
+the original intent's limit (4% BUY / 3% regular SELL / 10% emergency). A fresh
+expected output already outside the original limit cannot fill. Modeled network/priority cost is 0.000025 SOL per
+filled side; refundable ATA rent is 0.00203928 SOL. These are **assumptions**,
+not observed fees or real receipts. Trigger quotes also deduct the modeled SELL
+fee. With stale valuation quotes equity becomes unknown and BUY waits. A failed
+quote cannot create a fill, including emergency exits. This read-only paper
+adapter has no local transaction-building fallback: route outages, latency,
+inclusion, MEV, Token-2022 account rent and Jito costs can differ from live.
+It is a diagnostic experiment, not a validated backtest or automatic training.
+No new parameters are promoted to live from paper results.
 
-Kho `DATA_DIR/research/journal/YYYY-MM-DD/HH-session.jsonl.gz` lưu mọi scan/gate/features và các mốc thực thi đã lọc bí mật; mỗi bản ghi có `eventId`. Gzip có nhiều member; loại trùng `eventId` nếu ghi lại sau lỗi. Giữ lệnh thắng, thua và SKIP để tránh lệch mẫu. Buffer tối đa 2 MiB, disk cần ≥32 MiB; thiếu/dropped ghi rõ và không khóa SELL. Buffer chưa flush có thể mất khi restart; file cần Volume để sống qua redeploy.
+Daily reports at **23:00 Asia/Ho_Chi_Minh** contain all winning and losing fills,
+entry features, modeled quote slippage/delay/costs, gate counts, provider errors,
+exit PnL, expectancy, profit factor and drawdown where fresh equity is available.
+They include full compressed scan journals as JSON/base64 gzip chunks (concatenate
+by file and byte offset, verify SHA-256, gunzip, filter timestamps to the report
+interval). Reports cover `[23:00 previous day,23:00 current day)`, mark the first
+partial day and catch up missed days after restart. Fewer than 100 closed trades
+is explicitly insufficient for optimization conclusions. Files and Telegram's
+outbox persist independently; delivery may duplicate after an ambiguous network
+failure because Telegram has no client idempotency key.
 
-Chủ đăng nhập dùng `/api/research` xem danh mục, `/api/research/export?day=YYYY-MM-DD` tải ngày UTC (≤32 MiB) hoặc `/api/research/file?name=...` tải từng phần. Sổ pending/receipt vẫn là nguồn giao dịch chính; thiếu benchmark của lệnh cũ vẫn là null. Không tự suy fill hay lợi nhuận từ giá hiển thị.
+Telegram credentials can come from server-side `TELEGRAM_BOT_TOKEN` and
+`TELEGRAM_CHAT_ID`, or be encrypted via the owner-authenticated dashboard.
+To reuse existing encrypted Telegram settings, authenticate with the owner
+wallet (message signature only), enter the existing vault password and choose
+**Dùng Telegram cũ**. This reads credentials and immediately locks/discards the
+old key without creating an OwnerAgent or enabling trading. Paper notifications
+then use their own encrypted settings. Configure `PAPER_REPORT_PASSPHRASE` on
+Railway for unattended notification unlock after restart; otherwise unlock paper
+Telegram again on the dashboard. Never put these secrets in Git or chat.
 
-RPC có tối đa bốn request/endpoint, nhường lane cho SELL/receipt, một holder scan. SELL hết retry giữ vị thế với `EXIT BLOCKED`, dừng BUY và báo Telegram nếu đã bật; nút chủ cấp lại lượt sau kiểm tra, không tự gửi lại pending hay reset DD. Token curve cũ cần giữ/nhập bản xuất sổ owner đầy đủ để khôi phục; Volume và bản sao ledger bảo toàn giá vốn.
+**Railway storage:** attach a Volume (e.g. `/data`, Railway supplies
+`RAILWAY_VOLUME_MOUNT_PATH`) before relying on overnight research. Without a
+Volume the container filesystem is ephemeral and a redeploy can lose paper
+ledgers, journals, report archives and notification settings. The UI explicitly
+shows ephemeral storage; a backup in the same container does not solve this.
 
-### Khóa drawdown đã tắt
 
-Không tự khóa BUY hoặc tạo lệnh `drawdown-close` khi equity giảm 15%. Khi tải sổ/khôi phục/bật bot, xóa riêng latch drawdown cũ và cờ thanh lý của nó; giữ nguyên đỉnh vốn, drawdown quan sát, PnL, vị thế, pending, pause thủ công và khóa lỗi thực thi. Giao dịch drawdown-close đã ký vẫn đối soát chính xác một lần. Restart vẫn khóa bộ ký và cần chủ mở lại. Drawdown vẫn được đo, và mức 15% trong auditor chỉ là tham chiếu báo cáo, không phải điều kiện dừng giao dịch.
+Paper exploration policy (`paper-exploration-v1`, requested for broader research):
+
+| Entry gate | Baseline | Paper experiment |
+|---|---|---|
+| Score | ≥60 | ≥40 |
+| Buys / total tx 5m | ≥8 / ≥15 | ≥3 / ≥8 |
+| Total tx 1h | ≥80 | ≥20 |
+| M5 and H1 positive | Required | Direction recorded as features; may be negative |
+| Dump/chase | M5 ≥−8%, H1 ≤150% | M5 ≥−20%, H1 ≤300% |
+| H4 dump pattern | Exclude | Record as a label; permit research sample |
+| Confirmation | Positive observations 10–15s apart | Two distinct fresh snapshots ≥5s apart |
+| Market cap, real depth, RugCheck, authorities, holders, quotes | Mandatory | Unchanged |
+
+Each entry records original baseline eligibility, exact relaxed flags, policy
+version and observed entry features. Safety/quote evidence is never synthesized.
+The verification pipeline accepts an injected analyst only in the paper server;
+the default analyst and archived live server retain the baseline rules. Concurrency
+limits and provider backoff remain enforced despite the larger candidate set.
+
+Passive research also labels already-fetched PumpSwap snapshots after 1, 5, 15
+and 30 minutes, including rejected candidates. It makes **no additional API/RPC
+requests**. Missing future observations (outside a 15s horizon window) stay
+unknown, not zero returns. Spot returns are explicitly **not executable PnL**;
+full scan data, rejected flags and outcome gaps accompany the daily archive.
+Coverage is limited to tokens the discovery feed continues observing, so study
+survivorship/missingness before drawing conclusions. Cohort PnL in the report is
+not an independently funded baseline backtest. More samples may include more
+losses; no automatic parameter training or promotion to real funds is enabled.

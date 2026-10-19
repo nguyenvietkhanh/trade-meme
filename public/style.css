@@ -27,3 +27,5 @@
 @media(prefers-reduced-motion:reduce){.spider-roaming .spider-body,.spider-crawling .spider-legs path{animation:none!important}}
 
 #wallet-inventory,#recovery-warning,#recovery-detail{overflow-wrap:anywhere}#recovery-form{display:flex;flex-wrap:wrap;align-items:end;gap:8px;margin:10px 0}#recovery-form label{display:flex;flex:1 1 260px;flex-direction:column;gap:5px}#recovery-form input{width:100%;min-width:0}#recovery-warning{color:#b67623}#signer-controls h3{margin-top:18px}
+
+.paper-header{display:block}.paper-header p{font:12px/1.7 system-ui,sans-serif;letter-spacing:0}.panel input{max-width:100%}.panel label{display:inline-flex;align-items:center;gap:8px;flex-wrap:wrap;margin:8px 0}#balance,#status,#telegram,#decisions,#positions,#trades{overflow-wrap:anywhere}#decisions,#trades{max-height:360px;overflow:auto}
