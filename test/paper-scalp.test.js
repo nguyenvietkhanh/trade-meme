@@ -19,3 +19,17 @@ test('10s round-trip proof expiry blocks entries without overwriting the observe
 test('entry research records the scalp score and keeps baseline score separately',async()=>{const {paperEntryFeatures}=await import('../src/paper-policy.js'),m=market(),f=paperEntryFeatures(m,150,now),r=rankPaperMarket(m,undefined,now);assert.equal(f.strategyVersion,SCALP_STRATEGY_VERSION);assert.equal(f.score,r.score);assert.equal(f.baselineScore,rankMarket(m,undefined,now).score);assert.deepEqual(f.scoreParts,r.scoreParts);assert.equal(f.rank5m.changePct,27);});
 test('missing 5m data and expired quote proofs are classified separately from observed values outside thresholds',()=>{const absent=rankPaperMarket(market({change5mPct:null,volume5mUsd:null}),undefined,now),weak=rankPaperMarket(market({change5mPct:3,volume5mUsd:100}),undefined,now),expired=rankPaperMarket(market({evidence:{quoteCheckedAt:now-11000}}),undefined,now);assert.equal(absent.blockingCategory,'missing-data');assert.equal(weak.blockingCategory,'rule-failed');assert.equal(expired.blockingCategory,'missing-data');});
 test('trailing is invariant to token denomination, including extremely large token supplies',()=>{for(const quantity of [100,1e18]){const p=position();p.quantity=quantity;p.scalpFirstTaken=true;assert.equal(scalpExitPlan(p,mark(p,1.2),now),null);assert.equal(scalpExitPlan(p,mark(p,1.19),now),null);assert.equal(scalpExitPlan(p,mark(p,1.10),now).reason,'runner-trailing');}});
+
+test('confirmation tolerates scan completion jitter by using a real 5–15s anchor instead of repeatedly resetting at 4990ms',()=>{
+ const s={},base=market({scalpConfirmed:undefined});let last;
+ for(let i=0;i<4;i++){const at=now+i*4990;last=observePaperEligibility(s,[{...base,updatedAt:at,priceUsd:base.priceUsd*(1+i*.001),buys5m:base.buys5m+i}],at)[0];if(i===1)assert.equal(last.scalpConfirmed,false);if(i>=2)assert.equal(last.scalpConfirmed,true);}
+ assert.equal(last.scalpSetup.anchorAt,now+4990);
+});
+test('an older confirmation anchor cannot hide an intervening dump, liquidity loss or unchanged snapshots',()=>{
+ for(const middle of [{priceUsd:.009},{priceUsd:.02},{liquidityUsd:1000},{liquidityUsd:500000},{change5mPct:0}]){const s={},base=market({scalpConfirmed:undefined});observePaperEligibility(s,[base],now);observePaperEligibility(s,[{...base,...middle,updatedAt:now+4990}],now+4990);const last=observePaperEligibility(s,[{...base,priceUsd:.0101,buys5m:41,updatedAt:now+9980}],now+9980)[0];assert.equal(last.scalpConfirmed,false,JSON.stringify(middle));}
+ const s={},base=market({scalpConfirmed:undefined});for(let i=0;i<4;i++)assert.equal(observePaperEligibility(s,[{...base,updatedAt:now+i*4990}],now+i*4990)[0].scalpConfirmed,false);
+});
+
+test('confirmation never reuses a delivered source timestamp, old anchor or another pool',()=>{
+ const s={},base=market({scalpConfirmed:undefined});observePaperEligibility(s,[base],now);const next={...base,priceUsd:.0101,buys5m:41,updatedAt:now+5000};assert.equal(observePaperEligibility(s,[next],now+5000)[0].scalpConfirmed,true);assert.equal(observePaperEligibility(s,[next],now+10000)[0].scalpConfirmed,false);assert.equal(observePaperEligibility(s,[{...next,pairAddress:'another-pool',updatedAt:now+11000}],now+11000)[0].scalpConfirmed,false);assert.equal(observePaperEligibility(s,[{...next,updatedAt:now+26000}],now+26000)[0].scalpConfirmed,false);
+});

@@ -78,3 +78,12 @@ test('paper refreshes expired quotes after 10 seconds while keeping report and f
  time=now+9000;await feed.enrich([current()],[],time);assert.equal(quotes,1);
  time=now+11000;await feed.enrich([current()],[],time);assert.equal(quotes,2);assert.equal(reports,1);assert.equal(facts,1);
 });
+
+test('verification distinguishes known on-chain policy failures from quote-stage failures without exposing unknown error strings',async()=>{
+ const cases=[['facts',Error('Token program không hỗ trợ.'),'On-chain: TOKEN_PROGRAM_UNSUPPORTED'],['quote',Error('Không có route bán.'),'Jupiter quote vòng: NO_SELL_ROUTE'],['facts',new TypeError('fetch https://private/?api-key=SECRET',{cause:{code:'ENOTFOUND'}}),'On-chain: ENOTFOUND'],['facts',Error('SECRET https://private/?api-key=SECRET'),'On-chain: UNCLASSIFIED']];
+ for(const [stage,error,expected]of cases){
+  const execution={inspectMarketFacts:async()=>{if(stage==='facts')throw error;return m.evidence;},inspectMarketQuote:async()=>{throw error;}};
+  const feed=new VerificationFeed(async()=>new Response(JSON.stringify(report)),execution),[row]=await feed.enrich([{...m,evidence:undefined}],[],now);
+  assert.ok(row.verificationError.startsWith(expected),row.verificationError);assert.ok(!row.verificationError.includes('SECRET'));assert.ok(!row.verificationError.includes('https://'));assert.equal(rankMarket(row,undefined,now).eligible,false);
+ }
+});

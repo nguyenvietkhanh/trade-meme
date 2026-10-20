@@ -10,7 +10,21 @@ function providerFailure(provider,error){
  if(error?.code==='QUOTE_QUEUE_BUSY')return 'Jupiter: đang chờ hạn mức quote; chưa có bằng chứng bán mới.';
  if(error?.code==='HOLDER_SCAN_UNAVAILABLE')return 'RPC không cung cấp được toàn bộ holder; chưa thể xác minh phân bổ, khóa BUY.';
  const status=String(error?.message??'').match(/\bHTTP\s+(\d{3})\b/)?.[1];
- const detail=status?'HTTP '+status:['TimeoutError','AbortError'].includes(error?.name)?'hết thời gian chờ':'dữ liệu chưa xác minh';
+ const known=new Map([
+  ['Token program không hỗ trợ.','TOKEN_PROGRAM_UNSUPPORTED: token program không hỗ trợ'],
+  ['Token còn quyền mint/freeze hoặc chưa kiểm chứng.','AUTHORITY_NOT_REVOKED: mint/freeze còn quyền hoặc chưa kiểm chứng'],
+  ['Thông tin mint không hợp lệ.','MINT_DATA_INVALID: thông tin mint không hợp lệ'],
+  ['Token-2022 có transferFee/transferHook/permanentDelegate hoặc extension chưa hỗ trợ.','TOKEN_EXTENSION_UNSUPPORTED: extension Token-2022 bị chặn'],
+  ['Pool không khớp mint/PDA.','POOL_IDENTITY_MISMATCH: pool không khớp mint/PDA'],
+  ['Không có route mua.','NO_BUY_ROUTE: Jupiter không có đường mua'],
+  ['Không có route bán.','NO_SELL_ROUTE: Jupiter không có đường bán'],
+  ['Quote vòng thiếu impact/đã cũ.','ROUND_TRIP_INVALID: quote vòng thiếu impact hoặc đã cũ'],
+  ['Jupiter quote slot không còn mới.','QUOTE_SLOT_STALE: slot quote đã cũ'],
+  ['Các RPC đã cấu hình đang lỗi hoặc giới hạn lượt gọi; thử kết nối lại sau.','RPC_UNAVAILABLE: RPC lỗi hoặc đang giới hạn lượt gọi']
+ ]);
+ const network={ENOTFOUND:'DNS không phân giải được',EAI_AGAIN:'DNS tạm thời không phản hồi',ECONNRESET:'kết nối bị ngắt',ECONNREFUSED:'kết nối bị từ chối',UND_ERR_CONNECT_TIMEOUT:'hết thời gian kết nối'};
+ const code=error?.cause?.code??error?.code;
+ const detail=status?'HTTP '+status:known.get(error?.message)??(typeof code==='string'&&Object.hasOwn(network,code)?`${code}: ${network[code]}`:['TimeoutError','AbortError'].includes(error?.name)?'TIMEOUT: hết thời gian chờ':error instanceof SyntaxError?'INVALID_JSON: phản hồi JSON không hợp lệ':'UNCLASSIFIED: dữ liệu chưa xác minh');
  return `${provider}: ${detail}; khóa BUY, thử lại ở vòng quét sau.`;
 }
 const reusable=(cached,now,ttl=VERIFICATION_CACHE_MS)=>cached&&cached.at<=now&&now-cached.at<(cached.value?.verificationError?SCAN_RULES.intervalMs:ttl);
@@ -32,6 +46,8 @@ export class VerificationFeed{
   this.cache=new Map();this.reports=new Map();this.facts=new Map();this.structures=new Map();this.jobs=new Map();this.h4Memory=new Map();
  }
  targets(markets,tracked,now){return markets.filter(m=>m.dexId==='pumpswap'&&!isPumpCurve(m)&&(tracked.includes(m.mint)||this.rank(m,undefined,now).roughEligible));}
+ // Read completed metadata only; keep the market's own price/source timestamps.
+ applyCached(markets){return markets.map(m=>{const value=this.cache.get(m.mint+':'+m.pairAddress)?.value;return value?{...m,verificationError:null,...value}:{...m};});}
  async enrichCached(markets,tracked=[],now=Date.now()){
   const checkedAt=m=>this.cache.get(m.mint+':'+m.pairAddress)?.at??0;
   const targets=this.targets(markets,tracked,now).sort((a,b)=>checkedAt(a)-checkedAt(b)||Number(tracked.includes(b.mint))-Number(tracked.includes(a.mint))||(this.compareCandidates?.(a,b)??b.volume5mUsd-a.volume5mUsd));
@@ -41,7 +57,7 @@ export class VerificationFeed{
    // A candidate is not a tracked holding. Recheck its cheap gates inside the worker.
    const job=this.enrich([m],tracked.includes(m.mint)?[m.mint]:[],now).catch(()=>{}).finally(()=>this.jobs.delete(key));this.jobs.set(key,job);
   }
-  return markets.map(m=>({...m,...this.cache.get(m.mint+':'+m.pairAddress)?.value}));
+  return this.applyCached(markets);
  }
  async enrich(markets,tracked=[],now=Date.now()){
   const targets=this.targets(markets,tracked,now).filter(m=>tracked.includes(m.mint)||m.liquidityUsd>=20*m.solUsd).sort((a,b)=>Number(tracked.includes(b.mint))-Number(tracked.includes(a.mint))||(this.compareCandidates?.(a,b)??b.volume5mUsd-a.volume5mUsd)).slice(0,6),results=new Map();
@@ -64,6 +80,7 @@ export class VerificationFeed{
     if(current&&['clear','reject'].includes(current.state))this.h4Memory.set(key,current);
     else if(previous?.state==='reject'&&now-previous.checkedAt<=TREND_RULES.h4RejectMemoryMs)value.evidence.h4Risk=previous;
     const h4=value.evidence.h4Risk,h4Rejected=h4?.state==='reject'&&h4.mint===m.mint&&h4.pairAddress===m.pairAddress&&h4.checkedAt<=now&&now-h4.checkedAt<=TREND_RULES.h4RejectMemoryMs;
+    let failureStage='On-chain';
     if(!h4Rejected||this.ignoreH4)try{
      // Production separates full owner aggregation/program checks from the quote stage.
      let facts=this.facts.get(key);const creator=value.evidence.creatorAddress;
@@ -71,9 +88,9 @@ export class VerificationFeed{
      if(facts)value.evidence={...value.evidence,...facts.value,checkedAt:Math.min(value.evidence.rugFetchedAt,facts.at),mint:m.mint,pairAddress:m.pairAddress,source:'rugcheck+solana-rpc'};
      // No quote for a cheap-filter failure, unsafe holders/LP/program, or a score below entry.
      if(this.execution.inspectMarketQuote&&this.rank({...m,evidence:value.evidence,verificationError:null},undefined,Date.now()).preQuoteEligible){
-      const proof=await this.execution.inspectMarketQuote(m);value.evidence={...value.evidence,...proof,source:'rugcheck+solana-rpc+jupiter'};
+      failureStage='Jupiter quote vòng';const proof=await this.execution.inspectMarketQuote(m);value.evidence={...value.evidence,...proof,source:'rugcheck+solana-rpc+jupiter'};
      }
-    }catch(error){value.verificationError=providerFailure('On-chain / quote Jupiter',error);}
+    }catch(error){value.verificationError=providerFailure(failureStage,error);}
    }
    this.cache.set(key,{at:now,value});results.set(key,value);
   }));

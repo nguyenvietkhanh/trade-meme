@@ -25,15 +25,24 @@ export function rankExplorationMarket(m,s=TRADE_RULES,now=Date.now()){
  return {...original,eligible:flags.length===0,roughEligible,preQuoteEligible,score:original.score,minScore:40,red_flags:flags,reasons:flags.map(reason),primaryFlags:primary,primaryReasons:primary.map(reason),blockingStage:stage,missingData:original.missingData.filter(f=>flags.includes(f)),blockingCategory:primary.some(f=>original.missingData.includes(f))?'missing-data':primary.length?'rule-failed':'ready',baseline:{eligible:original.eligible,score:original.score,minScore:original.minScore,blockingStage:original.blockingStage,flags:original.red_flags},relaxedFlags:original.red_flags.filter(f=>relaxed.has(f)),policyVersion:EXPLORATION_ENTRY_POLICY.version};
 }
 export function observePaperEligibility(state,markets,now=Date.now()){
- state.paperObservations??={};
- const result=markets.map(m=>{const key=m.mint+':'+m.pairAddress,prior=state.paperObservations[key];const good=finite(m.updatedAt)&&m.updatedAt<=now&&now-m.updatedAt<=30000&&finite(m.priceUsd)&&m.priceUsd>0;
-  const independent=good&&prior&&now-prior.at>=5000&&now-prior.at<=15000&&m.updatedAt>prior.sourceAt;
+ state.paperObservations??={};const r=SCALP_ENTRY_RULES;
+ const result=markets.map(m=>{
+  const key=m.mint+':'+m.pairAddress,saved=state.paperObservations[key];
+  const good=finite(m.updatedAt)&&m.updatedAt<=now&&now-m.updatedAt<=30000&&finite(m.priceUsd)&&m.priceUsd>0;
+  // Completion times jitter around the 5s timer. Retain real observations so a
+  // 4.99s interval cannot erase the only usable 5–15s confirmation anchor.
+  const history=(Array.isArray(saved?.history)?saved.history:saved?[saved]:[]).filter(row=>finite(row.at)&&row.at<=now&&now-row.at<=r.maxConfirmationGapMs);
+  const prior=good&&(!saved||m.updatedAt>saved.sourceAt)?[...history].reverse().find(row=>now-row.at>=r.confirmationGapMs&&m.updatedAt>row.sourceAt):null;
   const changed=!!prior&&[m.priceUsd,m.volume5mUsd,m.buys5m,m.sells5m].some((v,i)=>v!==prior.fingerprint?.[i]);
-  const scalpConfirmed=!!independent&&changed&&finite(prior.priceUsd)&&m.priceUsd>=prior.priceUsd*SCALP_ENTRY_RULES.minPriceRetention&&finite(m.liquidityUsd)&&m.liquidityUsd>=prior.liquidityUsd*SCALP_ENTRY_RULES.minLiquidityRetention&&prior.change5mPct>=SCALP_ENTRY_RULES.minChange5mPct&&m.change5mPct>=SCALP_ENTRY_RULES.minChange5mPct;
-  if(good&&(!prior||m.updatedAt>prior.sourceAt))state.paperObservations[key]={at:now,sourceAt:m.updatedAt,priceUsd:m.priceUsd,liquidityUsd:m.liquidityUsd,change5mPct:m.change5mPct,fingerprint:[m.priceUsd,m.volume5mUsd,m.buys5m,m.sells5m]};return {...m,paperObservedTwice:!!independent,scalpConfirmed,scalpSetup:independent?{at:now,anchorAt:prior.at,anchorPriceUsd:prior.priceUsd,priceRetention:m.priceUsd/prior.priceUsd,liquidityRetention:m.liquidityUsd/prior.liquidityUsd,changed}:null};});
- for(const [k,v]of Object.entries(state.paperObservations))if(now-v.at>30000)delete state.paperObservations[k];return result;
+  const retains=(row,anchor)=>finite(row.priceUsd)&&row.priceUsd>=anchor.priceUsd*r.minPriceRetention&&finite(row.liquidityUsd)&&row.liquidityUsd>=anchor.liquidityUsd*r.minLiquidityRetention&&finite(row.change5mPct)&&row.change5mPct>=r.minChange5mPct;
+  const sequence=prior?[prior,...history.filter(row=>row.at>prior.at),m]:[];
+  const scalpConfirmed=!!prior&&changed&&finite(prior.priceUsd)&&finite(prior.liquidityUsd)&&prior.change5mPct>=r.minChange5mPct&&sequence.every((row,i)=>!i||retains(row,prior)&&retains(row,sequence[i-1]));
+  if(!good)delete state.paperObservations[key];
+  else if(!saved||m.updatedAt>saved.sourceAt){const current={at:now,sourceAt:m.updatedAt,priceUsd:m.priceUsd,liquidityUsd:m.liquidityUsd,change5mPct:m.change5mPct,fingerprint:[m.priceUsd,m.volume5mUsd,m.buys5m,m.sells5m]};state.paperObservations[key]={...current,history:[...history,current].slice(-8)};}
+  return {...m,paperObservedTwice:!!prior,scalpConfirmed,scalpSetup:prior?{at:now,anchorAt:prior.at,anchorPriceUsd:prior.priceUsd,priceRetention:m.priceUsd/prior.priceUsd,liquidityRetention:m.liquidityUsd/prior.liquidityUsd,changed}:null};
+ });
+ for(const [key,value]of Object.entries(state.paperObservations))if(now-value.at>30000)delete state.paperObservations[key];return result;
 }
-
 
 export const PAPER_ENTRY_POLICY=SCALP_ENTRY_RULES;
 /** Active paper strategy: rank gainers on observed 5m changes; H1/H4 remain labels. */

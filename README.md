@@ -162,3 +162,14 @@ and execution prerequisites such as exact-size quotes and pool participation.
 The accumulated evaluation counter includes repeated observations, not unique
 tokens. Historical baseline rules that the paper policy removed are labeled
 separately from the current reason for rejection.
+
+Paper confirmation retains observed snapshots within the existing 5–15s window
+so sub-5s scan completion jitter does not continually discard its anchor. It
+requires changed content, a newer source timestamp and price/liquidity retention
+through intermediate observations; repeated source timestamps and old anchors
+remain invalid. Completed background verification is read by each 2s execution
+tick and the dashboard without waiting for another discovery scan. These cache
+reads neither call providers nor refresh price/proof timestamps. All existing
+safety, quote-expiry, cost, sizing and pool-participation gates still apply.
+Verification errors distinguish on-chain policy failures from round-trip quote
+failures using fixed diagnostic labels; unknown raw errors/URLs stay private.
