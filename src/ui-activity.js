@@ -1,4 +1,9 @@
-import {walletOrderSol} from './desk-rules.js';
+import {walletOrderSol,TRADE_RULES} from './desk-rules.js';
+export function paperPendingView(order,now=Date.now()){
+ if(!order)return null;const ageSeconds=Number.isFinite(order.decisionAt)?Math.max(0,Math.floor((now-order.decisionAt)/1000)):0,waitSeconds=Number.isFinite(order.readyAt)?Math.max(0,Math.ceil((order.readyAt-now)/1000)):0,attempts=Number.isSafeInteger(order.attempts)?Math.max(0,order.attempts):0,lastErrorCode=/^[A-Z0-9_]{1,32}$/.test(order.lastErrorCode??'')?order.lastErrorCode:null;
+ const detail=attempts?`thử lại ${attempts}/${TRADE_RULES.maxRetries}${lastErrorCode?' · '+lastErrorCode:''}`:waitSeconds?`chờ độ trễ ${waitSeconds}s`:'đang lấy quote mới sau độ trễ';
+ return {id:order.id,side:order.side,mint:order.mint,reason:order.reason,decisionAt:order.decisionAt,ageSeconds,waitSeconds,attempts,lastErrorCode,label:`${order.side} mô phỏng · ${ageSeconds}s${attempts?' · thử lại '+attempts+'/'+TRADE_RULES.maxRetries:''}`,message:`${order.side} …${String(order.mint).slice(-6)} · đã chờ ${ageSeconds}s · ${detail}.`};
+}
 // Ephemeral display telemetry. No trading state, provider requests or credentials.
 export class UiActivity{
  constructor({clock=Date.now}={}){this.clock=clock;this.next=0;this.active=new Map();this.recent=[];}
@@ -12,7 +17,7 @@ export function explainPaperStatus(state,feed,rankings,valuation,now=Date.now())
  const result=(phase,message)=>({...base,phase,message});
  if(!state.running)return result('paused','BUY mô phỏng đang tạm dừng; vẫn theo dõi vị thế để thoát.');
  if(!feed.updatedAt||feed.error||now-feed.updatedAt>30000||feed.updatedAt>now)return result('feed-unavailable','Dữ liệu thị trường thiếu/cũ hoặc API lỗi; chưa tạo lệnh mô phỏng.');
- if(state.pending)return result('pending',`Đang xử lý ${state.pending.side} mô phỏng; chờ quote mới để khớp.`);
+ if(state.pending)return result('pending',paperPendingView(state.pending,now).message);
  if(!feed.markets.length)return result('empty-feed','Nguồn thị trường chưa trả về token PumpSwap.');
  if(!base.eligible)return result('filtered','Bot vẫn quét; chưa có token qua đủ điều kiện. Xem các lý do bị chặn bên dưới.');
  if(valuation.staleMints.length)return result('exit-quotes-stale','Đang chờ quote mới cho vị thế mở trước khi xét BUY tiếp.');

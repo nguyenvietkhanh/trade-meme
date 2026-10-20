@@ -3,10 +3,14 @@ import {SOL} from './engine.js';
 // Exact-request cache, successful validated responses only. Original observation time is retained.
 // Per execution/fetcher isolation prevents sharing a quote across providers or test/live instances.
 const quoteCaches=new WeakMap(),QUOTE_CACHE_MS=2000;
-async function quote(inputMint,outputMint,amount,slippageBps,fetcher){
+async function quote(inputMint,outputMint,amount,slippageBps,fetcher,minObservedAt=0){
  let cache=quoteCaches.get(fetcher);if(!cache){cache=new Map();quoteCaches.set(fetcher,cache);}
  const key=[inputMint,outputMint,amount,slippageBps,'ExactIn'].join(':'),now=Date.now(),prior=cache.get(key);
- if(prior&&(!prior.settled||now>=prior.at&&now-prior.at<QUOTE_CACHE_MS))return prior.task;
+ if(prior&&(!prior.settled||now>=prior.at&&now-prior.at<QUOTE_CACHE_MS)){
+  const cached=await prior.task;if(cached.failed||!minObservedAt||cached.observedAt>=minObservedAt)return cached;
+  if(cache.get(key)===prior)cache.delete(key);
+  return quote(inputMint,outputMint,amount,slippageBps,fetcher,minObservedAt);
+ }
  const entry={at:now,task:null,settled:false};
  const read=()=>requestQuote(inputMint,outputMint,amount,slippageBps,fetcher,Date.now());
  entry.task=(fetcher.scheduleQuote?fetcher.scheduleQuote(read):read()).then(q=>{entry.settled=true;if(q.failed&&cache.get(key)===entry)cache.delete(key);return q;}).catch(error=>{entry.settled=true;if(cache.get(key)===entry)cache.delete(key);throw error;});
@@ -43,10 +47,11 @@ export async function jupiterEntryQuote(mint,amount,fetcher=globalThis.fetch){
 }
 
 /** Read-only paper execution benchmark. Never requests swap bytes or signs/broadcasts. */
-export async function paperMarketQuote({mint,side,amount,slippageBps},fetcher=globalThis.fetch){
+export async function paperMarketQuote({mint,side,amount,slippageBps,minObservedAt=0},fetcher=globalThis.fetch){
+ if(!Number.isFinite(minObservedAt)||minObservedAt<0||minObservedAt>Date.now())throw Error('Invalid paper quote minimum timestamp');
  const validAmount=side==='BUY'?validBuyLamports(amount):typeof amount==='string'&&/^[1-9]\d{0,19}$/.test(amount)&&BigInt(amount)<=18446744073709551615n;
  if(!['BUY','SELL'].includes(side)||!validAmount||!Number.isInteger(slippageBps)||slippageBps<1||slippageBps>(side==='BUY'?400:1000))throw Error('Invalid paper quote request');
- const q=await quote(side==='BUY'?SOL:mint,side==='BUY'?mint:SOL,amount,slippageBps,fetcher);
+ const q=await quote(side==='BUY'?SOL:mint,side==='BUY'?mint:SOL,amount,slippageBps,fetcher,minObservedAt);
  if(q.failed)throw Error('NO_ROUTE: không có quote; không tạo fill mô phỏng.');
  const impact=Number(q.priceImpactPct)*100;
  if(q.priceImpactPct==null||!Number.isFinite(impact)||impact<0)throw Error('Quote thiếu price impact.');

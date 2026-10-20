@@ -173,3 +173,11 @@ reads neither call providers nor refresh price/proof timestamps. All existing
 safety, quote-expiry, cost, sizing and pool-participation gates still apply.
 Verification errors distinguish on-chain policy failures from round-trip quote
 failures using fixed diagnostic labels; unknown raw errors/URLs stay private.
+
+Paper fills request a quote whose observation starts after the simulated delay;
+an earlier cached or in-flight quote cannot stand in for this observation. The
+cache still coalesces requests that satisfy that timestamp. Intention expiry is
+checked again after quote/RPC reads so a delayed response cannot create a late
+fill. Pending status shows elapsed seconds, retry count and a fixed failure code;
+recent execution failures are visible alongside the scan decisions. The 2s delay,
+three-attempt limit and existing slippage/expiry limits are unchanged.
