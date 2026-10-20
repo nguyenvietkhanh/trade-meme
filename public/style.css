@@ -10,22 +10,25 @@
 
 .wallet-panel pre{white-space:pre-wrap;overflow-wrap:anywhere;font:11px/1.6 ui-monospace,monospace;color:var(--muted)}#rpc-retry{margin:12px 0}.wallet-panel .buttons{flex-wrap:wrap}.wallet-panel a{padding:10px 0}#wallet-error{color:#b67623;font-size:12px;overflow-wrap:anywhere}#live-address{font:12px ui-monospace,monospace;overflow-wrap:anywhere}.wallet-panel input{min-width:220px;max-width:100%}
 
-.workspace:has(#paper-controls[hidden]){grid-template-columns:1fr}#spider-companion{position:fixed;right:18px;bottom:18px;z-index:10;width:138px;pointer-events:none;color:#2b9673;filter:drop-shadow(0 6px 6px #21362a33)}#spider-companion svg{height:108px;background:none;overflow:visible}.spider-body{transform-origin:75px 60px;animation:spider-idle 3s ease-in-out infinite}.spider-legs path:nth-child(odd){transform-origin:75px 60px;animation:spider-legs 1.8s ease-in-out infinite alternate}.spider-legs path:nth-child(even){transform-origin:75px 60px;animation:spider-legs 1.8s ease-in-out .5s infinite alternate-reverse}#spider-label{font:10px/1.5 ui-monospace,monospace;text-align:center;border:1px solid #d8e6da;background:#fffffff2;border-radius:9px;padding:6px 9px;color:#40735b;overflow-wrap:anywhere}.spider-sell{color:#dc7657!important}@keyframes spider-idle{0%,100%{transform:translateY(2px) rotate(-3deg)}50%{transform:translateY(-5px) rotate(3deg)}}@keyframes spider-legs{to{transform:rotate(6deg)}}@media(max-width:520px){#spider-companion{width:100px;right:8px;bottom:12px}#spider-companion svg{height:78px}#spider-label{font-size:8px}}@media(prefers-reduced-motion:reduce){.spider-body,.spider-legs path{animation:none!important}}
+.workspace:has(#paper-controls[hidden]){grid-template-columns:1fr}
 
 #order-preview{font:12px/1.6 ui-monospace,monospace;overflow-wrap:anywhere}#ledger-import{max-width:230px}.wallet-panel label{font-size:12px;color:var(--muted)}
 
 #profit-recipient{overflow-wrap:anywhere}.wallet-panel input[type=checkbox]{min-width:0}
-/* Crawl to activity and retain the last destination; no stationary web shot or return loop. */
-#spider-companion.spider-roaming{left:0;top:0;right:auto;bottom:auto;transition:none;contain:layout style;pointer-events:none}
-.spider-roaming .spider-body{animation:spider-idle 3s ease-in-out infinite!important}
-.spider-crawling .spider-body{animation:spider-step .22s linear infinite alternate!important}
-.spider-crawling .spider-legs path:nth-child(odd){animation:spider-leg-step .18s linear infinite alternate!important}
-.spider-crawling .spider-legs path:nth-child(even){animation:spider-leg-step .18s linear infinite alternate-reverse!important}
-.spider-working{outline:1px solid #369b7d66;outline-offset:3px}
-@keyframes spider-step{from{transform:translateY(-1px) rotate(-2deg)}to{transform:translateY(1px) rotate(2deg)}}
-@keyframes spider-leg-step{from{transform:rotate(-8deg)}to{transform:rotate(8deg)}}
-@media(prefers-reduced-motion:reduce){.spider-roaming .spider-body,.spider-crawling .spider-legs path{animation:none!important}}
+
 
 #wallet-inventory,#recovery-warning,#recovery-detail{overflow-wrap:anywhere}#recovery-form{display:flex;flex-wrap:wrap;align-items:end;gap:8px;margin:10px 0}#recovery-form label{display:flex;flex:1 1 260px;flex-direction:column;gap:5px}#recovery-form input{width:100%;min-width:0}#recovery-warning{color:#b67623}#signer-controls h3{margin-top:18px}
 
 .paper-header{display:block}.paper-header p{font:12px/1.7 system-ui,sans-serif;letter-spacing:0}.panel input{max-width:100%}.panel label{display:inline-flex;align-items:center;gap:8px;flex-wrap:wrap;margin:8px 0}#balance,#status,#telegram,#decisions,#positions,#trades{overflow-wrap:anywhere}#decisions,#trades{max-height:360px;overflow:auto}
+
+/* Activity stays on the part being processed; no moving decoration. */
+[data-activity-panel]{--activity-rgb:36,152,117;transition:border-color .2s,background-color .2s}
+.activity-label{display:inline-block;color:rgb(var(--activity-rgb,36,152,117));font:11px/1.5 ui-monospace,monospace;overflow-wrap:anywhere}
+.activity-label:empty{display:none}
+.activity-working,.activity-updated{border-color:rgba(var(--activity-rgb,36,152,117),.65)!important;animation:activity-glow 1.8s ease-in-out infinite}
+.activity-updated{animation-iteration-count:2}
+[data-activity-tone="sell"]{--activity-rgb:204,128,48}
+tr.activity-working,tr.activity-updated{box-shadow:none;background:rgba(var(--activity-rgb,36,152,117),.09)}
+[data-activity-panel] .panel-head{align-items:flex-start;flex-wrap:wrap;margin-bottom:10px}
+@keyframes activity-glow{0%,100%{box-shadow:0 0 0 1px rgba(var(--activity-rgb,36,152,117),.13),0 0 6px rgba(var(--activity-rgb,36,152,117),.04)}50%{box-shadow:0 0 0 2px rgba(var(--activity-rgb,36,152,117),.45),0 0 16px rgba(var(--activity-rgb,36,152,117),.14)}}
+@media(prefers-reduced-motion:reduce){.activity-working,.activity-updated{animation:none!important;outline:2px solid rgba(var(--activity-rgb,36,152,117),.5);outline-offset:1px}}

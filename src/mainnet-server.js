@@ -87,7 +87,7 @@ function snapshot(req){
 }
 function json(res,status,data){res.writeHead(status,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'});res.end(JSON.stringify(data));}
 async function body(req,limit=4096){const chunks=[];let size=0;for await(const c of req){size+=c.length;if(size>limit)throw Error('Yêu cầu quá lớn.');chunks.push(c);}return JSON.parse(Buffer.concat(chunks).toString('utf8')||'{}');}
-const assets={'/spider.js':['spider.js','text/javascript'],'/wallet.js':['wallet.js','text/javascript'],'/':['index.html','text/html'],'/app.js':['app.js','text/javascript'],'/style.css':['style.css','text/css']};
+const assets={'/wallet.js':['wallet.js','text/javascript'],'/':['index.html','text/html'],'/app.js':['app.js','text/javascript'],'/style.css':['style.css','text/css']};
 const server=http.createServer(async(req,res)=>{
   try{
     const url=new URL(req.url,'http://localhost');

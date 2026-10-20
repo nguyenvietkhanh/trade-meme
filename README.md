@@ -150,3 +150,15 @@ Coverage is limited to tokens the discovery feed continues observing, so study
 survivorship/missingness before drawing conclusions. Cohort PnL in the report is
 not an independently funded baseline backtest. More samples may include more
 losses; no automatic parameter training or promotion to real funds is enabled.
+
+The paper dashboard highlights the panel and mint currently being scanned,
+verified, quoted or processed, replacing the spider decoration. Quote reads,
+pending simulated orders and newly observed fills have distinct labels. The
+read-only `/api/activity` endpoint exposes transient activity without requesting
+market/RPC data; the browser polls it once per second while visible. Reduced
+motion uses a static outline. This UI does not change entry or exit rules.
+Diagnostics show leading current blockers, source counts, last evaluation time
+and execution prerequisites such as exact-size quotes and pool participation.
+The accumulated evaluation counter includes repeated observations, not unique
+tokens. Historical baseline rules that the paper policy removed are labeled
+separately from the current reason for rejection.

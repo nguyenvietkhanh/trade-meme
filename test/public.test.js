@@ -33,7 +33,7 @@ for(const scenario of scenarios)test(scenario.name,async()=>{
   }
   const health=await (await fetch(base+'/api/health')).json();assert.equal(health.running,true);assert.equal(health.readOnly,true);assert.equal(health.realTradingEnabled,false);assert.equal(health.unattendedSigningAvailable,false);assert.equal(state.settings.initialSol,20);assert.equal(state.cashSol,20);assert.equal(state.realTradingEnabled,false);
   for(const p of ['/api/direct/prepare','/api/direct/submit','/api/signer/unlock','/api/signer/enable','/api/live/enable']){const r=await fetch(base+p,{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});assert.equal(r.status,410);}
-  const page=await(await fetch(base)).text();assert.match(page,/MÔ PHỎNG 20 SOL/);assert.ok(!page.includes('/wallet.js'));assert.equal((await fetch(base+'/wallet.js')).status,404);
+  const page=await(await fetch(base)).text();assert.match(page,/MÔ PHỎNG 20 SOL/);assert.ok(!page.includes('/wallet.js'));assert.ok(!page.includes('spider-companion'));assert.equal((await fetch(base+'/spider.js')).status,404);const activity=await(await fetch(base+'/api/activity')).json();assert.ok(Number.isFinite(activity.observedAt));assert.ok(Array.isArray(activity.verification));assert.ok(!JSON.stringify(activity).includes('keypair'));assert.equal((await fetch(base+'/activity.js')).status,200);assert.equal((await fetch(base+'/wallet.js')).status,404);
   assert.equal((await fetch(base)).status,200);
  }finally{const exited=new Promise(r=>child.once('exit',r));child.kill('SIGTERM');await exited;await rm(dir,{recursive:true,force:true});}
 });
