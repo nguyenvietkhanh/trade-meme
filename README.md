@@ -5,11 +5,13 @@ thật. Không ký/gửi giao dịch hoặc chuyển SOL thật. Bản hiện t�
 để thử giao dịch ngắn, có ghi nhãn so sánh bộ luật gốc; không tự huấn luyện hay
 triển khai tham số mới bằng tiền thật.
 
-## Gainers 5M · `paper-5m-scalp-v1`
+## Continuation v2 · `paper-5m-continuation-v2`
 
 These are **unvalidated research parameters**, not estimates of optimal returns.
-The strategy ranks observed PumpSwap pools by 5-minute percent gain descending,
-then score and volume. This is a rank within the bot's discovery universe,
+The dashboard and discovery shortlist rank observed PumpSwap pools by 5-minute
+percent gain descending. Executable entries additionally require recent price
+continuation with positive observed buy-count imbalance, and prefer lower
+verified round-trip loss before incremental flow and score. This is a rank within the bot's discovery universe,
 **not** an integration of DexScreener's entire in-app New Gainers table. The same
 DexScreener/GeckoTerminal discovery, RugCheck, Jupiter and configured RPC sources
 remain in use; there is no undocumented gainers endpoint or new paid data feed.
@@ -20,19 +22,22 @@ remain in use; there is no undocumented gainers endpoint or new paid data feed.
 | Volume / activity 5m | ≥$500, ≥5 buys, ≥10 trades, buy/sell ratio ≥1.1 |
 | Context | H1/H4 are recorded; green H1 and green H4 are not required |
 | Score | ≥40; momentum 30, flow 25, acceleration 20, depth 15, cost 10; wash/boost penalties retained |
-| Confirmation | Two fresh snapshots 5–15s apart with changed price/volume/counts, price retention ≥99.5%, liquidity retention ≥90% |
+| Confirmation | Fresh snapshots 5–15s apart: price rises >0% and ≤4%, nonnegative rolling buy/sell deltas with buys > sells; intermediate price retention ≥99.5%, liquidity retention ≥90% |
 | Security / execution gates | Existing authority, token program/extensions, LP, holders, cap/depth, round-trip ≤6%, impact ≤2%, real quote and capital checks retained |
 | Stop | −12% using net executable SELL quote against allocated cost |
 | Profit | +15% net sells 50%; +30% net closes remainder (a jump directly to ≥30% closes all) |
 | Trailing | 8% below peak net value per token after the first sale actually fills |
 | Stall / hold | 3 minutes without an observed net gain ≥5% exits; maximum hold 10 minutes |
 
-Market shortlisting and BUY selection both use the 5m policy, so an old
-H1/liquidity-only shortlist does not discard the desired gainers before checking.
+Market shortlisting retains the 5m universe; BUY selection uses verified
+round-trip cost and continuation instead of maximizing past percent gain.
 Held pools remain pinned and included. The verification decision cache is 10s
 for paper; reports/facts keep their existing 20s cache. Two verification workers,
 SELL-priority quote queue, serialized reads, provider backoff and slippage caps
-remain enforced; API outages can delay/miss entries and exits.
+remain enforced; API outages can delay/miss entries and exits. Paper entry
+round-trip probes run only after continuation confirms; holding surveillance
+still refreshes safety facts but does not request redundant BUY round trips.
+A queued SELL can displace a lower-priority read when the quote queue is full.
 
 Every new position, pending order and archived fill pins its strategy, entry and
 exit policy. Restarts preserve capital, quantities, first-profit state and
@@ -43,6 +48,38 @@ virtual capital and are not independent backtests; per-group drawdown remains
 unknown. Fee, latency and fill assumptions still apply, and fast exits may lose
 to fees or execute well beyond a stop during a price gap. Collect at least 100
 closed trades per strategy and use a later time period before judging an edge.
+
+
+The 4% short-window rise ceiling reuses the existing BUY price budget as an
+anti-chase research hypothesis; it was not optimized on the 32 uploaded positions.
+Rolling count changes are a proxy, not a transaction stream or independent-wallet
+count. Window roll-offs make negative deltas unknown and ineligible. False
+negatives and lower entry frequency are expected risks. The audit found 32 closed
+positions, −2.810357 modeled SOL, and 16 stop exits totaling −2.735459 SOL; those
+figures justify execution review but do not establish new profitable thresholds.
+
+Stops are evaluated against fresh SELL quotes at the time the read completes.
+A pending BUY cannot suppress held-position monitoring: a triggered exit replaces
+it, and missing exit quotes cancel the unfilled entry. Scalp SOL exits can trigger
+and fill without a fresh DexScreener price or SOL/USD quote. Missing USD values
+remain null; no current USD price is fabricated from entry prices. Existing
+pending SELL orders still serialize subsequent fills. Multiple positions and a
+provider outage can therefore still delay exits; no hard stop execution guarantee
+is claimed.
+
+The original 12% stop, +15%/+30% profit exits, 8% trailing, 3-minute stall,
+10-minute hold and 0.6 SOL sizing cap remain. The emergency 10% haircut stress
+assumption remains explicit; lowering it to improve reported PnL is not part of
+this revision. Ledger exports now retain quote/trigger timestamps, quantities,
+slippage tolerance, assumed and effective haircuts, holding time, the policy's
+actual initial risk, and entry continuation/cost features alongside each fill.
+
+`previousPaper` labels apply v1 gates to shared observed data without additional
+provider calls. They are conditional on the evidence collected by v2, not a
+separately funded v1 strategy. Historical v2 expectancy/PF/drawdown cannot be
+replayed from the uploaded shortened ledger. Collect ≥100 closed v2 positions,
+retain missing observations, compare later time periods and calibrate the fill
+model before any promotion to real funds. Production remains paper-only.
 
 ## Chạy
 

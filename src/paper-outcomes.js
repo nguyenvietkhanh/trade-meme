@@ -13,7 +13,7 @@ export function observePaperOutcomes(state,markets,journal,now=Date.now()){
  state.paperOutcomes=remaining;
  for(const m of markets){if(m.dexId!=='pumpswap'||!Number.isFinite(m.priceUsd)||m.priceUsd<=0||!Number.isFinite(m.updatedAt)||m.updatedAt>now||now-m.updatedAt>30000)continue;const key=m.mint+':'+m.pairAddress,last=state.paperOutcomeSeeds[key];if(last&&now-last<60000)continue;
   if(state.paperOutcomes.length>=MAX_PENDING){state.paperOutcomeStats.dropped++;continue;}const a=rankMarket(m,undefined,now),b=rankPaperMarket(m,undefined,now);
-  state.paperOutcomes.push({key,mint:m.mint,pairAddress:m.pairAddress,at:now,priceUsd:m.priceUsd,liquidityUsd:m.liquidityUsd,baseline:{eligible:a.eligible,score:a.score,stage:a.blockingStage,flags:a.red_flags},paper:{eligible:b.eligible,score:b.score,stage:b.blockingStage,relaxedFlags:b.relaxedFlags},done:[]});state.paperOutcomeSeeds[key]=now;state.paperOutcomeStats.created++;
+  state.paperOutcomes.push({key,mint:m.mint,pairAddress:m.pairAddress,at:now,priceUsd:m.priceUsd,liquidityUsd:m.liquidityUsd,baseline:{eligible:a.eligible,score:a.score,stage:a.blockingStage,flags:a.red_flags},paper:{eligible:b.eligible,score:b.score,stage:b.blockingStage,previousPaper:b.previousPaper,relaxedFlags:b.relaxedFlags},done:[]});state.paperOutcomeSeeds[key]=now;state.paperOutcomeStats.created++;
  }
  for(const [key,at]of Object.entries(state.paperOutcomeSeeds))if(now-at>1800000)delete state.paperOutcomeSeeds[key];
 }

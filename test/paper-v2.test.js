@@ -1,0 +1,49 @@
+import {test} from 'node:test';
+import assert from 'node:assert/strict';
+import {mkdtemp,rm} from 'node:fs/promises';
+import {tmpdir} from 'node:os';
+import path from 'node:path';
+import {PaperDesk} from '../src/paper-desk.js';
+import {verifiedMarket} from './fixtures/verified-market.js';
+import {observePaperEligibility,rankPaperMarket,rankPaperMarketV1} from '../src/paper-policy.js';
+import {SCALP_STRATEGY_VERSION,SCALP_V1_VERSION} from '../src/paper-scalp.js';
+import {quoteScheduler} from '../src/quote-queue.js';
+import {withRpcPriority} from '../src/rpc-priority.js';
+import {VerificationFeed} from '../src/verification.js';
+
+const start=Date.now();
+function confirm(change){const s={},first=verifiedMarket({change5mPct:27,scalpConfirmed:undefined},start);observePaperEligibility(s,[first],start);return observePaperEligibility(s,[{...first,updatedAt:start+5000,priceUsd:.0101,buys5m:43,sells5m:21,...change}],start+5000)[0];}
+test('v2 requires price continuation and positive observed net-buy count; changed snapshots alone are insufficient',()=>{
+ const valid=confirm({});assert.equal(valid.scalpConfirmed,true);assert.equal(valid.scalpSetup.netNewBuys,2);assert.equal(rankPaperMarket(valid,undefined,start+5000).eligible,true);
+ for(const delta of [{priceUsd:.01},{buys5m:41,sells5m:22},{buys5m:39,sells5m:19},{priceUsd:.0105}]){const m=confirm(delta);assert.equal(m.scalpConfirmed,false,JSON.stringify(delta));assert.equal(m.scalpV1Confirmed,true);const r=rankPaperMarket(m,undefined,start+5000);assert.equal(r.eligible,false);assert.equal(r.previousPaper.eligible,true);assert.equal(r.previousPaper.version,SCALP_V1_VERSION);}
+});
+test('continuation remains a confirmation gate, allowing cheap-qualified tokens to prefetch safety without inventing a signal',()=>{
+ const m=verifiedMarket({change5mPct:27,scalpConfirmed:true,scalpSetup:null},start),r=rankPaperMarket(m,undefined,start);assert.equal(r.eligible,false);assert.equal(r.roughEligible,true);assert.equal(r.preQuoteEligible,true);assert.ok(r.red_flags.includes('UNCONFIRMED_SIGNAL'));assert.equal(rankPaperMarketV1(m,undefined,start).eligible,true);
+});
+async function setup(t){let at=start,price=.6,latency=0,fail=false;const calls=[],journal=[];const dir=await mkdtemp(path.join(tmpdir(),'paper-v2-'));t.after(()=>rm(dir,{recursive:true,force:true}));const quotes={quote:async q=>{calls.push(q);at+=latency;if(fail)throw Error('Jupiter HTTP 429');const out=q.side==='BUY'?'9000000000':String(Math.round(price*1e9*Number(q.amount)/9e9));return {...q,inAmount:q.amount,outAmount:out,minOut:out,checkedAt:at,contextSlot:100,impactPct:1};}};const desk=new PaperDesk(dir,quotes,{clock:()=>at});desk.research={enqueue:r=>journal.push(r)};await desk.load();const feed=()=>({updatedAt:at,solUsd:150,error:null,markets:[verifiedMarket({change5mPct:27,scalpConfirmed:true,evidence:{decimals:6,probeSol:.6}},at)]});await desk.step(feed());at+=2100;await desk.step(feed());assert.equal(desk.state.positions.length,1);return {desk,dir,calls,journal,feed,advance:n=>at+=n,price:p=>price=p,latency:n=>latency=n,fail:v=>fail=v,now:()=>at};}
+function pendingBuy(x){x.desk.state.pending={id:'waiting-buy',side:'BUY',mint:'different-mint',pairAddress:'different-pool',decisionAt:x.now(),readyAt:x.now()+2000,strategyVersion:SCALP_STRATEGY_VERSION};}
+test('a fresh SELL quote can trigger and fill a stop while DexScreener and SOL/USD are missing; unknown USD stays null',async t=>{
+ const x=await setup(t);x.price(.47);x.advance(31000);const missing={markets:[],updatedAt:x.now()-31000,solUsd:null,error:'Dex API unavailable'};await x.desk.step(missing);assert.equal(x.desk.state.pending.side,'SELL');assert.equal(x.desk.state.pending.reason,'stop-loss');x.advance(2100);await x.desk.step(missing);assert.equal(x.desk.state.positions.length,0);assert.equal(x.desk.state.trades[0].side,'SELL');assert.equal(x.desk.state.trades[0].priceUsd,null);assert.equal(x.desk.state.trades[0].usdValuationStatus,'unavailable');assert.equal(x.desk.state.trades[0].execution.marketDataFresh,false);assert.ok(Math.abs(x.desk.state.cashSol-19.86995)<1e-8);
+});
+test('a pending BUY cannot hide the stop of an already open position',async t=>{
+ const x=await setup(t),cash=x.desk.state.cashSol;pendingBuy(x);x.price(.47);await x.desk.step(x.feed());assert.equal(x.desk.state.pending.side,'SELL');assert.equal(x.desk.state.pending.mint,'test-mint');assert.equal(x.desk.state.pending.reason,'stop-loss');assert.equal(x.desk.state.cashSol,cash);assert.equal(x.calls.at(-1).side,'SELL');assert.ok(x.desk.state.events.some(e=>e.message.includes('hủy BUY đang chờ')));
+});
+test('quote reads that advance the clock are assessed at response time, never misclassified as future observations',async t=>{
+ const x=await setup(t);x.price(.47);x.latency(1100);await x.desk.step(x.feed());assert.equal(x.desk.state.pending?.reason,'stop-loss');assert.ok(x.desk.state.pending.exitTrigger.quoteCheckedAt<=x.desk.state.pending.exitTrigger.at);
+});
+test('exit quote failure cancels a waiting entry, records missing exit evidence and never fabricates an exit',async t=>{
+ const x=await setup(t);pendingBuy(x);x.fail(true);const buys=x.desk.state.trades.length;await x.desk.step(x.feed());assert.equal(x.desk.state.pending,null);assert.equal(x.desk.state.positions.length,1);assert.equal(x.desk.state.trades.length,buys);assert.equal(x.desk.state.lastExecutionError.side,'SELL');assert.equal(x.desk.state.lastExecutionError.code,'HTTP_429');assert.equal(x.journal.at(-1).type,'paper_position_quote_error');
+});
+test('v1 positions retain their pinned exit policy, and migration does not reset cash or receipts',async t=>{
+ const x=await setup(t);x.desk.state.positions[0].exitPolicy={...x.desk.state.positions[0].exitPolicy,version:SCALP_V1_VERSION};x.desk.state.positions[0].strategyVersion=SCALP_V1_VERSION;const cash=x.desk.state.cashSol,trades=JSON.parse(JSON.stringify(x.desk.state.trades));await x.desk.save();const restored=new PaperDesk(x.dir,x.desk.quotes,{clock:x.now});await restored.load();assert.equal(restored.state.cashSol,cash);assert.deepEqual(restored.state.trades,trades);assert.equal(restored.state.positions[0].exitPolicy.version,SCALP_V1_VERSION);x.price(.52);await restored.step(x.feed());assert.equal(restored.state.pending.reason,'stop-loss');
+});
+test('exported receipts retain quote, trigger, model haircut and entry evidence for subsequent audits',async t=>{
+ const x=await setup(t);x.price(.47);await x.desk.step(x.feed());x.advance(2100);await x.desk.step(x.feed());const trade=x.desk.state.trades[0];assert.equal(trade.initialRiskSol,.600025*.12);assert.ok(trade.holdingMs>0);assert.equal(trade.entrySignal.roundTripLossPct,3);assert.equal(trade.execution.slippageToleranceBps,1000);assert.equal(trade.execution.assumedHaircutBps,1000);assert.equal(trade.execution.scenario,'emergency-stress');assert.ok(trade.execution.trigger.roiPct<0);assert.ok(trade.execution.quoteObservedAt>=trade.execution.readyAt);assert.equal(trade.entrySignal.change5mPct,27);assert.equal(trade.strategyVersion,SCALP_STRATEGY_VERSION);
+});
+test('SELL can enter a saturated quote queue by displacing a lower-priority queued read',async()=>{
+ const queue=quoteScheduler({intervalMs:1,queueTimeoutMs:1000}),order=[];let release;const gate=new Promise(r=>release=r),active=withRpcPriority('background',()=>queue(async()=>{await gate;order.push('active');}));const pending=Array.from({length:8},(_,i)=>withRpcPriority('background',()=>queue(async()=>order.push('buy'+i))).then(()=>true,()=>false));const exit=withRpcPriority('exit',()=>queue(async()=>order.push('SELL')));release();const results=await Promise.all(pending);await Promise.all([active,exit]);assert.equal(results.filter(x=>!x).length,1);assert.equal(order[1],'SELL');
+});
+test('paper proof calls wait for continuation, then reuse prefetched facts; holdings do not request BUY round trips',async t=>{
+ let at=start;t.mock.method(Date,'now',()=>at);const mint='11111111111111111111111111111112',base=verifiedMarket({mint,change5mPct:27,scalpConfirmed:false},at);let facts=0,quotes=0,reports=0;const execution={inspectMarketFacts:async()=>{facts++;const {roundTripQuoteOk,quoteCheckedAt,probeSol,buyImpactPct,sellImpactPct,...rest}=base.evidence;return rest;},inspectMarketQuote:async()=>{quotes++;return {roundTripQuoteOk:true,quoteCheckedAt:at,probeSol:.6,roundTripLossPct:3,buyImpactPct:1,sellImpactPct:1};}};
+ const v=new VerificationFeed(async url=>{if(!String(url).includes('rugcheck'))return new Response('{}');reports++;return new Response(JSON.stringify({mint,token:{mintAuthority:null,freezeAuthority:null},risks:[],markets:[{pubkey:base.pairAddress,lp:{lpLockedPct:95}}]}));},execution,{rankMarket:rankPaperMarket,ignoreH4:true,cacheMs:10000,quoteTracked:false,requireConfirmedQuote:true});await v.enrich([{...base,evidence:undefined}],[],at);assert.equal(facts,1);assert.equal(quotes,0);at+=5000;await v.enrich([{...base,updatedAt:at,scalpConfirmed:true,scalpSetup:{...base.scalpSetup,at,anchorAt:at-5000},evidence:undefined}],[],at);assert.equal(facts,1);assert.equal(reports,1);assert.equal(quotes,1);at+=21000;await v.enrich([{...base,updatedAt:at,scalpConfirmed:true,scalpSetup:{...base.scalpSetup,at,anchorAt:at-5000},evidence:undefined}],[mint],at);assert.equal(facts,2);assert.equal(quotes,1);
+});

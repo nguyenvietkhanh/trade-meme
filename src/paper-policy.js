@@ -1,6 +1,6 @@
 import {rankMarket} from './strategy.js';
 import {TRADE_RULES} from './desk-rules.js';
-import {SCALP_ENTRY_RULES} from './paper-scalp.js';
+import {SCALP_ENTRY_RULES,SCALP_V1_ENTRY_RULES} from './paper-scalp.js';
 import {entryFeatures} from './training-records.js';
 export const EXPLORATION_ENTRY_POLICY=Object.freeze({version:'paper-exploration-v1',minScore:40,minBuys5m:3,minTrades5m:8,minTrades1h:20,minChange5mPct:-20,maxChange1hPct:300,confirmationGapMs:5000,minimumObservations:2,baselineMinScore:60});
 const finite=Number.isFinite;
@@ -36,18 +36,24 @@ export function observePaperEligibility(state,markets,now=Date.now()){
   const changed=!!prior&&[m.priceUsd,m.volume5mUsd,m.buys5m,m.sells5m].some((v,i)=>v!==prior.fingerprint?.[i]);
   const retains=(row,anchor)=>finite(row.priceUsd)&&row.priceUsd>=anchor.priceUsd*r.minPriceRetention&&finite(row.liquidityUsd)&&row.liquidityUsd>=anchor.liquidityUsd*r.minLiquidityRetention&&finite(row.change5mPct)&&row.change5mPct>=r.minChange5mPct;
   const sequence=prior?[prior,...history.filter(row=>row.at>prior.at),m]:[];
-  const scalpConfirmed=!!prior&&changed&&finite(prior.priceUsd)&&finite(prior.liquidityUsd)&&prior.change5mPct>=r.minChange5mPct&&sequence.every((row,i)=>!i||retains(row,prior)&&retains(row,sequence[i-1]));
+  const scalpV1Confirmed=!!prior&&changed&&finite(prior.priceUsd)&&finite(prior.liquidityUsd)&&prior.change5mPct>=r.minChange5mPct&&sequence.every((row,i)=>!i||retains(row,prior)&&retains(row,sequence[i-1]));
+  const deltaBuys=prior&&Number.isSafeInteger(m.buys5m)&&Number.isSafeInteger(prior.fingerprint?.[2])?m.buys5m-prior.fingerprint[2]:null,deltaSells=prior&&Number.isSafeInteger(m.sells5m)&&Number.isSafeInteger(prior.fingerprint?.[3])?m.sells5m-prior.fingerprint[3]:null;
+  const risePct=prior?(m.priceUsd/prior.priceUsd-1)*100:null;
+  // Rolling 5m counts can decrease when old trades leave the window. Such a
+  // delta is unknown flow, never evidence that new independent buyers arrived.
+  const flowKnown=Number.isSafeInteger(deltaBuys)&&Number.isSafeInteger(deltaSells)&&deltaBuys>=0&&deltaSells>=0;
+  const scalpConfirmed=scalpV1Confirmed&&risePct>0&&risePct<=r.maxConfirmationRisePct+1e-9&&flowKnown&&deltaBuys>deltaSells;
   if(!good)delete state.paperObservations[key];
   else if(!saved||m.updatedAt>saved.sourceAt){const current={at:now,sourceAt:m.updatedAt,priceUsd:m.priceUsd,liquidityUsd:m.liquidityUsd,change5mPct:m.change5mPct,fingerprint:[m.priceUsd,m.volume5mUsd,m.buys5m,m.sells5m]};state.paperObservations[key]={...current,history:[...history,current].slice(-8)};}
-  return {...m,paperObservedTwice:!!prior,scalpConfirmed,scalpSetup:prior?{at:now,anchorAt:prior.at,anchorPriceUsd:prior.priceUsd,priceRetention:m.priceUsd/prior.priceUsd,liquidityRetention:m.liquidityUsd/prior.liquidityUsd,changed}:null};
+  return {...m,paperObservedTwice:!!prior,scalpConfirmed,scalpV1Confirmed,scalpSetup:prior?{at:now,anchorAt:prior.at,anchorPriceUsd:prior.priceUsd,priceRetention:m.priceUsd/prior.priceUsd,liquidityRetention:m.liquidityUsd/prior.liquidityUsd,changed,risePct,deltaBuys,deltaSells,flowKnown,netNewBuys:flowKnown?deltaBuys-deltaSells:null}:null};
  });
  for(const [key,value]of Object.entries(state.paperObservations))if(now-value.at>30000)delete state.paperObservations[key];return result;
 }
 
 export const PAPER_ENTRY_POLICY=SCALP_ENTRY_RULES;
 /** Active paper strategy: rank gainers on observed 5m changes; H1/H4 remain labels. */
-export function rankPaperMarket(m,s=TRADE_RULES,now=Date.now()){
- m=m??{};const prior=rankExplorationMarket(m,s,now),r=PAPER_ENTRY_POLICY;
+function rankPaperRules(m,s=TRADE_RULES,now=Date.now(),r=PAPER_ENTRY_POLICY){
+ m=m??{};const prior=rankExplorationMarket(m,s,now);
  const ignore=new Set(['LOW_ACTIVITY','NO_UPTREND','DUMP_OR_CHASE','UNCONFIRMED_SIGNAL','LOW_SCORE']);
  const flags=prior.red_flags.filter(f=>!ignore.has(f)),texts={};
  const fail=(ok,flag,text)=>{if(!ok){flags.push(flag);texts[flag]=text;}};
@@ -61,7 +67,8 @@ export function rankPaperMarket(m,s=TRADE_RULES,now=Date.now()){
  const score=Math.round(Math.max(0,Object.values(parts).reduce((a,b)=>a+b,0)-prior.washPenalty-prior.boostPenalty));
  fail(score>=r.minScore,'LOW_SCORE',`Paper gainers cần ≥${r.minScore} điểm`);
  if(m.evidence?.roundTripQuoteOk===true&&(!finite(m.evidence.quoteCheckedAt)||m.evidence.quoteCheckedAt>now||now-m.evidence.quoteCheckedAt>r.maxQuoteAgeMs)&&!flags.includes('QUOTE_STALE')){flags.push('QUOTE_STALE');texts.QUOTE_STALE='Quote vòng gainers quá 10 giây; chờ quote mới';}
- fail(m.scalpConfirmed===true,'UNCONFIRMED_SIGNAL','Chờ 2 lần quét 5m có dữ liệu thay đổi; giá không tụt >0,5%, thanh khoản giữ ≥90%');
+ const setup=m.scalpSetup,continuing=!r.requireIncrementalBuyDominance||setup&&finite(setup.at)&&setup.at<=now&&now-setup.at<=r.maxConfirmationGapMs&&finite(setup.anchorAt)&&setup.at-setup.anchorAt>=r.confirmationGapMs&&setup.at-setup.anchorAt<=r.maxConfirmationGapMs&&finite(setup.risePct)&&setup.risePct>0&&setup.risePct<=r.maxConfirmationRisePct+1e-9&&setup.flowKnown===true&&Number.isSafeInteger(setup.deltaBuys)&&Number.isSafeInteger(setup.deltaSells)&&setup.deltaSells>=0&&setup.deltaBuys>setup.deltaSells;
+ fail(m.scalpConfirmed===true&&!!continuing,'UNCONFIRMED_SIGNAL',r.requireIncrementalBuyDominance?'Chờ giá tăng tiếp 0–4%, số mua tăng thêm > số bán; dữ liệu mới cách 5–15s, thanh khoản giữ ≥90%':'Chờ 2 lần quét 5m có dữ liệu thay đổi; giá không tụt >0,5%, thanh khoản giữ ≥90%');
  const safety=new Set(['VERIFICATION_PROVIDER_ERROR','MISSING_SAFETY_EVIDENCE','UNVERIFIED_QUOTE_RESERVE','ACTIVE_OR_UNKNOWN_AUTHORITY','UNSAFE_TOKEN_PROGRAM','LP_UNVERIFIED','HOLDER_CONCENTRATION','DEV_CONCENTRATION','RUG_WARNINGS','ROUND_TRIP_UNVERIFIED','QUOTE_STALE']);
  const cheap=flags.filter(f=>!safety.has(f)&&!['UNCONFIRMED_SIGNAL','LOW_SCORE'].includes(f));
  const originalCoarse=prior.baseline.blockingStage==='discovery'?prior.baseline.flags.filter(f=>prior.primaryFlags.includes(f)):[];
@@ -73,7 +80,10 @@ export function rankPaperMarket(m,s=TRADE_RULES,now=Date.now()){
 }
 
 
+export function rankPaperMarketV1(m,s=TRADE_RULES,now=Date.now()){return rankPaperRules({...m,scalpConfirmed:m?.scalpV1Confirmed??m?.scalpConfirmed},s,now,SCALP_V1_ENTRY_RULES);}
+export function rankPaperMarket(m,s=TRADE_RULES,now=Date.now()){const result=rankPaperRules(m,s,now),old=rankPaperMarketV1(m,s,now);return {...result,previousPaper:{version:SCALP_V1_ENTRY_RULES.version,eligible:old.eligible,blockingStage:old.blockingStage,flags:old.red_flags}};}
+
 export function paperEntryFeatures(m,solUsd,now=Date.now()){
  const baseline=entryFeatures(m,solUsd),rank=rankPaperMarket(m,undefined,now);
- return {...baseline,capturedAt:now,baselineScore:rank.baseline.score,baselinePenalties:baseline.penalties,baselineMissingScoreData:baseline.missingScoreData,penalties:{washPenalty:rank.washPenalty,boostPenalty:rank.boostPenalty,h4Penalty:0},missingScoreData:rank.missingScoreData,baselineStrategyVersion:baseline.strategyVersion,score:rank.score,scoreParts:rank.scoreParts,strategyVersion:PAPER_ENTRY_POLICY.version,policyVersion:PAPER_ENTRY_POLICY.version,scalpSetup:m.scalpSetup??null,rank5m:{changePct:m.change5mPct,volumeUsd:m.volume5mUsd,buys:m.buys5m,sells:m.sells5m,ordering:'5m percent change desc within discovered PumpSwap pools'}};
+ return {...baseline,capturedAt:now,baselineScore:rank.baseline.score,baselinePenalties:baseline.penalties,baselineMissingScoreData:baseline.missingScoreData,penalties:{washPenalty:rank.washPenalty,boostPenalty:rank.boostPenalty,h4Penalty:0},missingScoreData:rank.missingScoreData,baselineStrategyVersion:baseline.strategyVersion,score:rank.score,scoreParts:rank.scoreParts,strategyVersion:PAPER_ENTRY_POLICY.version,policyVersion:PAPER_ENTRY_POLICY.version,previousPaper:rank.previousPaper,scalpSetup:m.scalpSetup??null,rank5m:{changePct:m.change5mPct,volumeUsd:m.volume5mUsd,buys:m.buys5m,sells:m.sells5m,ordering:'5m percent change desc within discovered PumpSwap pools'}};
 }

@@ -41,19 +41,20 @@ export function rugEvidence(report,market,now=Date.now()){
 }
 export class VerificationFeed{
  constructor(fetcher=globalThis.fetch,execution=null,options={}){
-  const {rankMarket:analyst=rankMarket,ignoreH4=false,compareCandidates=null,cacheMs=VERIFICATION_CACHE_MS,...providerOptions}=options;this.rank=analyst;this.ignoreH4=ignoreH4;this.compareCandidates=compareCandidates;if(!Number.isFinite(cacheMs)||cacheMs<SCAN_RULES.intervalMs||cacheMs>VERIFICATION_CACHE_MS)throw Error('Invalid verification cache lifetime');this.cacheMs=cacheMs;
+  const {rankMarket:analyst=rankMarket,ignoreH4=false,compareCandidates=null,cacheMs=VERIFICATION_CACHE_MS,quoteTracked=true,requireConfirmedQuote=false,...providerOptions}=options;this.rank=analyst;this.ignoreH4=ignoreH4;this.quoteTracked=quoteTracked;this.requireConfirmedQuote=requireConfirmedQuote;this.compareCandidates=compareCandidates;if(!Number.isFinite(cacheMs)||cacheMs<SCAN_RULES.intervalMs||cacheMs>VERIFICATION_CACHE_MS)throw Error('Invalid verification cache lifetime');this.cacheMs=cacheMs;
   this.fetcher=fetcher;this.reportFetch=backoffFetch(fetcher,{provider:'RugCheck',...providerOptions});this.structureFetch=backoffFetch(fetcher,{provider:'OHLCV',...providerOptions});this.execution=execution;
   this.cache=new Map();this.reports=new Map();this.facts=new Map();this.structures=new Map();this.jobs=new Map();this.h4Memory=new Map();
  }
  targets(markets,tracked,now){return markets.filter(m=>m.dexId==='pumpswap'&&!isPumpCurve(m)&&(tracked.includes(m.mint)||this.rank(m,undefined,now).roughEligible));}
  // Read completed metadata only; keep the market's own price/source timestamps.
+ quoteReady(m,value,now){if(!this.requireConfirmedQuote||value?.verificationError)return false;const r=this.rank({...m,...value},undefined,now);return r.preQuoteEligible&&!r.red_flags.includes('UNCONFIRMED_SIGNAL')&&r.red_flags.some(f=>['ROUND_TRIP_UNVERIFIED','QUOTE_STALE'].includes(f));}
  applyCached(markets){return markets.map(m=>{const value=this.cache.get(m.mint+':'+m.pairAddress)?.value;return value?{...m,verificationError:null,...value}:{...m};});}
  async enrichCached(markets,tracked=[],now=Date.now()){
   const checkedAt=m=>this.cache.get(m.mint+':'+m.pairAddress)?.at??0;
   const targets=this.targets(markets,tracked,now).sort((a,b)=>checkedAt(a)-checkedAt(b)||Number(tracked.includes(b.mint))-Number(tracked.includes(a.mint))||(this.compareCandidates?.(a,b)??b.volume5mUsd-a.volume5mUsd));
   for(const m of targets){
    const key=m.mint+':'+m.pairAddress,cached=this.cache.get(key);if(this.jobs.size>=2)break;
-   if(this.jobs.has(key)||reusable(cached,now,this.cacheMs))continue;
+   if(this.jobs.has(key)||reusable(cached,now,this.cacheMs)&&!this.quoteReady(m,cached?.value,now))continue;
    // A candidate is not a tracked holding. Recheck its cheap gates inside the worker.
    const job=this.enrich([m],tracked.includes(m.mint)?[m.mint]:[],now).catch(()=>{}).finally(()=>this.jobs.delete(key));this.jobs.set(key,job);
   }
@@ -63,7 +64,7 @@ export class VerificationFeed{
   const targets=this.targets(markets,tracked,now).filter(m=>tracked.includes(m.mint)||m.liquidityUsd>=20*m.solUsd).sort((a,b)=>Number(tracked.includes(b.mint))-Number(tracked.includes(a.mint))||(this.compareCandidates?.(a,b)??b.volume5mUsd-a.volume5mUsd)).slice(0,6),results=new Map();
   for(let i=0;i<targets.length;i+=2)await Promise.all(targets.slice(i,i+2).map(async m=>{
    if(!/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(m.mint))return;
-   const key=m.mint+':'+m.pairAddress,cached=this.cache.get(key);if(reusable(cached,now,this.cacheMs)){results.set(key,cached.value);return;}
+   const key=m.mint+':'+m.pairAddress,cached=this.cache.get(key);if(reusable(cached,now,this.cacheMs)&&!this.quoteReady(m,cached?.value,now)){results.set(key,cached.value);return;}
    let value;
    try{
     // Retain a successful report even when the later Jupiter stage fails.
@@ -87,7 +88,8 @@ export class VerificationFeed{
      if(!reusable(facts,now)||facts.creator!==creator){const inspect=this.execution.inspectMarketFacts??this.execution.inspectMarket;if(inspect){facts={at:now,creator,value:await inspect.call(this.execution,{...m,creatorAddress:creator})};this.facts.set(key,facts);}}
      if(facts)value.evidence={...value.evidence,...facts.value,checkedAt:Math.min(value.evidence.rugFetchedAt,facts.at),mint:m.mint,pairAddress:m.pairAddress,source:'rugcheck+solana-rpc'};
      // No quote for a cheap-filter failure, unsafe holders/LP/program, or a score below entry.
-     if(this.execution.inspectMarketQuote&&this.rank({...m,evidence:value.evidence,verificationError:null},undefined,Date.now()).preQuoteEligible){
+     const quoteRank=this.rank({...m,evidence:value.evidence,verificationError:null},undefined,Date.now());
+     if((this.quoteTracked||!tracked.includes(m.mint))&&this.execution.inspectMarketQuote&&quoteRank.preQuoteEligible&&(!this.requireConfirmedQuote||!quoteRank.red_flags.includes('UNCONFIRMED_SIGNAL'))){
       failureStage='Jupiter quote vòng';const proof=await this.execution.inspectMarketQuote(m);value.evidence={...value.evidence,...proof,source:'rugcheck+solana-rpc+jupiter'};
      }
     }catch(error){value.verificationError=providerFailure(failureStage,error);}

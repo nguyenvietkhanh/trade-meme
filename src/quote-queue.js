@@ -13,7 +13,7 @@ export function quoteScheduler({intervalMs=1100,queueTimeoutMs=8000,clock=Date.n
  };
  return work=>new Promise((resolve,reject)=>{
   const lane=rpcPriority(),priority=lane==='exit'?0:lane==='background'||lane==='research'?2:1;
-  if(queue.length>=8){reject(waiting());return;}
+  if(queue.length>=8){const i=queue.findLastIndex(job=>job.priority>priority);if(i<0){reject(waiting());return;}const old=queue.splice(i,1)[0];clearTimeout(old.timer);old.reject(waiting());}
   const job={work,resolve,reject,priority};job.timer=setTimeout(()=>{const i=queue.indexOf(job);if(i>=0){queue.splice(i,1);reject(waiting());if(!queue.length&&timer){clearTimeout(timer);timer=null;}}},queueTimeoutMs);
   queue.push(job);drain();
  });
