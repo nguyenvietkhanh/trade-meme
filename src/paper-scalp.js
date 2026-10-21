@@ -1,8 +1,9 @@
 import {TRADE_RULES} from './desk-rules.js';
 // Research parameters only: no measured edge or promise of profit.
 export const SCALP_V1_VERSION='paper-5m-scalp-v1';
-export const SCALP_STRATEGY_VERSION='paper-5m-continuation-v2';
-export const isScalpVersion=version=>[SCALP_V1_VERSION,SCALP_STRATEGY_VERSION].includes(version);
+export const SCALP_V2_VERSION='paper-5m-continuation-v2';
+export const SCALP_STRATEGY_VERSION='paper-5m-multi-v3';
+export const isScalpVersion=version=>[SCALP_V1_VERSION,SCALP_V2_VERSION,SCALP_STRATEGY_VERSION].includes(version);
 export const SCALP_V1_ENTRY_RULES=Object.freeze({version:SCALP_V1_VERSION,minScore:40,minChange5mPct:5,maxChange5mPct:100,minVolume5mUsd:500,minBuys5m:5,minTrades5m:10,minBuySellRatio:1.1,confirmationGapMs:5000,maxConfirmationGapMs:15000,minPriceRetention:.995,minLiquidityRetention:.9,maxQuoteAgeMs:10000});
 export const SCALP_ENTRY_RULES=Object.freeze({...SCALP_V1_ENTRY_RULES,version:SCALP_STRATEGY_VERSION,maxConfirmationRisePct:TRADE_RULES.buySlippageCapBps/100,requireIncrementalBuyDominance:true});
 export function comparePaperEntries(a,b){return number(a.evidence?.roundTripLossPct,Infinity)-number(b.evidence?.roundTripLossPct,Infinity)||number(b.scalpSetup?.netNewBuys,0)-number(a.scalpSetup?.netNewBuys,0)||number(b.score,0)-number(a.score,0)||compare5m(a,b);}

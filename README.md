@@ -5,7 +5,7 @@ thật. Không ký/gửi giao dịch hoặc chuyển SOL thật. Bản hiện t�
 để thử giao dịch ngắn, có ghi nhãn so sánh bộ luật gốc; không tự huấn luyện hay
 triển khai tham số mới bằng tiền thật.
 
-## Continuation v2 · `paper-5m-continuation-v2`
+## Multi-position v3 · `paper-5m-multi-v3`
 
 These are **unvalidated research parameters**, not estimates of optimal returns.
 The dashboard and discovery shortlist rank observed PumpSwap pools by 5-minute
@@ -24,6 +24,7 @@ remain in use; there is no undocumented gainers endpoint or new paid data feed.
 | Score | ≥40; momentum 30, flow 25, acceleration 20, depth 15, cost 10; wash/boost penalties retained |
 | Confirmation | Fresh snapshots 5–15s apart: price rises >0% and ≤4%, nonnegative rolling buy/sell deltas with buys > sells; intermediate price retention ≥99.5%, liquidity retention ≥90% |
 | Security / execution gates | Existing authority, token program/extensions, LP, holders, cap/depth, round-trip ≤6%, impact ≤2%, real quote and capital checks retained |
+| Allocation | 2.5% of accounting capital (cash + locked rent + remaining position cost); bounded by cash after 0.1 SOL reserve + 0.005 SOL overhead. No fixed position count or 0.6 SOL order cap. |
 | Stop | −12% using net executable SELL quote against allocated cost |
 | Profit | +15% net sells 50%; +30% net closes remainder (a jump directly to ≥30% closes all) |
 | Trailing | 8% below peak net value per token after the first sale actually fills |
@@ -62,13 +63,10 @@ Stops are evaluated against fresh SELL quotes at the time the read completes.
 A pending BUY cannot suppress held-position monitoring: a triggered exit replaces
 it, and missing exit quotes cancel the unfilled entry. Scalp SOL exits can trigger
 and fill without a fresh DexScreener price or SOL/USD quote. Missing USD values
-remain null; no current USD price is fabricated from entry prices. Existing
-pending SELL orders still serialize subsequent fills. Multiple positions and a
-provider outage can therefore still delay exits; no hard stop execution guarantee
-is claimed.
+remain null; no current USD price is fabricated from entry prices. Each BUY and all of its partial/final SELL fills share a stable `positionId` for audit/training. Each position can queue its own SELL. A delayed/retrying SELL does not prevent checking other holdings or filling another ready SELL; at most one exit per mint is queued. Actual fills and quote reads remain serialized within provider limits. New entries no longer require every holding to have a fresh quote: accounting capital is used for allocation while equity/PnL stay unknown when quotes are stale. Multiple positions and provider outages can still delay exits; no hard stop execution guarantee is claimed.
 
 The original 12% stop, +15%/+30% profit exits, 8% trailing, 3-minute stall,
-10-minute hold and 0.6 SOL sizing cap remain. The emergency 10% haircut stress
+10-minute hold remain. Position sizing is now the requested 2.5% allocation. The emergency 10% haircut stress
 assumption remains explicit; lowering it to improve reported PnL is not part of
 this revision. Ledger exports now retain quote/trigger timestamps, quantities,
 slippage tolerance, assumed and effective haircuts, holding time, the policy's
@@ -80,6 +78,43 @@ separately funded v1 strategy. Historical v2 expectancy/PF/drawdown cannot be
 replayed from the uploaded shortened ledger. Collect ≥100 closed v2 positions,
 retain missing observations, compare later time periods and calibrate the fill
 model before any promotion to real funds. Production remains paper-only.
+
+## Multi-position allocation and execution limitations
+
+With 20 SOL the target order is 0.5 SOL. Open positions retain their cost basis in
+the allocation reference, so successive BUYs do not geometrically shrink orders
+as a percentage of leftover cash. Realized losses reduce future orders; unrealized
+gains do not enlarge them. This reference is **not market equity** and can overstate
+available portfolio value when holdings lose value. Fees and locked rent are
+accounted for separately and the last order is clipped to protect cash reserves.
+Minimum order is 0.0025 SOL: two modeled network fees at this size already consume
+2%, leaving the existing 6% quote-cost budget within the 8% total entry-cost cap.
+Current quote/impact/capital gates still decide whether any token can enter.
+
+At unchanged starting capital, 39 full 0.5 SOL orders plus one clipped order can
+fit after modeled fees/rent. This is a capital calculation, not a promise of 40
+simultaneous opportunities. Normal entries keep the v2 continuation/safety rules;
+no unsafe tokens or fake fills are added to increase sample count.
+
+Fresh market prices and LP/dev alerts prioritize exact SELL quote checks, with an
+oldest-check turn after 30s to reduce starvation. The 30s is a scheduling priority,
+**not a guaranteed maximum delay**. Quotes have the same rate limit and concurrency
+as before: 40 held tokens cannot all receive 10s quote freshness under a roughly
+one-request-per-1.1s provider budget. Monitoring status exposes unquoted/stale
+holdings, oldest available quote age, and all queued exits. Pending exits persist
+and retain their per-position policies across restart if storage survives.
+
+BUY then SELL within one Solana transaction can be atomic for an immediate
+round trip, but cannot wait for future appreciation. It does not eliminate route
+fees, impact or slippage. This strategy uses separate entry/exit intents with
+fresh post-delay quotes, original minimum-output limits and unchanged stress
+haircuts. A gap outside the limit refuses the fill rather than inventing a
+favorable execution. No swap/bundle/private-key capability was added.
+
+Daily 23:00 Vietnam Telegram reports retain all fills and now include allocation
+policy, per-trade capital/size, position IDs, exit backlog and quote-coverage information. Daily counters include missing equity samples; observed drawdown can miss losses during valuation gaps.
+Mechanical multi-position/crash/429 tests do not establish profitability; future
+paper results must validate expectancy and drawdown before any real-money change.
 
 ## Chạy
 
@@ -109,7 +144,7 @@ sold or managed** by paper mode; inspect any remaining real holdings separately.
 
 The new ledger is `<DATA_DIR>/paper20/ledger.json`, with a durable backup and
 separate immutable fill archives. Initial capital is 20 virtual SOL **once**;
-restart never reissues capital. PumpSwap discovery, 5s scans, safety gates, capped/adaptive 0.6 SOL sizing,
+restart never reissues capital. PumpSwap discovery, 5s scans, safety gates, 2.5% accounting-capital sizing,
 0.1 SOL reserve remain unchanged. New paper entries and exits use the versioned
 5-minute scalp policy below; open positions keep their original exit policy. Daily loss, loss-streak pause and drawdown enforcement stay off,
 as previously configured; drawdown is still measured. No curve or GMGN source

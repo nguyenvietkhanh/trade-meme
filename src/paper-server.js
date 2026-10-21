@@ -17,13 +17,13 @@ import {observeMarkets} from './signals.js';
 import {rankPaperMarket as rankMarket,observePaperEligibility} from './paper-policy.js';
 import {observePaperOutcomes} from './paper-outcomes.js';
 import {withRpcPriority} from './rpc-priority.js';
-import {walletOrderSol} from './desk-rules.js';
+import {paperOrderSol,paperCapitalSol} from './paper-sizing.js';
 import {SCALP_STRATEGY_VERSION,compare5m} from './paper-scalp.js';
 import {explainPaperStatus,paperPendingView} from './ui-activity.js';
 const root=fileURLToPath(new URL('../',import.meta.url)),dataDir=await initializeStorage(root),dir=path.join(dataDir,'paper20');await mkdir(dir,{recursive:true,mode:0o700});
 const onRailway=!!(process.env.RAILWAY_SERVICE_ID||process.env.RAILWAY_ENVIRONMENT_ID),storageMode=process.env.RAILWAY_VOLUME_MOUNT_PATH?'persistent-volume':onRailway?'ephemeral':'local-disk';
 const auth=new OwnerAuth({origin:process.env.PUBLIC_ORIGIN??(onRailway?'https://'+(process.env.RAILWAY_PUBLIC_DOMAIN??'trade-meme-production.up.railway.app'):null)});
-let desk;const market=createPaperMarket(()=>desk.state.cashSol);desk=new PaperDesk(dir,market);await desk.load();
+let desk;const market=createPaperMarket(()=>desk.state);desk=new PaperDesk(dir,market);await desk.load();
 const research=new ResearchJournal(dir);desk.research=research;const reports=new PaperReports(dir,research),telegram=new PaperTelegram(dir,dataDir);await telegram.load();
 const transport={get state(){return desk.state;},vault:{keypair:null},serial:fn=>desk.serial(fn),save:()=>desk.save(),training:reports};
 const verification=new VerificationFeed(globalThis.fetch,market,{rankMarket,ignoreH4:true,compareCandidates:compare5m,cacheMs:10000,quoteTracked:false,requireConfirmedQuote:true}),discovery=new DiscoveryQueue(desk.state.discovery);
@@ -35,7 +35,7 @@ async function refresh(){if(refreshing||closing)return;refreshing=true;try{
  }catch{feed={...feed,error:'Market API/RPC chưa phản hồi; không tạo dữ liệu thay thế.'};await desk.serial(async()=>{desk.error(Error('RPC market feed'));await desk.save();});}finally{refreshing=false;}}
 function activityState(){const s=desk.state;return {observedAt:Date.now(),scanning:refreshing,scanCompletedAt:s.lastEvaluationAt??null,verification:[...verification.jobs.keys()].map(key=>({mint:key.split(':')[0]})),market:market.activity,pending:paperPendingView(s.pending),reporting:reports.busy,telegram:telegram.busy,reportQueuedEnd:s.reportLastEnd,lastSentAt:Math.max(0,...s.telegramOutbox.filter(m=>m.status==='sent').map(m=>m.sentAt??0))};}
 function snapshot(req){const s=desk.state,v=desk.valuation(),rankings=verification.applyCached(feed.markets).map(m=>({...m,...rankMarket(m,s.settings)})).sort(compare5m),counts={};for(const m of rankings)counts[m.blockingStage]=(counts[m.blockingStage]??0)+1;
- return {...s,pending:paperPendingView(s.pending),archiveOutbox:undefined,telegramOutbox:undefined,periods:undefined,observations:undefined,paperObservations:undefined,paperOutcomes:undefined,paperOutcomeSeeds:undefined,marks:undefined,mode:'paper',readOnly:true,realTradingEnabled:false,ownerAuthenticated:auth.authenticated(req),feed,rankings,...v,pnlSol:v.equitySol===null?null:v.equitySol-20,currentOrderSol:walletOrderSol(s.cashSol),storageMode,telegram:telegram.status(s),reporting:{sendAt:'23:00',timezone:'Asia/Ho_Chi_Minh',lastQueuedEnd:s.reportLastEnd,error:reports.error},research:research.status(),buildRevision:process.env.RAILWAY_GIT_COMMIT_SHA??'local',diagnostics:{counts,...explainPaperStatus(s,feed,rankings,v)}};
+ return {...s,pending:paperPendingView(s.pending),archiveOutbox:undefined,telegramOutbox:undefined,periods:undefined,observations:undefined,paperObservations:undefined,paperOutcomes:undefined,paperOutcomeSeeds:undefined,marks:undefined,mode:'paper',readOnly:true,realTradingEnabled:false,ownerAuthenticated:auth.authenticated(req),feed,rankings,...v,pnlSol:v.equitySol===null?null:v.equitySol-20,currentOrderSol:paperOrderSol(s),allocationCapitalSol:paperCapitalSol(s),monitoring:desk.monitoring(),pendingExits:(s.pendingExits??[]).map(o=>paperPendingView(o)),storageMode,telegram:telegram.status(s),reporting:{sendAt:'23:00',timezone:'Asia/Ho_Chi_Minh',lastQueuedEnd:s.reportLastEnd,error:reports.error},research:research.status(),buildRevision:process.env.RAILWAY_GIT_COMMIT_SHA??'local',diagnostics:{counts,...explainPaperStatus(s,feed,rankings,v)}};
 }
 function json(res,status,value){res.writeHead(status,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'});res.end(JSON.stringify(value));}
 async function body(req){let bytes=0;const parts=[];for await(const p of req){bytes+=p.length;if(bytes>4096)throw Error('Request too large');parts.push(p);}return JSON.parse(Buffer.concat(parts).toString()||'{}');}
@@ -43,7 +43,7 @@ const assets={'/':['paper.html','text/html'],'/paper.js':['paper.js','text/javas
 const server=http.createServer(async(req,res)=>{try{const url=new URL(req.url,'http://localhost'),p=url.pathname;
  // Enforced before authentication or body parsing: no production route can reach a real signer.
  if(/^\/api\/(direct|live|signer)(\/|$)/.test(p))return json(res,410,{mode:'paper',realTradingEnabled:false,error:'Đã chuyển hẳn sang mô phỏng; giao dịch SOL thật bị vô hiệu hóa.'});
- if(req.method==='GET'&&p==='/api/health')return json(res,200,{status:'ok',mode:'paper',initialVirtualSol:20,realTradingEnabled:false,unattendedSigningAvailable:false,signingMode:null,readOnly:true,running:desk.state.running,storageMode,heliusConfigured:market.heliusConfigured,rpcMode:market.rpcMode,strategyVersion:SCALP_STRATEGY_VERSION,entryPolicy:desk.state.entryPolicy,exitPolicy:desk.state.exitPolicy,marketReady:!!feed.updatedAt,buildRevision:process.env.RAILWAY_GIT_COMMIT_SHA??'local'});
+ if(req.method==='GET'&&p==='/api/health')return json(res,200,{status:'ok',mode:'paper',initialVirtualSol:20,realTradingEnabled:false,unattendedSigningAvailable:false,signingMode:null,readOnly:true,running:desk.state.running,storageMode,heliusConfigured:market.heliusConfigured,rpcMode:market.rpcMode,strategyVersion:SCALP_STRATEGY_VERSION,entryPolicy:desk.state.entryPolicy,exitPolicy:desk.state.exitPolicy,sizingPolicy:desk.state.sizingPolicy,marketReady:!!feed.updatedAt,buildRevision:process.env.RAILWAY_GIT_COMMIT_SHA??'local'});
  if(req.method==='GET'&&p==='/api/activity')return json(res,200,activityState());
  if(req.method==='GET'&&p==='/api/state')return json(res,200,snapshot(req));
  if(req.method==='GET'&&p==='/api/auth/status')return json(res,200,{owner:auth.owner,authenticated:auth.authenticated(req),walletMode:'paper-admin',signerAvailable:false});

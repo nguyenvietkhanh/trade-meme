@@ -47,14 +47,14 @@ export class VerificationFeed{
  }
  targets(markets,tracked,now){return markets.filter(m=>m.dexId==='pumpswap'&&!isPumpCurve(m)&&(tracked.includes(m.mint)||this.rank(m,undefined,now).roughEligible));}
  // Read completed metadata only; keep the market's own price/source timestamps.
- quoteReady(m,value,now){if(!this.requireConfirmedQuote||value?.verificationError)return false;const r=this.rank({...m,...value},undefined,now);return r.preQuoteEligible&&!r.red_flags.includes('UNCONFIRMED_SIGNAL')&&r.red_flags.some(f=>['ROUND_TRIP_UNVERIFIED','QUOTE_STALE'].includes(f));}
+ quoteReady(m,value,now){if(!this.requireConfirmedQuote||value?.verificationError)return false;const r=this.rank({...m,...value},undefined,now),size=this.execution?.currentProbeSol,changed=Number.isFinite(size)&&size>0&&Math.abs((value?.evidence?.probeSol??0)-size)>1e-9;return r.preQuoteEligible&&!r.red_flags.includes('UNCONFIRMED_SIGNAL')&&(changed||r.red_flags.some(f=>['ROUND_TRIP_UNVERIFIED','QUOTE_STALE'].includes(f)));}
  applyCached(markets){return markets.map(m=>{const value=this.cache.get(m.mint+':'+m.pairAddress)?.value;return value?{...m,verificationError:null,...value}:{...m};});}
  async enrichCached(markets,tracked=[],now=Date.now()){
   const checkedAt=m=>this.cache.get(m.mint+':'+m.pairAddress)?.at??0;
   const targets=this.targets(markets,tracked,now).sort((a,b)=>checkedAt(a)-checkedAt(b)||Number(tracked.includes(b.mint))-Number(tracked.includes(a.mint))||(this.compareCandidates?.(a,b)??b.volume5mUsd-a.volume5mUsd));
   for(const m of targets){
    const key=m.mint+':'+m.pairAddress,cached=this.cache.get(key);if(this.jobs.size>=2)break;
-   if(this.jobs.has(key)||reusable(cached,now,this.cacheMs)&&!this.quoteReady(m,cached?.value,now))continue;
+   if(this.jobs.has(key)||reusable(cached,now,this.cacheMs)&&(!this.quoteTracked&&tracked.includes(m.mint)||!this.quoteReady(m,cached?.value,now)))continue;
    // A candidate is not a tracked holding. Recheck its cheap gates inside the worker.
    const job=this.enrich([m],tracked.includes(m.mint)?[m.mint]:[],now).catch(()=>{}).finally(()=>this.jobs.delete(key));this.jobs.set(key,job);
   }
@@ -64,7 +64,7 @@ export class VerificationFeed{
   const targets=this.targets(markets,tracked,now).filter(m=>tracked.includes(m.mint)||m.liquidityUsd>=20*m.solUsd).sort((a,b)=>Number(tracked.includes(b.mint))-Number(tracked.includes(a.mint))||(this.compareCandidates?.(a,b)??b.volume5mUsd-a.volume5mUsd)).slice(0,6),results=new Map();
   for(let i=0;i<targets.length;i+=2)await Promise.all(targets.slice(i,i+2).map(async m=>{
    if(!/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(m.mint))return;
-   const key=m.mint+':'+m.pairAddress,cached=this.cache.get(key);if(reusable(cached,now,this.cacheMs)&&!this.quoteReady(m,cached?.value,now)){results.set(key,cached.value);return;}
+   const key=m.mint+':'+m.pairAddress,cached=this.cache.get(key);if(reusable(cached,now,this.cacheMs)&&(!this.quoteTracked&&tracked.includes(m.mint)||!this.quoteReady(m,cached?.value,now))){results.set(key,cached.value);return;}
    let value;
    try{
     // Retain a successful report even when the later Jupiter stage fails.
