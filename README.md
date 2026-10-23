@@ -69,10 +69,12 @@ not independently funded strategy backtests. No old fill is assigned a new bot.
 At least 100 closes per current hypothesis and out-of-time/statistical validation
 are needed for any performance conclusion. No true-market profit claim is made.
 
-The one-viewport console shows all ten cards with evaluated/eligible counts,
+The responsive console shows all ten cards with evaluated/eligible counts,
 phase, own proposal, execution-wait reason, entry/exit rules and PnL details.
 Wallet message-only authentication and full Telegram configuration/test/reporting
-remain available. Long lists scroll internally or expand in a dialog. Pulse
+remain available. Controls have extra spacing below the metrics; long status text
+wraps in full and the page scrolls vertically on smaller screens. Long lists can
+also scroll internally or expand in a dialog. Pulse
 means an actual pending intent; a bot with no qualifying signal never gets a
 fabricated order just to animate its card.
 

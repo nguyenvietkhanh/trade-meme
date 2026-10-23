@@ -67,3 +67,29 @@
 @media(max-height:680px) and (min-width:601px){.team-dashboard .dashboard{grid-template-rows:32px 65px auto minmax(0,1fr) 118px 14px}.team-dashboard .agent-card{padding:4px 6px;grid-template-columns:1fr;gap:2px}.team-dashboard .bot-face{display:none}.team-dashboard .agent-stats{grid-column:1}.team-dashboard .agent-card strong{font-size:8px}.team-dashboard .bot-phase,.team-dashboard .agent-stats{font-size:6px}}
 @media(max-height:680px) and (max-width:600px){.team-dashboard .dashboard{grid-template-rows:29px 85px auto minmax(0,1fr) 118px 13px}.team-dashboard .agent-card{padding:3px}.team-dashboard .agent-grid{gap:3px}.team-dashboard .agent-card strong{font-size:6px}.team-dashboard .bot-phase,.team-dashboard .agent-stats{font-size:5px}}
 @media(max-height:450px) and (min-width:601px){.team-dashboard .dashboard{grid-template-rows:27px 47px auto minmax(0,1fr) 80px 12px}.team-dashboard .agent-grid{grid-template-columns:repeat(10,minmax(0,1fr));grid-template-rows:1fr;gap:4px}.team-dashboard .agent-card strong{font-size:7px}.team-dashboard .bot-phase,.team-dashboard .agent-stats{font-size:5px}}
+/* Let controls breathe and let the page grow instead of clipping long status. */
+.team-dashboard{height:auto;min-height:100dvh;overflow-x:hidden;overflow-y:auto}
+.team-dashboard .dashboard{height:auto;min-height:100dvh;overflow:visible;gap:12px;grid-template-rows:auto auto auto auto 164px auto}
+.team-dashboard .dashboard-metrics{min-height:86px}
+.team-dashboard .dashboard-controls{margin-top:10px;gap:12px;align-items:start}
+.team-dashboard #account-panel,.team-dashboard #telegram-panel{padding:14px;overflow:visible}
+.team-dashboard #account-panel .panel-head,.team-dashboard #telegram-panel .panel-head{flex-wrap:wrap;row-gap:8px;margin-bottom:12px}
+.team-dashboard #account-panel .control-line{flex-direction:column;align-items:stretch;gap:12px}
+.team-dashboard #account-panel .control-actions{flex-wrap:wrap;row-gap:8px}
+.team-dashboard #status,.team-dashboard #telegram{display:block;-webkit-line-clamp:unset;overflow:visible;white-space:normal;overflow-wrap:anywhere;line-height:1.7}
+.team-dashboard #message{max-height:none;overflow:visible;margin-top:8px;line-height:1.7}
+.team-dashboard #telegram-panel .control-line{flex-wrap:wrap;gap:8px}
+.team-dashboard #telegram-panel .control-line>p{flex-basis:180px}
+.team-dashboard .dashboard-workspace{height:clamp(340px,calc(100dvh - 520px),680px)}
+@media(max-width:600px){
+ .team-dashboard .dashboard{gap:10px;grid-template-rows:auto auto auto auto 138px auto}
+ .team-dashboard .dashboard-metrics{min-height:102px}
+ .team-dashboard .dashboard-controls{margin-top:8px;gap:10px}
+ .team-dashboard #account-panel,.team-dashboard #telegram-panel{padding:12px}
+ .team-dashboard #status,.team-dashboard #telegram{font-size:10px}
+ .team-dashboard .control-actions button{font-size:9px;padding:7px 8px}
+ .team-dashboard .dashboard-workspace{height:480px}
+}
+@media(max-height:450px) and (min-width:601px){.team-dashboard .dashboard{grid-template-rows:auto auto auto auto 100px auto}}
+.team-dashboard .dashboard-footer{min-height:18px;flex-wrap:wrap;white-space:normal;overflow:visible;row-gap:8px}
+@media(max-width:600px){.team-dashboard .dashboard-footer,.team-dashboard .dashboard-footer a,.team-dashboard .dashboard-footer button{font-size:8px}}
