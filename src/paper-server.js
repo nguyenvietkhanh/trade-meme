@@ -1,7 +1,8 @@
 import http from 'node:http';
+import {createPaperAssets} from './paper-assets.js';
 import {PAPER_AGENT_VERSION,paperAgentSnapshot,rankAgentUniverse as rankMarket,observeAgentMarkets} from './paper-agents.js';
 import path from 'node:path';
-import {readFile,mkdir} from 'node:fs/promises';
+import {mkdir} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
 import {initializeStorage} from './storage.js';
 import {PaperDesk,PAPER_MODEL} from './paper-desk.js';
@@ -22,6 +23,7 @@ import {paperOrderSol,paperCapitalSol} from './paper-sizing.js';
 import {paperPortfolioAdmission,PAPER_PORTFOLIO_POLICY} from './paper-portfolio.js';
 import {SCALP_STRATEGY_VERSION,compare5m} from './paper-scalp.js';
 import {explainPaperStatus,paperPendingView} from './ui-activity.js';
+const uiAssets=await createPaperAssets(new URL('../public/',import.meta.url));
 const root=fileURLToPath(new URL('../',import.meta.url)),dataDir=await initializeStorage(root),dir=path.join(dataDir,'paper20');await mkdir(dir,{recursive:true,mode:0o700});
 const onRailway=!!(process.env.RAILWAY_SERVICE_ID||process.env.RAILWAY_ENVIRONMENT_ID),storageMode=process.env.RAILWAY_VOLUME_MOUNT_PATH?'persistent-volume':onRailway?'ephemeral':'local-disk';
 const auth=new OwnerAuth({origin:process.env.PUBLIC_ORIGIN??(onRailway?'https://'+(process.env.RAILWAY_PUBLIC_DOMAIN??'trade-meme-production.up.railway.app'):null)});
@@ -37,15 +39,15 @@ async function refresh(){if(refreshing||closing)return;refreshing=true;try{
  }catch{feed={...feed,error:'Market API/RPC chưa phản hồi; không tạo dữ liệu thay thế.'};await desk.serial(async()=>{desk.error(Error('RPC market feed'));await desk.save();});}finally{refreshing=false;}}
 function activityState(){const s=desk.state;return {observedAt:Date.now(),scanning:refreshing,scanCompletedAt:s.lastEvaluationAt??null,verification:[...verification.jobs.keys()].map(key=>({mint:key.split(':')[0]})),market:market.activity,pending:paperPendingView(s.pending),pendingEntries:(s.pendingEntries??[]).map(o=>paperPendingView(o)),reporting:reports.busy,telegram:telegram.busy,reportQueuedEnd:s.reportLastEnd,lastSentAt:Math.max(0,...s.telegramOutbox.filter(m=>m.status==='sent').map(m=>m.sentAt??0))};}
 function snapshot(req){const s=desk.state,v=desk.valuation(),portfolio=paperPortfolioAdmission(s),rankings=verification.applyCached(feed.markets).map(m=>{const r=rankMarket(m,s.settings);return {...m,...r,tokenEligible:r.eligible,...(r.eligible&&!portfolio.allowed?{eligible:false,blockingStage:'portfolio',primaryFlags:[portfolio.code],primaryReasons:[portfolio.message],portfolioCode:portfolio.code}:{})};}).sort(compare5m),counts={};for(const m of rankings)counts[m.blockingStage]=(counts[m.blockingStage]??0)+1;
- return {...s,pending:paperPendingView(s.pending),pendingEntries:(s.pendingEntries??[]).map(o=>paperPendingView(o)),agentObservationStates:undefined,archiveOutbox:undefined,telegramOutbox:undefined,periods:undefined,observations:undefined,paperObservations:undefined,paperOutcomes:undefined,paperOutcomeSeeds:undefined,marks:undefined,mode:'paper',readOnly:true,realTradingEnabled:false,agents:paperAgentSnapshot(s),ownerAddress:auth.owner,ownerAuthenticated:auth.authenticated(req),feed,rankings,...v,pnlSol:v.equitySol===null?null:v.equitySol-20,currentOrderSol:paperOrderSol(s),allocationCapitalSol:paperCapitalSol(s),monitoring:desk.monitoring(),portfolio,pendingExits:(s.pendingExits??[]).map(o=>paperPendingView(o)),storageMode,telegram:telegram.status(s),reporting:{sendAt:'23:00',timezone:'Asia/Ho_Chi_Minh',lastQueuedEnd:s.reportLastEnd,error:reports.error},research:research.status(),buildRevision:process.env.RAILWAY_GIT_COMMIT_SHA??'local',diagnostics:{counts,tokenEligibleCount:rankings.filter(m=>m.tokenEligible).length,...explainPaperStatus(s,feed,rankings,v)}};
+ return {...s,pending:paperPendingView(s.pending),pendingEntries:(s.pendingEntries??[]).map(o=>paperPendingView(o)),agentObservationStates:undefined,archiveOutbox:undefined,telegramOutbox:undefined,periods:undefined,observations:undefined,paperObservations:undefined,paperOutcomes:undefined,paperOutcomeSeeds:undefined,marks:undefined,mode:'paper',readOnly:true,realTradingEnabled:false,agents:paperAgentSnapshot(s),ownerAddress:auth.owner,ownerAuthenticated:auth.authenticated(req),feed,rankings,...v,pnlSol:v.equitySol===null?null:v.equitySol-20,currentOrderSol:paperOrderSol(s),allocationCapitalSol:paperCapitalSol(s),monitoring:desk.monitoring(),portfolio,pendingExits:(s.pendingExits??[]).map(o=>paperPendingView(o)),storageMode,telegram:telegram.status(s),reporting:{sendAt:'23:00',timezone:'Asia/Ho_Chi_Minh',lastQueuedEnd:s.reportLastEnd,error:reports.error},research:research.status(),uiRevision:uiAssets.revision,buildRevision:process.env.RAILWAY_GIT_COMMIT_SHA??'local',diagnostics:{counts,tokenEligibleCount:rankings.filter(m=>m.tokenEligible).length,...explainPaperStatus(s,feed,rankings,v)}};
 }
 function json(res,status,value){res.writeHead(status,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'});res.end(JSON.stringify(value));}
 async function body(req){let bytes=0;const parts=[];for await(const p of req){bytes+=p.length;if(bytes>4096)throw Error('Request too large');parts.push(p);}return JSON.parse(Buffer.concat(parts).toString()||'{}');}
-const assets={'/desk.css':['desk.css','text/css'],'/':['paper.html','text/html'],'/paper.js':['paper.js','text/javascript'],'/paper-wallet.js':['paper-wallet.js','text/javascript'],'/style.css':['style.css','text/css'],'/activity.js':['activity.js','text/javascript']};
+
 const server=http.createServer(async(req,res)=>{try{const url=new URL(req.url,'http://localhost'),p=url.pathname;
  // Enforced before authentication or body parsing: no production route can reach a real signer.
  if(/^\/api\/(direct|live|signer)(\/|$)/.test(p))return json(res,410,{mode:'paper',realTradingEnabled:false,error:'Đã chuyển hẳn sang mô phỏng; giao dịch SOL thật bị vô hiệu hóa.'});
- if(req.method==='GET'&&p==='/api/health')return json(res,200,{status:'ok',mode:'paper',initialVirtualSol:20,realTradingEnabled:false,unattendedSigningAvailable:false,signingMode:null,readOnly:true,running:desk.state.running,storageMode,heliusConfigured:market.heliusConfigured,rpcMode:market.rpcMode,signalTeamVersion:PAPER_AGENT_VERSION,strategyVersion:SCALP_STRATEGY_VERSION,entryPolicy:desk.state.entryPolicy,exitPolicy:desk.state.exitPolicy,sizingPolicy:desk.state.sizingPolicy,portfolioPolicy:desk.state.portfolioPolicy,marketReady:!!feed.updatedAt,buildRevision:process.env.RAILWAY_GIT_COMMIT_SHA??'local'});
+ if(req.method==='GET'&&p==='/api/health')return json(res,200,{status:'ok',mode:'paper',initialVirtualSol:20,realTradingEnabled:false,unattendedSigningAvailable:false,signingMode:null,readOnly:true,running:desk.state.running,storageMode,heliusConfigured:market.heliusConfigured,rpcMode:market.rpcMode,signalTeamVersion:PAPER_AGENT_VERSION,strategyVersion:SCALP_STRATEGY_VERSION,entryPolicy:desk.state.entryPolicy,exitPolicy:desk.state.exitPolicy,sizingPolicy:desk.state.sizingPolicy,portfolioPolicy:desk.state.portfolioPolicy,marketReady:!!feed.updatedAt,uiRevision:uiAssets.revision,buildRevision:process.env.RAILWAY_GIT_COMMIT_SHA??'local'});
  if(req.method==='GET'&&p==='/api/activity')return json(res,200,activityState());
  if(req.method==='GET'&&p==='/api/state')return json(res,200,snapshot(req));
  if(req.method==='GET'&&p==='/api/auth/status')return json(res,200,{owner:auth.owner,authenticated:auth.authenticated(req),walletMode:'paper-admin',signerAvailable:false});
@@ -71,7 +73,7 @@ const server=http.createServer(async(req,res)=>{try{const url=new URL(req.url,'h
    return json(res,200,{ok:true,telegram:telegram.status(desk.state)});
   }finally{i.token='';i.password='';}
  }
- if(req.method==='GET'&&assets[p]){const [name,type]=assets[p];res.writeHead(200,{'Content-Type':type+'; charset=utf-8','Cache-Control':'no-store','X-Content-Type-Options':'nosniff','Content-Security-Policy':"default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"});return res.end(await readFile(path.join(root,'public',name)));}
+ if(req.method==='GET'&&uiAssets.get(p)){const asset=uiAssets.get(p);res.writeHead(200,{'Content-Type':asset.type+'; charset=utf-8','Cache-Control':uiAssets.isVersioned(p)&&asset.type!=='text/html'?'public, max-age=31536000, immutable':'no-store','X-UI-Revision':uiAssets.revision,'X-Content-Type-Options':'nosniff','Content-Security-Policy':"default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"});return res.end(asset.content);}
  return json(res,404,{error:'Không tìm thấy.'});
  }catch{json(res,400,{error:'Không thực hiện được yêu cầu; kiểm tra xác thực, mật khẩu hoặc dữ liệu đầu vào.'});}});
 const host=process.env.HOST??(onRailway?'0.0.0.0':'127.0.0.1');

@@ -24,6 +24,7 @@ for(const scenario of scenarios)test(scenario.name,async()=>{
   let state;
   for(let i=0;i<100;i++){state=await (await fetch(base+'/api/state')).json();if(state.feed.updatedAt&&state.decisionStats.evaluated>0)break;await delay(20);}
   assert.ok(state.feed.updatedAt,'feed was actually loaded');
+  assert.equal(state.agents.agents.length,10);assert.ok(state.agents.agents.every(a=>a.signal&&a.signal.evaluated===state.feed.markets.length&&a.signal.cycle>=1&&Number.isFinite(a.signalAt)),'all ten strategies publish real evaluation telemetry through the HTTP snapshot');
   assert.equal(state.readOnly,true);assert.equal(state.mode,'paper');
   assert.equal(state.running,true);
   if(scenario.halted){assert.equal(state.cashSol,20);assert.equal(state.positions.length,0);}

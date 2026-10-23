@@ -60,7 +60,7 @@ test('RUNE confirms and reaches the union quote gate while NOVA is still unconfi
 });
 test('all ten publish decisions in the same cycle even while one bot is pending, and cohort results never relabel the previous policy',()=>{
  const s={cashSol:20,positions:[],cooldowns:{},running:true,pending:{side:'BUY',id:'nova-pending',mint:'other',agentId:'nova',amount:'500000000'}};
- observeAgentSignals(s,[market()],at);assert.equal(Object.keys(s.agentSignals.agents).length,10);assert.ok(Object.values(s.agentSignals.agents).every(g=>g.evaluated===1));
+ observeAgentSignals(s,[market()],at);assert.equal(Object.keys(s.agentSignals.agents).length,10);assert.ok(Object.values(s.agentSignals.agents).every(g=>g.evaluated===1));assert.ok(Object.values(s.agentSignals.agents).every(g=>g.at===at&&g.cycle===1));observeAgentSignals(s,[market()],at+1);assert.ok(Object.values(s.agentSignals.agents).every(g=>g.at===at+1&&g.cycle===2));
  recordAgentFill(s,{agentId:'nova',agentPolicyVersion:'paper-signal-team-v1',side:'SELL',at,pnlSol:1,closed:true,positionPnlSol:1});
  assert.equal(paperAgentSnapshot(s,at).agents[0].stats.closed,0);assert.equal(s.agentStats.nova.closed,1);
  recordAgentFill(s,{agentId:'nova',agentPolicyVersion:PAPER_AGENT_VERSION,side:'SELL',at,pnlSol:-.1,closed:true,positionPnlSol:-.1});

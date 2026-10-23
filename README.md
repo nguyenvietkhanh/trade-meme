@@ -69,14 +69,29 @@ not independently funded strategy backtests. No old fill is assigned a new bot.
 At least 100 closes per current hypothesis and out-of-time/statistical validation
 are needed for any performance conclusion. No true-market profit claim is made.
 
-The responsive console shows all ten cards with evaluated/eligible counts,
-phase, own proposal, execution-wait reason, entry/exit rules and PnL details.
-Wallet message-only authentication and full Telegram configuration/test/reporting
-remain available. Controls have extra spacing below the metrics; long status text
-wraps in full and the page scrolls vertically on smaller screens. Long lists can
-also scroll internally or expand in a dialog. Pulse
-means an actual pending intent; a bot with no qualifying signal never gets a
-fabricated order just to animate its card.
+The responsive console uses readable cards and normal document scrolling. On
+phones, panels stack vertically and cards become one or two columns rather
+than shrinking ten bots into one viewport. The bot section sits immediately
+after wallet/Telegram controls. Each card shows actual evaluated/eligible count,
+cycle, evaluation time and a blocking/wait reason. No bot is selected by default.
+A short pulse marks receipt of a new completed evaluation, including SKIPs;
+BUY/SELL animation still corresponds to real pending intents. Ten active
+strategies do not guarantee ten qualifying trades or ten funded positions.
+
+Wallet message-only authentication, full Telegram configuration/test/reporting
+and paper-only execution remain available. Long status text wraps in full;
+long lists can scroll inside their panels or expand in a dialog.
+
+The server publishes HTML, CSS, the app module, activity module and paper-wallet
+module as one content-addressed UI generation (`/ui/<digest>/...`). A change to
+any file changes the generation URL for all dependencies; an unknown generation
+never returns different-generation bytes. Unversioned compatibility URLs are
+no-store. State/health expose `uiRevision`, and the footer distinguishes server
+commit from client UI revision. If an already-open current client sees a newer
+server generation, it offers an explicit UI reload rather than discarding wallet
+or Telegram input automatically. Older already-open clients may still need one
+fresh page open to load this mechanism. Build wallet assets before production
+start as before; UI assets are snapshotted once at server startup.
 
 ## NOVA reference and shared portfolio risk · `paper-5m-risk-v5`
 

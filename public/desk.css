@@ -1,95 +1,167 @@
-/* Multi-bot operations console. Scoped so the archived live desk is unaffected. */
-.team-dashboard{--console-line:#dde0e7;--console-muted:#92959e;background:#e9eaef;color:#252931;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
-.team-dashboard .dashboard{max-width:1920px;padding:16px 20px 9px;gap:10px;grid-template-rows:46px 86px auto minmax(0,1fr) 132px 18px}
-.team-dashboard .dashboard-header{border-bottom:1px solid #d4d7e0;padding-bottom:10px;align-items:center}
-.team-dashboard .brand-mark{background:#282b33;border-radius:7px;font:800 22px ui-monospace,monospace;position:relative;width:36px;height:36px;box-shadow:2px 2px 0 #d3c9ec}
-.team-dashboard .brand-mark span{font:14px monospace;color:#b6e9c9;position:absolute;right:3px;bottom:2px}
-.team-dashboard h1{font:800 20px/1.1 ui-monospace,monospace;letter-spacing:-.7px}
-.team-dashboard h1 span{font:500 13px/1.1 ui-monospace,monospace;color:#a1a1ab;letter-spacing:1px}
-.team-dashboard header p{font:9px/1.3 ui-monospace,monospace;color:#8b9099;letter-spacing:.5px;margin-top:5px}
-.team-dashboard .header-tools{gap:12px}.team-dashboard .market-status{font:700 9px ui-monospace,monospace;color:#a27b48;white-space:nowrap}.team-dashboard .market-status.is-live{color:#34956c}
-.team-dashboard .paper-badge{font:700 9px monospace;color:#8060b3;background:#eee8fa;border-radius:3px;border:1px solid #dbcfef;padding:5px 7px}
-.team-dashboard button{font:10px/1.3 ui-monospace,monospace;background:#fcfcfe;border-color:#dfe1e8;border-radius:4px;transition:background .16s,border-color .16s}
-.team-dashboard button:hover{background:#f0edf8;border-color:#b69fdb}.team-dashboard button:focus-visible,.team-dashboard a:focus-visible{outline:2px solid #9372c4;outline-offset:3px}
-.team-dashboard .dashboard-metrics{gap:10px}.team-dashboard .dashboard-metrics article{border-radius:2px;padding:10px 14px;border:1px solid #dde0e7;border-top:2px solid #cbb9e6;background:linear-gradient(135deg,#fff,#fafafd);box-shadow:none;gap:5px}
-.team-dashboard .dashboard-metrics .metric-main{border-top-color:#7cca9f}.team-dashboard .dashboard-metrics article:nth-child(2){border-top-color:#76be9a}
-.team-dashboard .dashboard-metrics article>span{font:8px monospace;letter-spacing:1.2px;color:#8d9399;display:flex;justify-content:space-between;gap:4px}
-.team-dashboard .dashboard-metrics i{font-style:normal;color:#c5c5ce}.team-dashboard .dashboard-metrics strong{font:750 clamp(19px,1.95vw,30px)/1.1 ui-monospace,monospace;letter-spacing:-1px}
-.team-dashboard .metric-main strong{color:#348f66}.team-dashboard .dashboard-metrics small{font:8px/1.4 ui-monospace,monospace;color:#979ba5;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.team-dashboard .dashboard-controls{grid-template-columns:minmax(0,1.6fr) minmax(0,1fr);gap:10px}
-.team-dashboard .panel{border:1px solid var(--console-line);background:#fafbfe;border-radius:2px;padding:10px 12px;box-shadow:none}
-.team-dashboard .panel-head{margin-bottom:7px;min-height:15px;align-items:center}.team-dashboard h3{font:600 9px/1.4 ui-monospace,monospace;letter-spacing:.8px;color:#676d79}
-.team-dashboard .section-index{color:#b1b3bc;font-weight:400;letter-spacing:0;margin-right:4px}
-.team-dashboard .control-line{display:flex;align-items:center;gap:10px;min-width:0}.team-dashboard .control-line>p{flex:1;min-width:0}.team-dashboard .control-actions{margin:0;flex-shrink:0;gap:5px}
-.team-dashboard #status,.team-dashboard #telegram{font:9px/1.6 ui-monospace,monospace;color:#8a9099;-webkit-line-clamp:2}.team-dashboard .wallet-connect{color:#67508b;background:#f3edfc;border-color:#d9c8ed}
-.team-dashboard .connection-state{font:8px monospace;color:#a28758}.team-dashboard .connection-state.connected{color:#2f936b}.team-dashboard .activity-label{font:8px/1.3 monospace;max-width:38%}
-.team-dashboard #message{font:9px/1.4 monospace;color:#bd744d}.team-dashboard .dashboard-workspace{grid-template-columns:minmax(0,1.1fr) minmax(0,.8fr) minmax(0,1.1fr);grid-template-rows:minmax(0,1.25fr) minmax(0,1fr);gap:10px}
-.team-dashboard #chart-panel{grid-column:1;grid-row:1}.team-dashboard #trades-panel{grid-column:2/4;grid-row:1}.team-dashboard #gainers-panel{grid-column:1;grid-row:2}.team-dashboard #positions-panel{grid-column:2;grid-row:2}.team-dashboard #scanner-panel{grid-column:3;grid-row:2}
-.team-dashboard .panel-caption{font:8px/1.5 monospace;color:#9ca1aa;margin-bottom:4px}.team-dashboard .panel-content{scrollbar-color:#d2d3dd transparent}.team-dashboard .expand-panel{font-size:8px;padding:2px 5px;color:#92909f;white-space:nowrap}
-.team-dashboard .chart-panel{display:flex;flex-direction:column}.team-dashboard #chart-caption{font:8px monospace;color:#9ca1aa;white-space:nowrap}
-.team-dashboard .equity-chart{position:relative;flex:1;min-height:0;margin:7px 0 0 46px;background:repeating-linear-gradient(to bottom,transparent 0,transparent calc(25% - 1px),#e8ebf1 calc(25% - 1px),#e8ebf1 25%)}
-.team-dashboard #equity-chart{background:none;height:100%;width:100%;display:block;overflow:visible}.team-dashboard .chart-axis{position:absolute;left:-46px;top:0;bottom:0;width:40px;display:flex;flex-direction:column;justify-content:space-between;font:8px monospace;color:#b0b5bd}
-.team-dashboard #chart-current{position:absolute;right:0;top:4px;font:600 10px monospace;padding:3px 5px;background:#eff9f2;color:#36946b;border-radius:3px}
-.team-dashboard #equity-empty{position:absolute;inset:30% 0 auto 0;font:9px/1.7 monospace;color:#a4a8b0;text-align:center;margin:0}.team-dashboard .chart-footer{font:8px monospace;margin:9px 0 0 46px;color:#a2a6af}
-.team-dashboard .log-columns{display:grid;grid-template-columns:135px 1fr 130px;border-bottom:1px solid #e6e8ee;padding:0 0 7px;font:7px monospace;letter-spacing:.5px;color:#a3a8b2}
-.team-dashboard #trades{font:10px/1.6 monospace}.team-dashboard .trade-row{display:grid;grid-template-columns:135px minmax(0,1fr) 130px;gap:8px;align-items:center;padding:7px 0;border-bottom:1px solid #eceef3;min-width:0}.team-dashboard .trade-row>*{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.team-dashboard .trade-time{color:#a1a5b0;font-size:8px}.team-dashboard .trade-agent{color:#8e6cb6;margin-left:7px;font-weight:700}.team-dashboard .trade-token{color:#5f6973}.team-dashboard .trade-side{font-weight:700;color:#4e97b6;margin-right:8px}.team-dashboard .trade-side.sell{color:#499575}.team-dashboard .trade-value{text-align:right;color:#6d7480}.team-dashboard .trade-value.negative{color:#cb7568}.team-dashboard .trade-value.positive{color:#399569}.team-dashboard #activity-total{font:8px monospace;color:#a3a6af;white-space:nowrap}
-.team-dashboard table th{font:7px monospace;color:#969ca6;background:#fafbfe;padding:4px 3px}.team-dashboard table td{font:9px/1.5 monospace;padding:7px 3px;border-color:#e8ebf1}
-.team-dashboard td:last-child{font-size:8px;color:#9c8964}.team-dashboard #positions p,.team-dashboard #decisions p,.team-dashboard #execution-events p{font:9px/1.5 monospace;color:#7f8791;padding:6px 0;border-color:#eceef4}
-.team-dashboard #gates{gap:3px;margin-bottom:4px}.team-dashboard #gates p{font:7px/1.4 monospace;background:#eef1f7;color:#8a93a3;border-radius:2px;padding:2px 4px}
-.team-dashboard #blockers{gap:3px;margin-bottom:4px}.team-dashboard #blockers p{font:8px/1.5 monospace;background:#f8f3eb;color:#a08b65;border-radius:2px;padding:3px 5px}
-.team-dashboard .agent-team{min-height:0;display:flex;flex-direction:column;gap:8px}.team-dashboard .agent-comms{display:flex;align-items:center;gap:15px;background:#f8f9fc;border:1px solid #dcdfe7;border-top:2px solid #98cdb1;padding:7px 10px;min-width:0;height:30px;flex:none}
-.team-dashboard .agent-comms h3{font-size:8px;white-space:nowrap}.team-dashboard .agent-comms p{font:9px monospace;margin:0;color:#868d99;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1}.team-dashboard .agent-comms>span{font:7px monospace;color:#a5a8b2;white-space:nowrap}
-.team-dashboard .agent-grid{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:9px;min-height:0;flex:1}
-.team-dashboard .agent-card{--bot:#9f81cf;display:grid;grid-template-columns:36px minmax(0,1fr);grid-template-rows:auto auto;gap:5px 9px;text-align:left;border:1px solid #d8dbe5;background:linear-gradient(130deg,#fcfdff,#eef0f6);padding:10px 12px;position:relative;border-radius:2px;overflow:hidden;min-width:0;min-height:0;color:#7a8290;box-shadow:none}
+/* Scrollable operations console; readable rows take priority over one viewport. */
+.team-dashboard{--console-line:#dce0e8;background:#e9eaef;color:#252931;font:12px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;height:auto;min-height:100dvh;overflow-x:hidden;overflow-y:auto}
+.team-dashboard .dashboard{display:flex;flex-direction:column;gap:20px;max-width:1920px;height:auto;min-height:100dvh;padding:24px;overflow:visible}
+.team-dashboard .dashboard-header{margin:0;padding-bottom:16px;border-bottom:1px solid #d5d9e2;align-items:center;gap:18px;flex-wrap:wrap}
+.team-dashboard .dashboard-brand{display:flex;gap:12px;align-items:center;min-width:0}
+.team-dashboard .brand-mark{display:grid;place-items:center;position:relative;width:42px;height:42px;flex:none;background:#292d35;border-radius:8px;color:#fff;font:800 26px monospace;box-shadow:2px 2px 0 #d3c9ec}
+.team-dashboard .brand-mark span{position:absolute;right:3px;bottom:2px;font:14px monospace;color:#b6e9c9}
+.team-dashboard h1{font:800 23px/1.3 monospace;letter-spacing:-.6px;white-space:normal}
+.team-dashboard h1 span{font:500 13px monospace;letter-spacing:1px;color:#9298a3}
+.team-dashboard header p{font:11px/1.6 monospace;letter-spacing:0;margin:5px 0 0}
+.team-dashboard .header-tools{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.team-dashboard .market-status{font:700 10px monospace;color:#a27b48;white-space:nowrap}
+.team-dashboard .market-status.is-live{color:#34956c}
+.team-dashboard .paper-badge{padding:6px 8px;font:700 10px monospace;color:#8060b3;background:#eee8fa;border:1px solid #dbcfef;border-radius:4px}
+.team-dashboard button{font:12px/1.5 monospace;padding:8px 10px;min-height:34px;border:1px solid #d9dde7;border-radius:5px;background:#fcfcfe;transition:background .16s,border-color .16s}
+.team-dashboard button:hover{background:#f0edf8;border-color:#b69fdb}
+.team-dashboard button:focus-visible,.team-dashboard a:focus-visible{outline:2px solid #9372c4;outline-offset:3px}
+.team-dashboard .ui-update{padding:12px 16px;border:1px solid #cbb7e5;background:#f4edff;color:#755298;line-height:1.7;margin:0}
+.team-dashboard .dashboard-metrics{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:14px;min-height:105px}
+.team-dashboard .dashboard-metrics article{display:flex;flex-direction:column;justify-content:center;gap:8px;min-width:0;padding:16px;background:linear-gradient(135deg,#fff,#fafafd);border:1px solid #dce0e8;border-top:3px solid #cbb9e6;border-radius:4px;box-shadow:none}
+.team-dashboard .dashboard-metrics .metric-main{border-top-color:#7cca9e}
+.team-dashboard .dashboard-metrics article:nth-child(2){border-top-color:#76be9a}
+.team-dashboard .dashboard-metrics article>span{display:flex;justify-content:space-between;gap:5px;font:10px monospace;letter-spacing:.8px;color:#8d939d}
+.team-dashboard .dashboard-metrics i{font-style:normal;color:#b7bcc6}
+.team-dashboard .dashboard-metrics strong{font:750 clamp(22px,2.1vw,34px)/1.2 monospace;letter-spacing:-1px;overflow-wrap:anywhere}
+.team-dashboard .metric-main strong{color:#348f66}
+.team-dashboard .dashboard-metrics small{font:10px/1.6 monospace;color:#8f97a3}
+.team-dashboard .dashboard-controls{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(0,1fr);gap:18px;margin-top:4px;align-items:start}
+.team-dashboard .panel{margin:0;padding:18px;min-width:0;min-height:0;overflow:hidden;border:1px solid var(--console-line);border-radius:5px;background:#fafbfe;box-shadow:none}
+.team-dashboard #account-panel,.team-dashboard #telegram-panel{overflow:visible}
+.team-dashboard .panel-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:16px;min-height:20px}
+.team-dashboard .panel-head h3{flex:1;min-width:0}
+.team-dashboard h3{font:650 11px/1.7 monospace;letter-spacing:.7px;color:#626b7b}
+.team-dashboard h3 span{font-size:10px;letter-spacing:0}
+.team-dashboard .section-index{color:#a2a9b6;font-weight:400;margin-right:4px}
+.team-dashboard .control-line{display:flex;align-items:flex-start;gap:12px;flex-wrap:wrap;min-width:0}
+.team-dashboard .control-line>p{min-width:0;flex:1 1 200px}
+.team-dashboard #account-panel .control-line{flex-direction:column;align-items:stretch;gap:16px}
+.team-dashboard #account-panel .control-line>p{flex-basis:auto}
+.team-dashboard .control-actions{display:flex;flex-wrap:wrap;gap:10px;margin:0}
+.team-dashboard #status,.team-dashboard #telegram{display:block;font:12px/1.8 monospace;white-space:normal;overflow:visible;overflow-wrap:anywhere;-webkit-line-clamp:unset;margin:0;color:#7a8493}
+.team-dashboard .wallet-connect{color:#735294;background:#f3edfc;border-color:#d9c8ed}
+.team-dashboard .connection-state{font:11px monospace;color:#a28758}
+.team-dashboard .connection-state.connected{color:#2f936b}
+.team-dashboard .activity-label{font:10px/1.5 monospace;max-width:100%;text-align:left}
+.team-dashboard #message{font:12px/1.7 monospace;max-height:none;overflow:visible;margin-top:12px;color:#b7754d}
+.team-dashboard #message:empty{display:none}
+.team-dashboard .dashboard-workspace{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,.8fr) minmax(0,1.1fr);grid-template-rows:300px 340px;gap:18px;height:auto}
+.team-dashboard .dashboard-workspace>.panel{display:flex;flex-direction:column}
+.team-dashboard #chart-panel{grid-column:1;grid-row:1}
+.team-dashboard #trades-panel{grid-column:2/4;grid-row:1}
+.team-dashboard #gainers-panel{grid-column:1;grid-row:2}
+.team-dashboard #positions-panel{grid-column:2;grid-row:2}
+.team-dashboard #scanner-panel{grid-column:3;grid-row:2}
+.team-dashboard .panel-content{min-height:0;min-width:0;flex:1;overflow:auto;overscroll-behavior:contain;scrollbar-width:thin;scrollbar-color:#cfd4df transparent}
+.team-dashboard .panel-caption{font:11px/1.7 monospace;margin:0 0 10px;color:#949daa}
+.team-dashboard .expand-panel{font-size:10px;padding:4px 8px;min-height:28px;color:#8a829a;white-space:nowrap}
+.team-dashboard .chart-panel{display:flex;flex-direction:column}
+.team-dashboard #chart-caption{font:10px monospace;color:#949daa}
+.team-dashboard .equity-chart{position:relative;flex:1;min-height:0;margin:8px 0 0 48px;background:repeating-linear-gradient(to bottom,transparent 0,transparent calc(25% - 1px),#e8ebf1 calc(25% - 1px),#e8ebf1 25%)}
+.team-dashboard #equity-chart{background:none;height:100%;width:100%;display:block;overflow:visible}
+.team-dashboard .chart-axis{position:absolute;left:-48px;top:0;bottom:0;width:44px;display:flex;flex-direction:column;justify-content:space-between;font:10px monospace;color:#a9b0bc}
+.team-dashboard #chart-current{position:absolute;right:0;top:4px;font:600 12px monospace;padding:5px 7px;background:#eff9f2;color:#36946b;border-radius:3px}
+.team-dashboard #equity-empty{position:absolute;inset:35% 0 auto;font:12px/1.7 monospace;text-align:center;color:#9ca6b4;margin:0}
+.team-dashboard .chart-footer{font:10px monospace;margin:12px 0 0 48px;color:#9da6b4}
+.team-dashboard .log-columns,.team-dashboard .trade-row{display:grid;grid-template-columns:145px minmax(0,1fr) 110px;gap:10px}
+.team-dashboard .log-columns{border-bottom:1px solid #e6e8ee;padding-bottom:12px;font:9px monospace;color:#9aa4b2;letter-spacing:.5px}
+.team-dashboard .trade-row{padding:12px 0;align-items:center;border-bottom:1px solid #e8ebf1;min-width:0;font:12px/1.7 monospace}
+.team-dashboard .trade-row>*{min-width:0;overflow-wrap:anywhere}
+.team-dashboard .trade-time{font-size:10px;color:#97a1af}
+.team-dashboard .trade-agent{font-size:10px;color:#8e6cb6;margin-left:6px}
+.team-dashboard .trade-token{color:#667280}
+.team-dashboard .trade-side{font-weight:700;color:#4e97b6;margin-right:8px}
+.team-dashboard .trade-side.sell{color:#499575}
+.team-dashboard .trade-value{text-align:right;color:#737e8d}
+.team-dashboard .trade-value.negative{color:#cb7568}.team-dashboard .trade-value.positive{color:#399569}
+.team-dashboard #activity-total{font:10px monospace;color:#9aa4b2}
+.team-dashboard table{width:100%;min-width:0;table-layout:fixed;white-space:normal}
+.team-dashboard table th{font:9px monospace;padding:8px 4px;background:#fafbfe;color:#939fac}
+.team-dashboard table td{font:11px/1.7 monospace;padding:12px 4px;border-color:#e8ebf1;overflow-wrap:anywhere}
+.team-dashboard td:last-child{font-size:10px;color:#9a896b}
+.team-dashboard td:last-child .cell-detail,.team-dashboard #decisions p{display:block;-webkit-line-clamp:unset;overflow:visible}
+.team-dashboard #positions p,.team-dashboard #decisions p,.team-dashboard #execution-events p{font:12px/1.8 monospace;padding:12px 0;border-bottom:1px solid #e8ebf1;margin:0;color:#7d8998}
+.team-dashboard #gates{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px}
+.team-dashboard #gates p{font:10px/1.5 monospace;padding:5px 7px;margin:0;background:#edf1f7;color:#8995a5;border-radius:3px}
+.team-dashboard #blockers{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px}
+.team-dashboard #blockers p{font:11px/1.7 monospace;padding:7px 9px;margin:0;background:#f7f2e9;color:#9a8666;border-radius:3px}
+.team-dashboard .agent-team{display:flex;flex-direction:column;gap:16px;min-width:0;height:auto;min-height:0}
+.team-dashboard .agent-comms{display:flex;align-items:flex-start;gap:14px;padding:14px 16px;background:#fafbfe;border:1px solid #dce0e8;border-top:3px solid #9bcbb1;min-width:0;flex-wrap:wrap}
+.team-dashboard .agent-comms h3{white-space:nowrap;font-size:11px;flex:none}
+.team-dashboard .agent-comms p{flex:1 1 260px;min-width:0;font:12px/1.8 monospace;white-space:normal;overflow-wrap:anywhere;margin:0;color:#8591a0}
+.team-dashboard .agent-comms>span{font:10px/1.7 monospace;color:#a2abb8}
+.team-dashboard .agent-grid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));grid-auto-rows:minmax(230px,auto);grid-template-rows:none;gap:14px;min-width:0;height:auto}
+.team-dashboard .agent-card{--bot:#9f81cf;position:relative;display:grid;grid-template-columns:42px minmax(0,1fr);grid-template-rows:auto auto auto auto auto;align-content:start;gap:10px 12px;min-width:0;min-height:230px;padding:18px 16px;text-align:left;background:linear-gradient(135deg,#fcfdff,#f2f3f8);border:1px solid #d5dae5;border-top:3px solid var(--bot);border-radius:5px;overflow:visible;color:#7b8898;box-shadow:none;animation:none}
 .team-dashboard .agent-card[data-color=mint]{--bot:#67b38f}.team-dashboard .agent-card[data-color=blue]{--bot:#779ec9}.team-dashboard .agent-card[data-color=teal]{--bot:#68aaa7}.team-dashboard .agent-card[data-color=amber]{--bot:#bba069}.team-dashboard .agent-card[data-color=rose]{--bot:#c08b9e}
-.team-dashboard .agent-card:hover,.team-dashboard .agent-card.selected{border-color:var(--bot);background:#faf8ff;box-shadow:0 0 0 1px color-mix(in srgb,var(--bot) 20%,transparent)}
-.team-dashboard .bot-face{width:32px;height:32px;border-radius:50%;background:#f4f5f9;box-shadow:inset 0 1px 4px #292e3d17,0 1px 3px #14183115;display:grid;place-items:center;border:1px solid #e3e5ec;grid-row:1/3}.team-dashboard .bot-face svg{width:20px;height:20px;background:none;color:#59606b}
-.team-dashboard .agent-card strong{font:750 10px monospace;letter-spacing:1.5px;color:#4d5360}.team-dashboard .agent-id{position:absolute;top:5px;right:6px;font:7px monospace;color:#b2b7c3}.team-dashboard .bot-phase{font:8px/1.5 monospace;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#9198a3}.team-dashboard .agent-stats{grid-column:1/3;font:8px monospace;display:flex;justify-content:space-between;gap:4px;min-width:0}.team-dashboard .agent-stats span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.team-dashboard .agent-card[data-phase=entry-pending],.team-dashboard .agent-card[data-phase=exit-pending]{border-color:var(--bot);animation:bot-signal 1.8s ease-in-out infinite}.team-dashboard .agent-card[data-phase=signal-ready]{border-top:2px solid var(--bot)}
-@keyframes bot-signal{50%{box-shadow:0 0 14px color-mix(in srgb,var(--bot) 28%,transparent)}}
-.team-dashboard .dashboard-footer{font:8px monospace;gap:12px;color:#9299a6;overflow:hidden;white-space:nowrap}.team-dashboard .dashboard-footer a,.team-dashboard .dashboard-footer button{font:8px monospace;color:#8e7aa8;white-space:nowrap}.team-dashboard .footer-mode{color:#509b78;font-size:7px}.team-dashboard .dashboard-footer #storage{max-width:28%}.team-dashboard #wallet-address{font-family:monospace;word-break:break-all;background:#f4f3fa;padding:10px;border-radius:4px}.team-dashboard .agent-detail-grid{display:grid;grid-template-columns:1fr 1fr;gap:9px}.team-dashboard .agent-detail-grid p{background:#f5f5fa;padding:10px;font:12px/1.7 monospace}.team-dashboard .dashboard-dialog h3{margin-top:16px}
-@media(max-width:1200px){.team-dashboard .dashboard{padding:10px;gap:8px;grid-template-rows:42px 78px auto minmax(0,1fr) 124px 17px}.team-dashboard .control-line{flex-wrap:wrap;gap:5px}.team-dashboard #status{-webkit-line-clamp:1}.team-dashboard .control-actions{flex-wrap:wrap}.team-dashboard .agent-card{padding:9px 8px;gap:4px 7px;grid-template-columns:27px minmax(0,1fr)}.team-dashboard .bot-face{width:26px;height:26px}.team-dashboard .agent-stats{font-size:7px}.team-dashboard .dashboard-workspace{gap:8px}.team-dashboard .log-columns,.team-dashboard .trade-row{grid-template-columns:115px minmax(0,1fr) 105px}}
-@media(max-width:800px){.team-dashboard h1{font-size:17px}.team-dashboard h1 span{font-size:10px;letter-spacing:0}.team-dashboard .header-tools{gap:5px}.team-dashboard .market-status{font-size:7px}.team-dashboard .dashboard-controls{grid-template-columns:1.35fr 1fr}.team-dashboard .dashboard-metrics strong{font-size:21px}.team-dashboard .dashboard-metrics article{padding:8px}.team-dashboard .dashboard-metrics article>span{font-size:7px;letter-spacing:.4px}.team-dashboard .dashboard-metrics small{font-size:7px}.team-dashboard .agent-comms>span{display:none}.team-dashboard .agent-grid{gap:5px}.team-dashboard .agent-card{grid-template-columns:1fr;text-align:center;padding:5px;gap:3px}.team-dashboard .bot-face{display:none}.team-dashboard .agent-card strong{font-size:9px}.team-dashboard .agent-stats{grid-column:1;flex-direction:column;gap:2px}.team-dashboard .agent-id{font-size:6px}.team-dashboard .log-columns,.team-dashboard .trade-row{grid-template-columns:90px minmax(0,1fr) 80px}}
-@media(max-width:600px){.team-dashboard .dashboard{padding:7px;gap:6px;grid-template-rows:35px 102px auto minmax(0,1fr) 138px 15px}.team-dashboard .dashboard-header{padding-bottom:5px;gap:5px}.team-dashboard .brand-mark{width:26px;height:26px;font-size:16px}.team-dashboard .brand-mark span{font-size:10px}.team-dashboard .dashboard-brand{gap:6px}.team-dashboard h1{font-size:13px;letter-spacing:-.5px}.team-dashboard h1 span{display:block;font-size:7px;letter-spacing:.4px;margin-top:3px}.team-dashboard header p{display:none}.team-dashboard .paper-badge{display:none}.team-dashboard .header-tools{flex-direction:column;gap:3px;align-items:flex-end}.team-dashboard .header-tools button{font-size:7px;padding:2px 4px}.team-dashboard .market-status{font-size:7px}.team-dashboard .dashboard-metrics{grid-template-columns:repeat(3,minmax(0,1fr));gap:5px}.team-dashboard .dashboard-metrics article{padding:5px 7px;gap:2px}.team-dashboard .dashboard-metrics strong{font-size:18px;letter-spacing:-.8px}.team-dashboard .dashboard-metrics article>span{font-size:6px;letter-spacing:.5px}.team-dashboard .dashboard-metrics small{font-size:6px}.team-dashboard .dashboard-metrics i{display:none}.team-dashboard .dashboard-controls{grid-template-columns:1fr;gap:5px}.team-dashboard .panel{padding:6px 7px}.team-dashboard .panel-head{margin-bottom:4px;min-height:11px}.team-dashboard h3{font-size:7px;letter-spacing:.3px}.team-dashboard .connection-state{font-size:7px}.team-dashboard #status,.team-dashboard #telegram{font-size:8px;line-height:1.4;-webkit-line-clamp:1}.team-dashboard .control-line{gap:4px}.team-dashboard .control-actions{gap:4px}.team-dashboard button{font-size:8px;padding:4px 5px}.team-dashboard #telegram-panel{display:block}.team-dashboard #telegram-panel .panel-head{margin-bottom:3px}.team-dashboard #telegram-panel .panel-head button{margin-left:auto}.team-dashboard #telegram-panel .control-line{flex-wrap:nowrap}.team-dashboard #test{padding:2px 5px;font-size:7px}.team-dashboard .section-index{display:none}.team-dashboard .activity-label{font-size:7px}.team-dashboard #telegram-panel .activity-label{display:none}.team-dashboard .dashboard-workspace{grid-template-columns:repeat(2,minmax(0,1fr));grid-template-rows:minmax(0,1fr) minmax(0,1fr) minmax(0,.8fr);gap:5px}.team-dashboard #chart-panel{grid-column:1;grid-row:1}.team-dashboard #trades-panel{grid-column:2;grid-row:1}.team-dashboard #gainers-panel{grid-column:1;grid-row:2}.team-dashboard #positions-panel{grid-column:2;grid-row:2}.team-dashboard #scanner-panel{grid-column:1/3;grid-row:3}.team-dashboard .panel-caption{font-size:7px}.team-dashboard #chart-caption,.team-dashboard #activity-total,.team-dashboard .log-columns{display:none}.team-dashboard .equity-chart{margin:3px 0 0 28px}.team-dashboard .chart-axis{left:-28px;width:25px;font-size:6px}.team-dashboard #chart-current{font-size:7px;padding:1px 3px;top:0}.team-dashboard .chart-footer{font-size:6px;margin:4px 0 0 28px}.team-dashboard #equity-empty{font-size:7px;line-height:1.4}.team-dashboard .trade-row{grid-template-columns:1fr auto;gap:3px;padding:4px 0}.team-dashboard .trade-time{font-size:6px;grid-column:1/3}.team-dashboard .trade-token,.team-dashboard .trade-value{font-size:7px}.team-dashboard .trade-agent{font-size:6px}.team-dashboard .trade-side{margin-right:3px}.team-dashboard #positions p,.team-dashboard #decisions p,.team-dashboard #execution-events p{font-size:7px;line-height:1.4;padding:4px 0}.team-dashboard #gates{gap:2px;margin-bottom:3px}.team-dashboard #gates p{font-size:6px;padding:1px 3px}.team-dashboard #blockers p{font-size:7px;padding:2px 3px}.team-dashboard th{font-size:6px!important}.team-dashboard td{font-size:7px!important;padding:4px 2px!important}.team-dashboard .expand-panel{font-size:7px;padding:1px 3px}.team-dashboard .agent-team{gap:5px}.team-dashboard .agent-comms{height:23px;padding:4px 6px;gap:8px}.team-dashboard .agent-comms h3{font-size:6px}.team-dashboard .agent-comms p{font-size:7px}.team-dashboard .agent-grid{grid-template-columns:repeat(3,minmax(0,1fr));gap:5px}.team-dashboard .agent-card{grid-template-columns:24px minmax(0,1fr);text-align:left;padding:5px 7px;gap:2px 5px}.team-dashboard .bot-face{display:grid;width:23px;height:23px;grid-row:1/3}.team-dashboard .bot-face svg{width:15px;height:15px}.team-dashboard .agent-card strong{font-size:8px;letter-spacing:1px}.team-dashboard .bot-phase{font-size:6px}.team-dashboard .agent-stats{font-size:6px;grid-column:1/3;flex-direction:row}.team-dashboard .agent-id{font-size:5px;top:3px;right:4px}.team-dashboard .dashboard-footer{font-size:6px;gap:6px}.team-dashboard .dashboard-footer a,.team-dashboard .dashboard-footer button{font-size:6px}.team-dashboard .footer-mode{display:none}.team-dashboard #rent{display:none}.team-dashboard .dashboard-footer #storage{max-width:30%}.team-dashboard .detail-dialog td,.team-dashboard .detail-dialog th{display:table-cell;font-size:10px!important}.team-dashboard #detail-content .trade-row{grid-template-columns:1fr 1fr 1fr}.team-dashboard #detail-content .trade-time{grid-column:auto}}
-@media(max-height:680px){.team-dashboard .dashboard{gap:5px;padding:6px;grid-template-rows:32px 65px auto minmax(0,1fr) 102px 14px}.team-dashboard .panel{padding:5px 7px}.team-dashboard .dashboard-metrics article{padding:5px 8px}.team-dashboard .dashboard-metrics strong{font-size:21px}.team-dashboard .panel-head{margin-bottom:3px}.team-dashboard .agent-team{gap:4px}.team-dashboard .agent-comms{height:22px;padding:3px 7px}.team-dashboard .agent-card{padding:5px}.team-dashboard #status,.team-dashboard #telegram{-webkit-line-clamp:1}}
-@media(max-height:680px) and (max-width:600px){.team-dashboard .dashboard{grid-template-rows:29px 85px auto minmax(0,1fr) 118px 13px;gap:4px;padding:4px}.team-dashboard .dashboard-metrics strong{font-size:16px}.team-dashboard .dashboard-metrics small{font-size:5px}.team-dashboard .dashboard-metrics article{padding:4px 6px}.team-dashboard .control-actions button{font-size:7px;padding:3px 4px}.team-dashboard #account-panel .panel-head{display:flex}.team-dashboard #status{font-size:7px}.team-dashboard #telegram-panel .panel-head{min-height:9px}.team-dashboard .agent-comms{height:20px}.team-dashboard .agent-card{padding:4px 6px}.team-dashboard .agent-grid{gap:3px}.team-dashboard .bot-face{width:19px;height:19px}.team-dashboard .panel-caption{display:none}.team-dashboard #execution-events{display:none}}
-@media(max-height:450px) and (min-width:601px){.team-dashboard .dashboard{grid-template-rows:27px 47px auto minmax(0,1fr) 70px 12px;gap:4px;padding:4px}.team-dashboard .dashboard-metrics strong{font-size:17px}.team-dashboard .dashboard-metrics small{display:none}.team-dashboard .panel-head{min-height:10px}.team-dashboard .control-line{flex-wrap:nowrap}.team-dashboard #status,.team-dashboard #telegram{font-size:7px}.team-dashboard .control-actions button{font-size:7px;padding:3px}.team-dashboard .agent-comms{height:18px}.team-dashboard .agent-comms p{font-size:7px}.team-dashboard .agent-card{padding:4px}.team-dashboard .agent-stats{font-size:6px}.team-dashboard .bot-phase{font-size:6px}.team-dashboard .bot-face{display:none}.team-dashboard .agent-card{grid-template-columns:1fr}.team-dashboard .agent-stats{grid-column:1}.team-dashboard .panel-caption,.team-dashboard .log-columns{display:none}.team-dashboard .dashboard-workspace{grid-template-rows:minmax(0,1fr) minmax(0,1fr)}.team-dashboard #gates p{font-size:6px}.team-dashboard .dashboard-footer{font-size:6px}}
-@media(prefers-reduced-motion:reduce){.team-dashboard .agent-card{animation:none!important;transition:none}}
-.team-dashboard .dashboard{grid-template-columns:minmax(0,1fr)}
-.team-dashboard .agent-team,.team-dashboard .agent-comms p{min-width:0}
-/* Ten simultaneous strategy states, five columns and two rows. */
-.team-dashboard .dashboard{grid-template-rows:46px 86px auto minmax(0,1fr) 164px 18px}
-.team-dashboard .agent-grid{grid-template-columns:repeat(5,minmax(0,1fr));grid-template-rows:repeat(2,minmax(0,1fr));gap:6px}
-.team-dashboard .agent-card{grid-template-columns:26px minmax(0,1fr);padding:6px 9px;gap:3px 7px}
-.team-dashboard .bot-face{width:26px;height:26px}.team-dashboard .agent-stats{font-size:7px}
-@media(max-width:1200px){.team-dashboard .dashboard{grid-template-rows:42px 78px auto minmax(0,1fr) 150px 17px}}
-@media(max-width:800px){.team-dashboard .agent-card{grid-template-columns:1fr;padding:4px 6px;text-align:left}.team-dashboard .agent-stats{flex-direction:row;grid-column:1}.team-dashboard .bot-face{display:none}}
-@media(max-width:600px){.team-dashboard .dashboard{grid-template-rows:35px 102px auto minmax(0,1fr) 138px 15px}.team-dashboard .agent-grid{grid-template-columns:repeat(5,minmax(0,1fr));gap:4px}.team-dashboard .agent-card{grid-template-columns:1fr;padding:5px 4px;gap:3px;text-align:center}.team-dashboard .bot-face{display:none}.team-dashboard .agent-card strong{font-size:7px;letter-spacing:.5px}.team-dashboard .bot-phase{font-size:5px}.team-dashboard .agent-stats{grid-column:1;flex-direction:column;font-size:5px;gap:2px}.team-dashboard .agent-id{font-size:4px}}
-@media(max-height:680px) and (min-width:601px){.team-dashboard .dashboard{grid-template-rows:32px 65px auto minmax(0,1fr) 118px 14px}.team-dashboard .agent-card{padding:4px 6px;grid-template-columns:1fr;gap:2px}.team-dashboard .bot-face{display:none}.team-dashboard .agent-stats{grid-column:1}.team-dashboard .agent-card strong{font-size:8px}.team-dashboard .bot-phase,.team-dashboard .agent-stats{font-size:6px}}
-@media(max-height:680px) and (max-width:600px){.team-dashboard .dashboard{grid-template-rows:29px 85px auto minmax(0,1fr) 118px 13px}.team-dashboard .agent-card{padding:3px}.team-dashboard .agent-grid{gap:3px}.team-dashboard .agent-card strong{font-size:6px}.team-dashboard .bot-phase,.team-dashboard .agent-stats{font-size:5px}}
-@media(max-height:450px) and (min-width:601px){.team-dashboard .dashboard{grid-template-rows:27px 47px auto minmax(0,1fr) 80px 12px}.team-dashboard .agent-grid{grid-template-columns:repeat(10,minmax(0,1fr));grid-template-rows:1fr;gap:4px}.team-dashboard .agent-card strong{font-size:7px}.team-dashboard .bot-phase,.team-dashboard .agent-stats{font-size:5px}}
-/* Let controls breathe and let the page grow instead of clipping long status. */
-.team-dashboard{height:auto;min-height:100dvh;overflow-x:hidden;overflow-y:auto}
-.team-dashboard .dashboard{height:auto;min-height:100dvh;overflow:visible;gap:12px;grid-template-rows:auto auto auto auto 164px auto}
-.team-dashboard .dashboard-metrics{min-height:86px}
-.team-dashboard .dashboard-controls{margin-top:10px;gap:12px;align-items:start}
-.team-dashboard #account-panel,.team-dashboard #telegram-panel{padding:14px;overflow:visible}
-.team-dashboard #account-panel .panel-head,.team-dashboard #telegram-panel .panel-head{flex-wrap:wrap;row-gap:8px;margin-bottom:12px}
-.team-dashboard #account-panel .control-line{flex-direction:column;align-items:stretch;gap:12px}
-.team-dashboard #account-panel .control-actions{flex-wrap:wrap;row-gap:8px}
-.team-dashboard #status,.team-dashboard #telegram{display:block;-webkit-line-clamp:unset;overflow:visible;white-space:normal;overflow-wrap:anywhere;line-height:1.7}
-.team-dashboard #message{max-height:none;overflow:visible;margin-top:8px;line-height:1.7}
-.team-dashboard #telegram-panel .control-line{flex-wrap:wrap;gap:8px}
-.team-dashboard #telegram-panel .control-line>p{flex-basis:180px}
-.team-dashboard .dashboard-workspace{height:clamp(340px,calc(100dvh - 520px),680px)}
-@media(max-width:600px){
- .team-dashboard .dashboard{gap:10px;grid-template-rows:auto auto auto auto 138px auto}
- .team-dashboard .dashboard-metrics{min-height:102px}
- .team-dashboard .dashboard-controls{margin-top:8px;gap:10px}
- .team-dashboard #account-panel,.team-dashboard #telegram-panel{padding:12px}
- .team-dashboard #status,.team-dashboard #telegram{font-size:10px}
- .team-dashboard .control-actions button{font-size:9px;padding:7px 8px}
- .team-dashboard .dashboard-workspace{height:480px}
+.team-dashboard .agent-card:hover{border-color:var(--bot);background:#f8f6fc}
+.team-dashboard .agent-card.selected{outline:2px solid #b29acb;outline-offset:2px}
+.team-dashboard .bot-face{display:grid;place-items:center;grid-row:1/3;width:40px;height:40px;border-radius:50%;background:#f1f3f7;border:1px solid #e0e4eb;box-shadow:inset 0 1px 4px #292e3d12}
+.team-dashboard .bot-face svg{width:23px;height:23px;background:none;color:#687384}
+.team-dashboard .agent-card strong{font:750 15px/1.6 monospace;letter-spacing:1.5px;color:#505d70}
+.team-dashboard .agent-id{position:absolute;right:10px;top:8px;font:10px monospace;color:#b1bac8}
+.team-dashboard .bot-phase{font:11px/1.7 monospace;white-space:normal;overflow-wrap:anywhere;color:#7e8d9e}
+.team-dashboard .agent-stats{grid-column:1/3;display:flex;flex-direction:column;gap:4px;font:12px/1.7 monospace}
+.team-dashboard .bot-evaluation,.team-dashboard .bot-reason{grid-column:1/3;font:11px/1.8 monospace;white-space:normal;overflow-wrap:anywhere}
+.team-dashboard .bot-evaluation{color:#6b927f}.team-dashboard .bot-reason{color:#9c8a6c}
+.team-dashboard .agent-card[data-phase=entry-pending],.team-dashboard .agent-card[data-phase=exit-pending]{animation:bot-signal 1.8s ease-in-out infinite}
+.team-dashboard .agent-card.activity-checked{animation:bot-evaluated 2.2s ease-out 1}
+@keyframes bot-signal{50%{box-shadow:0 0 0 2px color-mix(in srgb,var(--bot) 38%,transparent),0 0 18px color-mix(in srgb,var(--bot) 18%,transparent)}}
+@keyframes bot-evaluated{0%{background:#e5f4e9;box-shadow:0 0 0 2px #70b49466}100%{box-shadow:none}}
+.team-dashboard .dashboard-footer{margin:0;padding-top:6px;min-height:28px;display:flex;align-items:center;flex-wrap:wrap;gap:14px;font:11px/1.7 monospace;color:#98a3b0;white-space:normal;overflow:visible}
+.team-dashboard .dashboard-footer a,.team-dashboard .dashboard-footer button{font:11px/1.7 monospace;color:#8e7aa8;padding:4px 0;min-height:28px}
+.team-dashboard .footer-mode{color:#509b78}.team-dashboard #revision{margin-left:auto;white-space:normal}
+.team-dashboard #storage{max-width:none;white-space:normal;overflow:visible}
+.team-dashboard #wallet-address{font-family:monospace;word-break:break-all;background:#f4f3fa;padding:12px;border-radius:4px}
+.team-dashboard .agent-detail-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.team-dashboard .agent-detail-grid p{background:#f4f5fa;padding:12px;font:12px/1.8 monospace}
+.team-dashboard .dashboard-dialog{padding:22px}.team-dashboard .dashboard-dialog h3{margin-top:18px}
+.team-dashboard .empty-state{font:12px/1.8 monospace;padding:18px 0;color:#9ca7b5}
+@media(max-width:1150px){
+ .team-dashboard .dashboard-metrics{grid-template-columns:repeat(3,minmax(0,1fr))}
+ .team-dashboard .dashboard-workspace{grid-template-columns:repeat(2,minmax(0,1fr));grid-template-rows:280px 340px 340px}
+ .team-dashboard #chart-panel{grid-column:1;grid-row:1}.team-dashboard #trades-panel{grid-column:2;grid-row:1}
+ .team-dashboard #gainers-panel{grid-column:1;grid-row:2}.team-dashboard #positions-panel{grid-column:2;grid-row:2}.team-dashboard #scanner-panel{grid-column:1/3;grid-row:3}
+ .team-dashboard .agent-grid{grid-template-columns:repeat(3,minmax(0,1fr))}
+ .team-dashboard .log-columns,.team-dashboard .trade-row{grid-template-columns:105px minmax(0,1fr) 90px}
 }
-@media(max-height:450px) and (min-width:601px){.team-dashboard .dashboard{grid-template-rows:auto auto auto auto 100px auto}}
-.team-dashboard .dashboard-footer{min-height:18px;flex-wrap:wrap;white-space:normal;overflow:visible;row-gap:8px}
-@media(max-width:600px){.team-dashboard .dashboard-footer,.team-dashboard .dashboard-footer a,.team-dashboard .dashboard-footer button{font-size:8px}}
+@media(max-width:750px){
+ .team-dashboard .dashboard{padding:16px;gap:20px}
+ .team-dashboard .dashboard-controls{grid-template-columns:1fr;gap:18px;margin-top:4px}
+ .team-dashboard .agent-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+ .team-dashboard h1{font-size:21px}.team-dashboard h1 span{display:block;font-size:11px;margin-top:2px}
+ .team-dashboard .header-tools{gap:8px}.team-dashboard .paper-badge{display:inline-block}
+}
+@media(max-width:700px){
+ .team-dashboard .dashboard-metrics{grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+ .team-dashboard .dashboard-metrics article{padding:14px 12px;min-height:100px}
+ .team-dashboard .dashboard-metrics strong{font-size:24px}
+ .team-dashboard .dashboard-metrics article>span{font-size:9px;letter-spacing:.3px}
+ .team-dashboard .dashboard-workspace{display:flex;flex-direction:column;gap:18px;height:auto}
+ .team-dashboard .dashboard-workspace>.panel{height:340px;min-height:340px;flex:none}
+ .team-dashboard .dashboard-workspace>#chart-panel{height:260px;min-height:260px}
+ .team-dashboard .dashboard-workspace>#gainers-panel,.team-dashboard .dashboard-workspace>#scanner-panel{height:400px;min-height:400px}
+ .team-dashboard .panel{padding:16px}.team-dashboard .panel-head{margin-bottom:16px}
+ .team-dashboard .panel-head h3{font-size:11px}.team-dashboard .activity-label{font-size:10px}
+ .team-dashboard #telegram-panel{display:block}.team-dashboard #telegram-panel .panel-head{display:flex}
+ .team-dashboard #telegram-panel .control-actions,.team-dashboard #telegram-panel .control-line{display:flex;flex-wrap:wrap}
+ .team-dashboard #status,.team-dashboard #telegram{font-size:12px;line-height:1.8}
+ .team-dashboard .control-actions{gap:10px}.team-dashboard .control-actions button{font-size:12px;padding:9px 10px;min-height:38px}
+ .team-dashboard #test{font-size:12px;padding:8px 10px;min-height:36px}
+ .team-dashboard .log-columns,.team-dashboard .trade-row{grid-template-columns:95px minmax(0,1fr) 75px}
+ .team-dashboard .trade-row{font-size:11px}.team-dashboard .trade-time,.team-dashboard .trade-agent{font-size:9px}
+ .team-dashboard .agent-card{padding:16px 12px;grid-template-columns:32px minmax(0,1fr);gap:10px 8px;min-height:250px}
+ .team-dashboard .bot-face{width:31px;height:31px}.team-dashboard .bot-face svg{width:20px;height:20px}
+ .team-dashboard .agent-card strong{font-size:13px;letter-spacing:1px}.team-dashboard .bot-phase{font-size:11px}
+ .team-dashboard .agent-stats,.team-dashboard .bot-evaluation,.team-dashboard .bot-reason{font-size:11px}
+ .team-dashboard .bot-reason{line-height:1.8}
+ .team-dashboard .dashboard-footer,.team-dashboard .dashboard-footer a,.team-dashboard .dashboard-footer button{font-size:10px}
+ .team-dashboard #rent{display:inline}.team-dashboard .footer-mode{display:inline}
+ .team-dashboard td,.team-dashboard th{display:table-cell;font-size:10px!important;padding:10px 4px!important}
+ .team-dashboard td:nth-child(4),.team-dashboard th:nth-child(4),.team-dashboard td:nth-child(5),.team-dashboard th:nth-child(5),.team-dashboard td:last-child,.team-dashboard th:last-child{display:none}
+ .team-dashboard th:first-child{width:7%}.team-dashboard th:nth-child(2){width:47%}.team-dashboard th:nth-child(3){width:27%}.team-dashboard th:nth-child(6){width:19%}
+ .team-dashboard .detail-dialog td,.team-dashboard .detail-dialog th{display:table-cell!important;width:auto}
+}
+@media(max-width:400px){.team-dashboard .dashboard{padding:12px}.team-dashboard .dashboard-metrics strong{font-size:21px}.team-dashboard .agent-grid{grid-template-columns:1fr}.team-dashboard .agent-card{min-height:210px;grid-template-columns:42px minmax(0,1fr)}.team-dashboard .bot-face{width:40px;height:40px}.team-dashboard .agent-card strong{font-size:15px}.team-dashboard .agent-stats{flex-direction:row;justify-content:space-between;flex-wrap:wrap}.team-dashboard .trade-row,.team-dashboard .log-columns{grid-template-columns:80px minmax(0,1fr) 70px}}
+@media(prefers-reduced-motion:reduce){.team-dashboard .agent-card,.team-dashboard .agent-card.activity-checked{animation:none!important;transition:none}}
+.team-dashboard #account-panel .panel-head{display:flex}
+.team-dashboard td:nth-child(6),.team-dashboard th:nth-child(6){display:table-cell}
