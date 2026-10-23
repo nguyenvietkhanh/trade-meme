@@ -18,7 +18,7 @@ test('a background proof reaches the paper engine before the next market scan, w
  const desk=new PaperDesk(dir,{quote:async input=>{counters.execution++;const outAmount=input.side==='BUY'?'9000000000':String(Math.round(sellSol*1e9));return {...input,inAmount:input.amount,outAmount,minOut:outAmount,checkedAt:at,contextSlot:100,impactPct:1};}},{clock:()=>at});await desk.load();
  let rows=await verification.enrichCached([market()],[],at);rows=observePaperEligibility(desk.state,rows,at);await ready;
  at+=4990;rows=observePaperEligibility(desk.state,[market()],at);assert.equal(rows[0].scalpConfirmed,false);
- at+=4990;rows=observePaperEligibility(desk.state,[market()],at);assert.equal(rows[0].scalpConfirmed,true);const feed={markets:rows,updatedAt:at,solUsd:150,error:null},original=structuredClone(feed);
+ at+=4990;rows=observePaperEligibility(desk.state,[market()],at);assert.equal(rows[0].scalpConfirmed,false);at+=5020;rows=observePaperEligibility(desk.state,[market()],at);assert.equal(rows[0].scalpConfirmed,true);const feed={markets:rows,updatedAt:at,solUsd:150,error:null},original=structuredClone(feed);
  at+=1000;release();await Promise.all([...verification.jobs.values()]);
  await desk.step(feed);assert.equal(desk.state.pending,null,'the old frozen market snapshot has no completed proof');
  const countsBefore={...counters},proof=verification.applyCached(feed.markets);

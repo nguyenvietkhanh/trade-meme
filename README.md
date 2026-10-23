@@ -5,7 +5,7 @@ thật. Không ký/gửi giao dịch hoặc chuyển SOL thật. Bản hiện t�
 để thử giao dịch ngắn, có ghi nhãn so sánh bộ luật gốc; không tự huấn luyện hay
 triển khai tham số mới bằng tiền thật.
 
-## Multi-position v3 · `paper-5m-multi-v3`
+## Persistence v4 · `paper-5m-persistence-v4`
 
 These are **unvalidated research parameters**, not estimates of optimal returns.
 The dashboard and discovery shortlist rank observed PumpSwap pools by 5-minute
@@ -22,9 +22,11 @@ remain in use; there is no undocumented gainers endpoint or new paid data feed.
 | Volume / activity 5m | ≥$500, ≥5 buys, ≥10 trades, buy/sell ratio ≥1.1 |
 | Context | H1/H4 are recorded; green H1 and green H4 are not required |
 | Score | ≥40; momentum 30, flow 25, acceleration 20, depth 15, cost 10; wash/boost penalties retained |
-| Confirmation | Fresh snapshots 5–15s apart: price rises >0% and ≤4%, nonnegative rolling buy/sell deltas with buys > sells; intermediate price retention ≥99.5%, liquidity retention ≥90% |
+| Confirmation | Three actual snapshots spanning 10–30s, each 5–15s apart: price rises on each leg and ≤4% overall, nonnegative rolling buy/sell deltas with buys > sells on BOTH legs; intermediate price retention ≥99.5%, liquidity retention ≥90% |
 | Security / execution gates | Existing authority, token program/extensions, LP, holders, cap/depth, round-trip ≤6%, impact ≤2%, real quote and capital checks retained |
 | Allocation | 2.5% of accounting capital (cash + locked rent + remaining position cost); bounded by cash after 0.1 SOL reserve + 0.005 SOL overhead. No fixed position count or 0.6 SOL order cap. |
+| Modeled cost screen | Existing raw round-trip ≤6% AND estimated normal loss including 1.5% modeled execution each way ≤6%. Multiplicative unchanged-route estimate, not an additional executable quote. |
+| Reentry | Same mint blocked for 24h after ANY complete close, including profitable exits. |
 | Stop | −12% using net executable SELL quote against allocated cost |
 | Profit | +15% net sells 50%; +30% net closes remainder (a jump directly to ≥30% closes all) |
 | Trailing | 8% below peak net value per token after the first sale actually fills |
@@ -72,12 +74,48 @@ this revision. Ledger exports now retain quote/trigger timestamps, quantities,
 slippage tolerance, assumed and effective haircuts, holding time, the policy's
 actual initial risk, and entry continuation/cost features alongside each fill.
 
-`previousPaper` labels apply v1 gates to shared observed data without additional
-provider calls. They are conditional on the evidence collected by v2, not a
-separately funded v1 strategy. Historical v2 expectancy/PF/drawdown cannot be
-replayed from the uploaded shortened ledger. Collect ≥100 closed v2 positions,
+`previousPaper` labels now apply v3 gates to shared observed data without additional
+provider calls. They are conditional on the evidence collected by v4, not a
+separately funded v3 strategy. Historical v4 expectancy/PF/drawdown cannot be
+replayed from the uploaded shortened ledger. Collect ≥100 closed v4 positions,
 retain missing observations, compare later time periods and calibrate the fill
-model before any promotion to real funds. Production remains paper-only.
+model before any promotion to real funds. Production remains paper-only. The v4 evidence and limitations are detailed below.
+
+## Evidence for v4 (uploaded 23 October 2026)
+
+The uploaded v3 ledger contains 50 closed positions, 9 wins / 41 losses,
+−2.657734015 SOL and profit factor 0.1514. All chronological 30/10/10 splits
+lose money. Reconstructed concurrency is ONE, matching all daily maxima: the
+40-position surveillance bottleneck is not established as a cause of this sample.
+Eight observed reentries within 24h all lost (−0.827173143 SOL); this is a subset,
+not saved-PnL backtesting. The 24h policy restores the intended same-token pause.
+No claim that a larger score or hotter 5m gain fixes the loss is supported.
+
+SELL quote-to-fill output differences total 1.226169726 SOL at the quantities
+actually sold. Arithmetic at those same quantities and quote outputs is still
+−1.431564289 SOL. These figures separate model assumptions from market exposure;
+they do not reverse BUY haircuts or simulate alternative execution paths. The
+normal 1.5% and emergency 10% haircuts, fees and 2s modeled delay remain unchanged.
+
+Entry persistence over two consecutive legs is an UNVALIDATED hypothesis, not a
+threshold selected by fitting these 50 trades. It reuses the 5–15s observation gap,
+4% anti-chase and 90% liquidity retention; no new feed or wallet-count inference.
+It may miss short runners and reduce the number of entries. Full-model cost
+screening can reject routes even though raw quotes pass. Its multiplication is an
+estimate at unchanged route/price; AMM amount nonlinearity is a limitation.
+
+A 500ms timer settles only already-triggered, due SELL orders through the same
+serialized desk and provider queue. It does not shorten the 2s paper delay,
+add BUY probes, increase periodic holding surveillance, or bypass rate limits.
+Network/lock delays can still postpone execution. Provider cooldown/queue wait
+codes are now distinct from actual HTTP 429 observations; historical counters
+are kept as recorded. Daily reports add quote/model decomposition.
+
+Existing cash, trades, open-position exit policies, allocation and outboxes are
+preserved when their files survive. Old unfilled BUYs are canceled; known closed
+receipts seed the new 24h reentry policy. No historical v4 PnL backtest is possible
+without the third entry-time observation and full quote paths. Collect at least
+100 closed v4 positions and assess later periods; no automatic promotion to live.
 
 ## Multi-position allocation and execution limitations
 
@@ -93,7 +131,7 @@ Current quote/impact/capital gates still decide whether any token can enter.
 
 At unchanged starting capital, 39 full 0.5 SOL orders plus one clipped order can
 fit after modeled fees/rent. This is a capital calculation, not a promise of 40
-simultaneous opportunities. Normal entries keep the v2 continuation/safety rules;
+simultaneous opportunities. Normal entries use the v4 persistence/cost rules and existing safety checks;
 no unsafe tokens or fake fills are added to increase sample count.
 
 Fresh market prices and LP/dev alerts prioritize exact SELL quote checks, with an

@@ -5,8 +5,8 @@ import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {PaperDesk} from '../src/paper-desk.js';
 import {verifiedMarket} from './fixtures/verified-market.js';
-import {observePaperEligibility,rankPaperMarket,rankPaperMarketV1} from '../src/paper-policy.js';
-import {SCALP_STRATEGY_VERSION,SCALP_V1_VERSION} from '../src/paper-scalp.js';
+import {observePaperEligibility,rankPaperMarket,rankPaperMarketV1,rankPaperMarketV3} from '../src/paper-policy.js';
+import {SCALP_STRATEGY_VERSION,SCALP_V1_VERSION,SCALP_V3_VERSION} from '../src/paper-scalp.js';
 import {quoteScheduler} from '../src/quote-queue.js';
 import {withRpcPriority} from '../src/rpc-priority.js';
 import {VerificationFeed} from '../src/verification.js';
@@ -14,8 +14,8 @@ import {VerificationFeed} from '../src/verification.js';
 const start=Date.now();
 function confirm(change){const s={},first=verifiedMarket({change5mPct:27,scalpConfirmed:undefined},start);observePaperEligibility(s,[first],start);return observePaperEligibility(s,[{...first,updatedAt:start+5000,priceUsd:.0101,buys5m:43,sells5m:21,...change}],start+5000)[0];}
 test('v2 requires price continuation and positive observed net-buy count; changed snapshots alone are insufficient',()=>{
- const valid=confirm({});assert.equal(valid.scalpConfirmed,true);assert.equal(valid.scalpSetup.netNewBuys,2);assert.equal(rankPaperMarket(valid,undefined,start+5000).eligible,true);
- for(const delta of [{priceUsd:.01},{buys5m:41,sells5m:22},{buys5m:39,sells5m:19},{priceUsd:.0105}]){const m=confirm(delta);assert.equal(m.scalpConfirmed,false,JSON.stringify(delta));assert.equal(m.scalpV1Confirmed,true);const r=rankPaperMarket(m,undefined,start+5000);assert.equal(r.eligible,false);assert.equal(r.previousPaper.eligible,true);assert.equal(r.previousPaper.version,SCALP_V1_VERSION);}
+ const valid=confirm({});assert.equal(valid.scalpV3Confirmed,true);assert.equal(valid.scalpConfirmed,false);assert.equal(valid.scalpSetup.netNewBuys,2);assert.equal(rankPaperMarketV3(valid,undefined,start+5000).eligible,true);assert.equal(rankPaperMarket(valid,undefined,start+5000).previousPaper.eligible,true);assert.equal(rankPaperMarket(valid,undefined,start+5000).previousPaper.version,SCALP_V3_VERSION);
+ for(const delta of [{priceUsd:.01},{buys5m:41,sells5m:22},{buys5m:39,sells5m:19},{priceUsd:.0105}]){const m=confirm(delta);assert.equal(m.scalpConfirmed,false,JSON.stringify(delta));assert.equal(m.scalpV1Confirmed,true);const r=rankPaperMarket(m,undefined,start+5000);assert.equal(r.eligible,false);assert.equal(rankPaperMarketV1(m,undefined,start+5000).eligible,true);assert.equal(r.previousPaper.eligible,false);}
 });
 test('continuation remains a confirmation gate, allowing cheap-qualified tokens to prefetch safety without inventing a signal',()=>{
  const m=verifiedMarket({change5mPct:27,scalpConfirmed:true,scalpSetup:null},start),r=rankPaperMarket(m,undefined,start);assert.equal(r.eligible,false);assert.equal(r.roughEligible,true);assert.equal(r.preQuoteEligible,true);assert.ok(r.red_flags.includes('UNCONFIRMED_SIGNAL'));assert.equal(rankPaperMarketV1(m,undefined,start).eligible,true);

@@ -9,9 +9,9 @@ import {rankPaperMarket as rankMarket,PAPER_ENTRY_POLICY,paperEntryFeatures} fro
 import {recordEvaluation} from './scanner.js';
 import {reportEnd} from './training-archive.js';
 import {withRpcPriority} from './rpc-priority.js';
-import {SCALP_STRATEGY_VERSION,SCALP_EXIT_RULES,SCALP_ENTRY_RULES,scalpExitPlan,compare5m,comparePaperEntries,isScalpVersion} from './paper-scalp.js';
-export const PAPER_MODEL=Object.freeze({initialSol:20,delayMs:2000,feeSol:.000025,rentSol:.00203928,normalFillSlippageBps:150,fill:'fresh quote after 2s; modeled 1.5% slippage (emergency 10%), bounded by quote and original intent; no MEV/inclusion simulation'});
-const PAPER_ERROR_CODES=new Set(['INTENT_EXPIRED','BUY_GATE_CHANGED','BUY_EVIDENCE_EXPIRED','QUOTE_BEFORE_DELAY','SLIPPAGE_LIMIT','SIZE_DEPTH_COST_LIMIT']);
+import {SCALP_STRATEGY_VERSION,SCALP_EXIT_RULES,SCALP_ENTRY_RULES,scalpExitPlan,compare5m,comparePaperEntries,isScalpVersion,modeledNormalRoundTripPct,PAPER_NORMAL_HAIRCUT_BPS} from './paper-scalp.js';
+export const PAPER_MODEL=Object.freeze({initialSol:20,delayMs:2000,feeSol:.000025,rentSol:.00203928,normalFillSlippageBps:PAPER_NORMAL_HAIRCUT_BPS,fill:'fresh quote after 2s; modeled 1.5% slippage (emergency 10%), bounded by quote and original intent; no MEV/inclusion simulation'});
+const PAPER_ERROR_CODES=new Set(['INTENT_EXPIRED','BUY_GATE_CHANGED','BUY_EVIDENCE_EXPIRED','QUOTE_BEFORE_DELAY','SLIPPAGE_LIMIT','SIZE_DEPTH_COST_LIMIT','PROVIDER_BACKOFF','QUOTE_QUEUE_BUSY']);
 const paperError=(code,message)=>Object.assign(Error(message),{code});
 const round=n=>Math.round(n*1e9)/1e9;
 const fresh=(t,now,maxAgeMs=30000)=>Number.isFinite(t)&&t<=now&&now-t<=maxAgeMs;
@@ -34,6 +34,8 @@ export class PaperDesk{
   this.state.settings={...TRADE_RULES,initialSol:20,requireExecutableQuote:true};this.state.model=PAPER_MODEL;this.state.entryPolicy=PAPER_ENTRY_POLICY;this.state.exitPolicy=SCALP_EXIT_RULES;this.state.strategyVersion=SCALP_STRATEGY_VERSION;
   this.state.sizingPolicy=PAPER_SIZING;this.state.pendingExits??=[];
   for(const p of this.state.positions)p.paperPositionId??=randomUUID();
+  // Apply the entry policy to known closed receipts without changing any fill or PnL.
+  for(const t of this.state.trades)if(t.side==='SELL'&&t.closed&&Number.isFinite(t.at)&&t.at<=this.clock())this.state.cooldowns[t.mint]=Math.max(this.state.cooldowns[t.mint]??0,t.at+SCALP_ENTRY_RULES.reentryMs);
   if(this.state.pending?.side==='BUY'&&this.state.pending.strategyVersion!==SCALP_STRATEGY_VERSION){this.state.pending=null;event(this.state,'Đã hủy ý định BUY của chính sách paper cũ; chờ gainers 5m mới.');}
   await this.save();
  }
@@ -125,6 +127,16 @@ export class PaperDesk{
    }await this.save();
   });}catch(e){await this.serial(async()=>{this.error(e);await this.save();});}finally{this.busy=false;}
  }
+ // Fast wake-up only for already-triggered exits. Does not scan, probe BUYs or
+ // increase periodic holding-quote frequency; the shared provider queue still limits reads.
+ async settleExits(feed){
+  if(this.busy||!this.pendingOrders().some(o=>o.side==='SELL'&&o.readyAt<=this.clock()))return;
+  this.busy=true;try{await this.serial(async()=>{
+   this.promoteExit(true);const o=this.state.pending;
+   if(o?.side!=='SELL'||o.readyAt>this.clock())return;
+   await this.fillPending(feed);this.promoteExit();this.markEquity();await this.save();
+  });}catch(e){await this.serial(async()=>{this.error(e);await this.save();});}finally{this.busy=false;}
+ }
  async fillPending(feed){
   const s=this.state,o=s.pending,now=this.clock();
   if(now-o.decisionAt>(o.side==='BUY'&&o.strategyVersion===SCALP_STRATEGY_VERSION?10000:30000)){s.pending=null;this.error(paperError('INTENT_EXPIRED','timeout pending paper'),now,o);return;}
@@ -143,7 +155,7 @@ export class PaperDesk{
    const fillOut=[BigInt(q.minOut),modeledMin,minAllowed].reduce((a,b)=>a>b?a:b).toString();
    let costOrNet,position,closed=false;
    if(o.side==='BUY'){
-    const size=Number(o.amount)/1e9;if(q.impactPct>2||size>m.evidence.quoteReserveSol*.02||Math.abs(m.evidence.probeSol-size)>1e-9||!canFundBuy(s.cashSol,size,s.settings.reserveSol)||m.evidence.roundTripLossPct+2*PAPER_MODEL.feeSol/size*100>8)throw paperError('SIZE_DEPTH_COST_LIMIT','Paper size/depth/cost limit.');
+    const size=Number(o.amount)/1e9;if(q.impactPct>2||size>m.evidence.quoteReserveSol*.02||Math.abs(m.evidence.probeSol-size)>1e-9||!canFundBuy(s.cashSol,size,s.settings.reserveSol)||m.evidence.roundTripLossPct+2*PAPER_MODEL.feeSol/size*100>8||modeledNormalRoundTripPct(m.evidence.roundTripLossPct)>SCALP_ENTRY_RULES.maxModeledRoundTripPct)throw paperError('SIZE_DEPTH_COST_LIMIT','Paper size/depth/cost limit.');
     const quantity=Number(fillOut)/10**o.decimals;costOrNet=round(size+PAPER_MODEL.feeSol);
     recordBuy(s,m,feed.solUsd,{quantity,costSol:costOrNet,priceUsd:size*feed.solUsd/quantity,rawQuantity:fillOut,decimals:o.decimals,networkFeeSol:PAPER_MODEL.feeSol},fillNow,o.reason,'paper');
     s.cashSol=round(s.cashSol-PAPER_MODEL.rentSol);s.rentLockedSol=round(s.rentLockedSol+PAPER_MODEL.rentSol);
@@ -155,11 +167,13 @@ export class PaperDesk{
     const usdHistoryKnown=Number.isFinite(position.recoveredUsd);recordSell(s,mark,solUsd??0,{quantity,proceedsSol:costOrNet,priceUsd:mark.priceUsd,closed,rawBalance:remaining,networkFeeSol:PAPER_MODEL.feeSol},fillNow,o.reason,'paper');
     if(solUsd===null||!usdHistoryKnown)position.recoveredUsd=null;
     if(!closed&&o.reason==='scalp-tp1')position.scalpFirstTaken=true;
-    if(closed){s.cashSol=round(s.cashSol+position.rentSol);s.rentLockedSol=round(s.rentLockedSol-position.rentSol);}delete s.marks[o.mint];
+    if(closed){s.cashSol=round(s.cashSol+position.rentSol);s.rentLockedSol=round(s.rentLockedSol-position.rentSol);s.cooldowns[o.mint]=Math.max(s.cooldowns[o.mint]??0,fillNow+SCALP_ENTRY_RULES.reentryMs);}delete s.marks[o.mint];
    }
    s.cashSol=round(s.cashSol);const trade=s.trades[0];trade.id=o.id;trade.positionId=position.paperPositionId??null;trade.mode='paper';trade.strategyVersion=o.strategyVersion??position.strategyVersion??'paper-exploration-v1';trade.networkFeeSol=null;trade.modeledFeeSol=PAPER_MODEL.feeSol;trade.initialRiskSol=position.initialCostSol*(position.exitPolicy?.stopLossPct??s.settings.stopLossPct)/100;trade.holdingMs=o.side==='SELL'?fillNow-position.openedAt:null;trade.usdValuationStatus=solUsd===null?'unavailable':'fresh';
    trade.execution={decisionAt:o.decisionAt,readyAt:o.readyAt,fillAt:fillNow,latencyMs:fillNow-o.decisionAt,quoteObservedAt:q.checkedAt,quoteAgeMs:fillNow-q.checkedAt,contextSlot:q.contextSlot,trigger:o.exitTrigger??null,triggerNetSol:o.triggerNetSol??null,quotedOutput:q.outAmount,quoteMinOut:q.minOut,filledOutput:fillOut,slippageToleranceBps:limit,assumedHaircutBps:haircut,effectiveOutputHaircutBps:(1-Number(fillOut)/Number(q.outAmount))*10000,scenario:haircut===1000?'emergency-stress':'normal',marketDataFresh:fresh(m.updatedAt,fillNow)};
-   const signal=o.entryFeatures??position.entryFeatures;trade.entrySignal={score:signal?.score??null,change5mPct:signal?.rank5m?.changePct??null,scalpSetup:o.scalpSetup??position.scalpSetup??null,previousPaper:signal?.previousPaper??null,roundTripLossPct:signal?.safety?.roundTripLossPct??null,quoteReserveSol:signal?.safety?.quoteReserveSol??null};
+   Object.assign(trade.execution,{decisionQuotedOutput:o.benchmark.outAmount,decisionQuoteMinOut:o.benchmark.minOut,decisionQuoteObservedAt:o.benchmark.checkedAt,quoteOutputChangeVsDecisionPct:(Number(q.outAmount)/Number(o.benchmark.outAmount)-1)*100});
+   const signal=o.entryFeatures??position.entryFeatures;trade.entrySignal={score:signal?.score??null,change5mPct:signal?.rank5m?.changePct??null,scalpSetup:o.scalpSetup??position.scalpSetup??null,previousPaper:signal?.previousPaper??null,roundTripLossPct:signal?.safety?.roundTripLossPct??null,estimatedNormalRoundTripPct:modeledNormalRoundTripPct(signal?.safety?.roundTripLossPct),quoteReserveSol:signal?.safety?.quoteReserveSol??null};
+   trade.execution.quoteToFillCostSol=o.side==='SELL'?(Number(q.outAmount)-Number(fillOut))/1e9:null;
    const fill={...trade,session:s.session,pairAddress:o.pairAddress,rawAmount:o.amount,rawOutput:fillOut,decisionAt:o.decisionAt,fillAt:fillNow,holdingMs:o.side==='SELL'?fillNow-position.openedAt:null,benchmark:o.benchmark,fillQuote:q,latencyMs:fillNow-o.decisionAt,quoteAgeAtFillMs:fillNow-q.checkedAt,marketAgeAtFillMs:fillNow-m.updatedAt,outputVsDecisionPct:(Number(fillOut)/Number(o.benchmark.outAmount)-1)*100,netVsTriggerPct:o.side==='SELL'&&o.triggerNetSol>0?(costOrNet/o.triggerNetSol-1)*100:null,entryFeatures:o.entryFeatures??position.entryFeatures,entryPolicy:o.entryPolicy??position.entryPolicy??{version:'paper-exploration-v1'},exitPolicy:o.exitPolicy??position.exitPolicy??null,scalpSetup:o.scalpSetup??position.scalpSetup??null,exitTrigger:o.exitTrigger??null,baselineAtEntry:o.baseline??position.paperBaseline,relaxedFlagsAtEntry:o.relaxedFlags??position.relaxedFlags,paperMfePct:position.paperMfePct??null,paperMaePct:position.paperMaePct??null,cashAfterSol:s.cashSol,rentLockedSol:s.rentLockedSol,assumptions:PAPER_MODEL};
    trade.sizing=o.sizing??position.sizing??null;if(o.side==='BUY')position.sizing=o.sizing??null;fill.sizing=trade.sizing;
    s.archiveOutbox.push(fill);s.pending=null;

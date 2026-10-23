@@ -74,6 +74,6 @@ const server=http.createServer(async(req,res)=>{try{const url=new URL(req.url,'h
  }catch{json(res,400,{error:'Không thực hiện được yêu cầu; kiểm tra xác thực, mật khẩu hoặc dữ liệu đầu vào.'});}});
 const host=process.env.HOST??(onRailway?'0.0.0.0':'127.0.0.1');
 server.listen(Number(process.env.PORT??3000),host,()=>{if(!auth.origin)auth.origin=`http://127.0.0.1:${server.address().port}`;console.log(`Meme Desk listening on ${host}:${server.address().port} — PAPER 20 SOL / REAL TRADING DISABLED`);refresh();});
-const timers=[setInterval(refresh,SCAN_RULES.intervalMs),setInterval(()=>desk.step({...feed,markets:verification.applyCached(feed.markets)}).catch(()=>{}),2000),setInterval(async()=>{await reports.tick(desk);await telegram.tick(transport);},2000),setInterval(()=>research.flush(),3100)];
+const timers=[setInterval(refresh,SCAN_RULES.intervalMs),setInterval(()=>desk.settleExits({...feed,markets:verification.applyCached(feed.markets)}).catch(()=>{}),500),setInterval(()=>desk.step({...feed,markets:verification.applyCached(feed.markets)}).catch(()=>{}),2000),setInterval(async()=>{await reports.tick(desk);await telegram.tick(transport);},2000),setInterval(()=>research.flush(),3100)];
 async function shutdown(){if(closing)return;closing=true;timers.forEach(clearInterval);server.close();await desk.serial(()=>desk.save());await research.flush();process.exit(0);}
 process.on('SIGTERM',shutdown);process.on('SIGINT',shutdown);

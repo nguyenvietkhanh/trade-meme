@@ -1,11 +1,24 @@
 import {TRADE_RULES} from './desk-rules.js';
 // Research parameters only: no measured edge or promise of profit.
+export const PAPER_NORMAL_HAIRCUT_BPS=150;
 export const SCALP_V1_VERSION='paper-5m-scalp-v1';
 export const SCALP_V2_VERSION='paper-5m-continuation-v2';
-export const SCALP_STRATEGY_VERSION='paper-5m-multi-v3';
-export const isScalpVersion=version=>[SCALP_V1_VERSION,SCALP_V2_VERSION,SCALP_STRATEGY_VERSION].includes(version);
+export const SCALP_V3_VERSION='paper-5m-multi-v3';
+export const SCALP_STRATEGY_VERSION='paper-5m-persistence-v4';
+export const isScalpVersion=version=>[SCALP_V1_VERSION,SCALP_V2_VERSION,SCALP_V3_VERSION,SCALP_STRATEGY_VERSION].includes(version);
 export const SCALP_V1_ENTRY_RULES=Object.freeze({version:SCALP_V1_VERSION,minScore:40,minChange5mPct:5,maxChange5mPct:100,minVolume5mUsd:500,minBuys5m:5,minTrades5m:10,minBuySellRatio:1.1,confirmationGapMs:5000,maxConfirmationGapMs:15000,minPriceRetention:.995,minLiquidityRetention:.9,maxQuoteAgeMs:10000});
-export const SCALP_ENTRY_RULES=Object.freeze({...SCALP_V1_ENTRY_RULES,version:SCALP_STRATEGY_VERSION,maxConfirmationRisePct:TRADE_RULES.buySlippageCapBps/100,requireIncrementalBuyDominance:true});
+export const SCALP_V3_ENTRY_RULES=Object.freeze({...SCALP_V1_ENTRY_RULES,version:SCALP_V3_VERSION,maxConfirmationRisePct:TRADE_RULES.buySlippageCapBps/100,requireIncrementalBuyDominance:true});
+export const SCALP_ENTRY_RULES=Object.freeze({...SCALP_V3_ENTRY_RULES,version:SCALP_STRATEGY_VERSION,minConfirmationObservations:3,minPersistenceMs:10000,maxPersistenceMs:30000,maxModeledRoundTripPct:TRADE_RULES.maxRoundTripCostPct,reentryMs:TRADE_RULES.reentryMs});
+// Screening estimate at unchanged route/price, not another executable quote.
+// The verified exact-size quote gate still applies; AMM nonlinearity is not modeled here.
+export function modeledNormalRoundTripPct(rawLossPct,haircutBps=PAPER_NORMAL_HAIRCUT_BPS){return Number.isFinite(rawLossPct)&&rawLossPct>=0?100*(1-(1-rawLossPct/100)*(1-haircutBps/10000)**2):null;}
+export function persistentContinuation(rows,now=Date.now(),r=SCALP_ENTRY_RULES){
+ if(!Array.isArray(rows)||rows.length!==r.minConfirmationObservations)return false;
+ const first=rows[0],last=rows.at(-1),finite=Number.isFinite;
+ if(!rows.every(x=>x&&[x.at,x.sourceAt,x.priceUsd,x.liquidityUsd].every(finite)&&x.priceUsd>0&&x.liquidityUsd>0&&x.sourceAt<=x.at&&x.at<=now&&Number.isSafeInteger(x.buys5m)&&x.buys5m>=0&&Number.isSafeInteger(x.sells5m)&&x.sells5m>=0))return false;
+ if(now-last.at>r.maxConfirmationGapMs||last.at-first.at<r.minPersistenceMs||last.at-first.at>r.maxPersistenceMs||(last.priceUsd/first.priceUsd-1)*100>r.maxConfirmationRisePct+1e-9)return false;
+ return rows.slice(1).every((x,i)=>{const p=rows[i],gap=x.at-p.at,db=x.buys5m-p.buys5m,ds=x.sells5m-p.sells5m;return gap>=r.confirmationGapMs&&gap<=r.maxConfirmationGapMs&&x.sourceAt>p.sourceAt&&x.priceUsd>p.priceUsd&&x.liquidityUsd>=p.liquidityUsd*r.minLiquidityRetention&&x.liquidityUsd>=first.liquidityUsd*r.minLiquidityRetention&&db>=0&&ds>=0&&db>ds;});
+}
 export function comparePaperEntries(a,b){return number(a.evidence?.roundTripLossPct,Infinity)-number(b.evidence?.roundTripLossPct,Infinity)||number(b.scalpSetup?.netNewBuys,0)-number(a.scalpSetup?.netNewBuys,0)||number(b.score,0)-number(a.score,0)||compare5m(a,b);}
 export const SCALP_EXIT_RULES=Object.freeze({version:SCALP_STRATEGY_VERSION,stopLossPct:12,firstProfitPct:15,firstSellFraction:.5,finalProfitPct:30,trailingPct:8,stallMs:180000,stallGainPct:5,maxHoldMs:600000,maxQuoteAgeMs:10000});
 const number=(x,fallback=-Infinity)=>Number.isFinite(x)?x:fallback;
