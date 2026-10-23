@@ -5,6 +5,48 @@ thật. Không ký/gửi giao dịch hoặc chuyển SOL thật. Bản hiện t�
 để thử giao dịch ngắn, có ghi nhãn so sánh bộ luật gốc; không tự huấn luyện hay
 triển khai tham số mới bằng tiền thật.
 
+## Multi-bot signal desk · `paper-signal-team-v1`
+
+Six deterministic paper signal strategies evaluate the same market snapshots:
+
+| Bot | Additional hypothesis (all v5 safety/entry gates still required) |
+|---|---|
+| NOVA | Reference continuation v5 |
+| ORIN | ≥10 buys/5m, buy/sell ≥1.5, incremental buys ≥2×max(1, incremental sells) |
+| VELA | Verified quote reserve ≥50 SOL |
+| KADE | Estimated round-trip loss including normal model haircuts ≤4.5% |
+| RUNE | 5m gain +5% to +25% |
+| ZARA | 5m gain +25% to +60%, volume ≥$1,500 |
+
+These thresholds are **unvalidated hypotheses**, not fitted optimal settings.
+They only further restrict the v5 universe. Independent signal decisions share
+**one existing 20 SOL book**, executor, verification workers, quote queue, risk
+budget and surveillance admission cap. There are no six extra bank accounts,
+LLM agents, private keys or per-bot polling loops. When multiple bots have a
+candidate, a persisted round-robin cursor grants the next eligible bot a turn;
+within that bot, verified cost/continuation ranking still applies. A held or
+cooldown mint cannot be bought again by another bot. The chosen hypothesis is
+rechecked before and after awaiting the delayed BUY quote. Existing SL/TP,
+modeled costs, sizing, reserve and SELL priority remain unchanged.
+
+`agentId` and `agentPolicyVersion` follow intent → position → every partial/full
+SELL → archived receipt, and survive ledger restart. Lifetime counters track
+partial realized PnL separately from full-position expectancy/profit factor.
+The 23:00 Vietnam report includes per-bot fills, outcomes and signal-stage
+counts; older untagged receipts remain LEGACY and are never assigned invented
+bot history. Attributed results are subject to shared-capital/opportunity
+selection bias, **not independently funded backtests**. At least 100 closed
+positions per hypothesis plus time-separated evaluation/uncertainty assessment
+are needed before performance claims.
+
+The responsive one-viewport console includes measured equity history, per-bot
+cards and fill logs, source/decision details, message-only wallet authentication
+and the full Telegram configuration/test flow. Cards pulse only for actual
+pending BUY/SELL intents. Market LIVE describes fresh source data, never real
+money execution; quote gaps are left as gaps in the chart. Long lists remain
+scrollable inside panels or can be expanded; small screens necessarily show
+fewer individual rows, not the entire ledger at once.
+
 ## Portfolio risk v5 · `paper-5m-risk-v5`
 
 These are **unvalidated research parameters**, not estimates of optimal returns.

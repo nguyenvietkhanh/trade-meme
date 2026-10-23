@@ -50,6 +50,7 @@ test('new entries respect measured surveillance capacity while preserving the 2.
  assert.ok(x.desk.state.trades.every(f=>f.sizing.fraction===.025&&f.strategyVersion===SCALP_STRATEGY_VERSION));
  assert.equal(new Set(x.desk.state.trades.map(f=>f.positionId)).size,3);
  assert.equal(new Set(x.desk.state.positions.map(p=>p.mint)).size,3);
+ assert.equal(new Set(x.desk.state.positions.map(p=>p.agentId)).size,3,'three eligible bots own different positions through one shared book');assert.equal(x.calls.filter(q=>q.side==='BUY').length,6,'three decisions + three delayed BUY quotes, not six independent provider loops');
  assert.equal(paperPortfolioAdmission(x.desk.state,{now:x.now()}).operationalCapacity,3);
 });
 test('40 pre-existing holdings remain intact above the new cap; no capital reset or forced liquidation',async t=>{
