@@ -28,7 +28,7 @@ async function setup(t){
  const desk=new PaperDesk(dir,quotes,{clock:()=>at});await desk.load();let index=0;
  const market=mint=>verifiedMarket({mint,pairAddress:'pool-'+mint,change5mPct:27,priceUsd:.5*150/9000*factor,scalpConfirmed:true,evidence:{decimals:6,probeSol:paperOrderSol(desk.state)}},at);
  const feed=(extra=[])=>({updatedAt:at,solUsd:150,error:null,markets:[...desk.state.positions.map(p=>market(p.mint)),...extra.map(market)]});
- async function enter(){const mint='multi-'+index++;await desk.step(feed([mint]));assert.equal(desk.state.pending?.side,'BUY',JSON.stringify({gate:desk.state.lastPortfolioAdmission,error:desk.state.lastExecutionError,events:desk.state.events.slice(0,2)}));const amount=Number(desk.state.pending.amount)/1e9;at+=2100;await desk.step(feed([mint]));assert.ok(desk.state.positions.some(p=>p.mint===mint));at+=100;return amount;}
+ async function enter(){const mint='multi-'+index++;const entryFeed=feed([mint]);entryFeed.markets=entryFeed.markets.filter(m=>m.mint===mint);await desk.step(entryFeed);assert.equal(desk.state.pending?.side,'BUY',JSON.stringify({gate:desk.state.lastPortfolioAdmission,error:desk.state.lastExecutionError,events:desk.state.events.slice(0,2)}));const amount=Number(desk.state.pending.amount)/1e9;at+=2100;await desk.step(feed([mint]));assert.ok(desk.state.positions.some(p=>p.mint===mint));at+=100;return amount;}
  // Explicit pre-v5 fixture: legacy holdings may exceed the NEW admission cap.
  // They still need real quote-driven exits; this is not a bypass in production.
  async function legacyHoldings(n){await enter();const original=structuredClone(desk.state.positions[0]),receipt=structuredClone(desk.state.trades[0]),round=x=>Math.round(x*1e9)/1e9,s=desk.state;

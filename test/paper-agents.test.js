@@ -82,7 +82,7 @@ test('multiple independent BUY intents reserve common cash/risk, retry without h
 test('each independent strategy has a reachable entry under its own observations, with common unsafe authority still blocking every one',()=>{
  for(const a of PAPER_AGENTS){
   const gain={nova:20,orin:10,vela:3,kade:3,rune:3,zara:40,atlas:3,echo:1,nyx:3,sage:3}[a.id],own={};let latest;
-  for(let i=0;i<3;i++)latest=observeAgentMarkets(own,[verifiedMarket({change5mPct:gain,change1hPct:10,priceUsd:.01*(1+i*.005),buys5m:40+i*3,sells5m:20+i,evidence:{quoteReserveSol:100,roundTripLossPct:1}},at+i*5000)],at+i*5000)[0];
+  for(let i=0;i<3;i++)latest=observeAgentMarkets(own,[verifiedMarket({change5mPct:gain,change1hPct:10,priceUsd:.01*(1+i*.005),buys5m:40+i*3,sells5m:20+i,evidence:{quoteReserveSol:100,roundTripLossPct:1,lpSecuredPct:99}},at+i*5000)],at+i*5000)[0];
   const d=agentSignal(a.id,latest,null,at+10000);assert.equal(d.eligible,true,a.id+': '+d.reason);
   assert.equal(agentSignal(a.id,{...latest,evidence:{...latest.evidence,mintRevoked:false}},null,at+10000).eligible,false,a.id);
  }

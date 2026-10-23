@@ -165,3 +165,9 @@
 @media(prefers-reduced-motion:reduce){.team-dashboard .agent-card,.team-dashboard .agent-card.activity-checked{animation:none!important;transition:none}}
 .team-dashboard #account-panel .panel-head{display:flex}
 .team-dashboard td:nth-child(6),.team-dashboard th:nth-child(6){display:table-cell}
+
+.team-dashboard .bot-risk{grid-column:1/-1;font:11px/1.7 monospace;color:#776c92;white-space:normal;overflow-wrap:anywhere}
+.team-dashboard .comparison-scroll{overflow-x:auto;max-width:100%;scrollbar-width:thin}
+.team-dashboard .comparison-table{min-width:980px;table-layout:auto}
+.team-dashboard .comparison-table th,.team-dashboard .comparison-table td{padding:12px 10px;text-align:left;white-space:nowrap;font-size:11px}
+.team-dashboard .comparison-table td:last-child{font-size:11px;color:#7d8998}

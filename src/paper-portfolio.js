@@ -1,3 +1,4 @@
+import {paperMark} from './paper-identity.js';
 import {paperCapitalSol,paperOrderSol,PAPER_SIZING} from './paper-sizing.js';
 import {SCALP_EXIT_RULES} from './paper-scalp.js';
 
@@ -28,7 +29,7 @@ export function paperPortfolioAdmission(state,{now=Date.now(),orderSol=null,igno
  for(const held of positions){
   const stop=held.exitPolicy?.stopLossPct??state.settings?.stopLossPct??SCALP_EXIT_RULES.stopLossPct;
   const ratio=held.costSol/held.initialCostSol,allocatedBuyFee=finite(held.modeledBuyFeeSol)&&finite(ratio)&&ratio>0?held.modeledBuyFeeSol*ratio:0;
-  const principal=Math.max(0,held.costSol-allocatedBuyFee),mark=state.marks?.[held.mint],quoteFresh=mark?.rawAmount===held.rawQuantity&&finite(mark.netSol)&&mark.netSol>=0&&fresh(mark.checkedAt,now,held.exitPolicy?.maxQuoteAgeMs??p.maxExitQuoteAgeMs);
+  const principal=Math.max(0,held.costSol-allocatedBuyFee),mark=paperMark(state,held),quoteFresh=mark?.rawAmount===held.rawQuantity&&finite(mark.netSol)&&mark.netSol>=0&&fresh(mark.checkedAt,now,held.exitPolicy?.maxQuoteAgeMs??p.maxExitQuoteAgeMs);
   if(!finite(held.costSol)||held.costSol<=0||!finite(stop)||stop<=0||stop>=100||!finite(principal))valid=false;
   // A missing quote is unknown exposure: charge full principal, never zero risk.
   const nominal=principal*stop/100,currentLoss=quoteFresh?Math.max(0,held.costSol-mark.netSol):principal;

@@ -425,3 +425,65 @@ checked again after quote/RPC reads so a delayed response cannot create a late
 fill. Pending status shows elapsed seconds, retry count and a fixed failure code;
 recent execution failures are visible alongside the scan decisions. The 2s delay,
 three-attempt limit and existing slippage/expiry limits are unchanged.
+
+### Independent paper risk experiment (`paper-independent-risk-v3`)
+
+All ten deterministic strategies read the same market universe. Equal evaluated
+counts mean shared observations, not consensus or copied decisions. Each owns
+its confirmation history, entry hypothesis, safety thresholds, exit policy,
+proposal, position lots, 24-hour mint cooldown and policy-cohort statistics.
+These are programmed strategies, not ten LLMs or automatically trained models.
+
+| Bot | Hypothesis | Net stop | Verified reserve SOL | Top 10 / largest holder | LP secured | Entry quote impact, each way |
+| --- | --- | --- | --- | --- | --- | --- |
+| NOVA | Continuation | 12% | 20 | 35% / 8% | 90% | 2% |
+| ORIN | Incremental buy dominance | 10% | 30 | 30% / 6% | 95% | 1.5% |
+| VELA | Deep liquidity | 8% | 100 | 20% / 4% | 98% | 1% |
+| KADE | Low execution cost | 8% | 40 | 30% / 6% | 95% | 1% |
+| RUNE | Early acceleration | 9% | 25 | 35% / 7% | 90% | 1.75% |
+| ZARA | High-volume breakout | 12% | 25 | 33% / 7.5% | 92% | 1.9% |
+| ATLAS | H1 trend alignment | 10% | 60 | 25% / 5% | 98% | 1.25% |
+| ECHO | Confirmed recovery | 8% | 50 | 25% / 5% | 95% | 1.25% |
+| NYX | Volume expansion | 10% | 35 | 30% / 6% | 95% | 1.5% |
+| SAGE | Quiet accumulation | 7% | 75 | 20% / 4% | 99% | 1% |
+
+Creator concentration must be known and within the profile limit (2–5%). Order
+size / verified reserve is capped per profile (0.75–2%). Missing facts block that
+profile; missing quote facts do not block fetching their own quote. All common
+authority, token program, RugCheck, exact-size proof and execution limits remain.
+These values define prospective experiments; they were not fitted or validated
+as profitable on the historical ledger. Stronger filters may reduce sample size.
+
+The portfolio still has **one** virtual 20 SOL account, a 0.1 SOL reserve and
+2.5% accounting-capital allocation per entry. The shared risk/SELL-surveillance
+budget limits simultaneous holdings (baseline about four); ten active decision
+makers do not imply ten open positions. Capital mutations and quote requests
+remain coordinated to prevent overspending and provider bursts. Failed entry
+benchmarks advance the fair rotation. Strategies may hold the same mint using
+separate lots; one strategy's SELL cannot close another's lot. Such overlapping
+positions have correlated exposure. The quote-based simulation does not replay
+its own price impact into the next fill, model MEV or guarantee a stop price.
+
+The dashboard comparison is for the **current policy cohort**. Entry/exit/risk
+policies are pinned to receipts and positions; old trades are not relabeled.
+Net margin = full closed-position net PnL / summed initial cost of those closed
+positions. Partial SELLs contribute realized PnL as they occur, but the initial
+basis is counted once at final closure. Missing historical basis yields unknown
+margin. Per-bot drawdown is explicitly the absolute SOL drawdown of realized
+SELL PnL, excluding unrealized exposure; account equity drawdown is separate.
+Shared capital/opportunity selection means these are attributed results, not ten
+independently funded backtests. Do not choose a winner below 100 closed positions
+per current profile; larger samples also require out-of-time validation.
+
+Paper Telegram reports now queue at **23:59 Asia/Ho_Chi_Minh**, with all ten bots
+in a separate summary message (including zero-trade bots), plus complete JSON
+archives. The table shows realized SELL PnL during the interval; expectancy/PF
+and margin describe complete positions closed in it, including any earlier
+partial exits. Older policy results are separated in JSON. Reports exclude
+unrealized PnL and disclose any current valuation separately. Intervals are
+`[previous cutoff, cutoff)`, not a midnight-to-midnight calendar day. Migrating
+from the old 23:00 checkpoint emits a short transition interval without losing
+or double-counting fills. Legacy report references remain readable. Credentials
+must be configured/unlocked, the service must be running and Telegram delivery
+must succeed; enqueue time is not a promise of exact delivery time. Without a
+Railway Volume, ledger/report persistence across deployment is not assured.

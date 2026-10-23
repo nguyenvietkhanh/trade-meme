@@ -111,7 +111,7 @@ export function sell(state,m,solUsd,now=Date.now(),reason='manual',fraction=1){
 }
 export function recordSell(state,m,solUsd,fill,now=Date.now(),reason='manual',mode='paper'){
  clearLegacyLossPause(state);clearLegacyDrawdownHalt(state);
- const p=state.positions.find(p=>p.mint===m.mint);if(!p)throw Error('Không có vị thế cho fill.');
+ const p=state.positions.find(p=>p.mint===m.mint&&(fill.positionId===undefined||p.paperPositionId===fill.positionId));if(!p)throw Error('Không có vị thế cho fill.');
  const fraction=fill.closed?1:Math.min(1,fill.quantity/p.quantity),quantity=p.quantity*fraction,proceeds=fill.proceedsSol,allocatedCost=p.costSol*fraction,allocatedUsd=p.costUsd*fraction;
  if(!(fraction>0&&fraction<=1&&proceeds>=0))throw Error('Fill bán không hợp lệ.');
  const pnlSol=proceeds-allocatedCost;
