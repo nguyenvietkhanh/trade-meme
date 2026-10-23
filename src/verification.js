@@ -41,13 +41,13 @@ export function rugEvidence(report,market,now=Date.now()){
 }
 export class VerificationFeed{
  constructor(fetcher=globalThis.fetch,execution=null,options={}){
-  const {rankMarket:analyst=rankMarket,ignoreH4=false,compareCandidates=null,cacheMs=VERIFICATION_CACHE_MS,quoteTracked=true,requireConfirmedQuote=false,...providerOptions}=options;this.rank=analyst;this.ignoreH4=ignoreH4;this.quoteTracked=quoteTracked;this.requireConfirmedQuote=requireConfirmedQuote;this.compareCandidates=compareCandidates;if(!Number.isFinite(cacheMs)||cacheMs<SCAN_RULES.intervalMs||cacheMs>VERIFICATION_CACHE_MS)throw Error('Invalid verification cache lifetime');this.cacheMs=cacheMs;
+  const {rankMarket:analyst=rankMarket,ignoreH4=false,compareCandidates=null,cacheMs=VERIFICATION_CACHE_MS,quoteTracked=true,requireConfirmedQuote=false,canInspectCandidate=()=>true,...providerOptions}=options;this.rank=analyst;this.ignoreH4=ignoreH4;this.quoteTracked=quoteTracked;this.requireConfirmedQuote=requireConfirmedQuote;this.canInspectCandidate=canInspectCandidate;this.compareCandidates=compareCandidates;if(!Number.isFinite(cacheMs)||cacheMs<SCAN_RULES.intervalMs||cacheMs>VERIFICATION_CACHE_MS)throw Error('Invalid verification cache lifetime');this.cacheMs=cacheMs;
   this.fetcher=fetcher;this.reportFetch=backoffFetch(fetcher,{provider:'RugCheck',...providerOptions});this.structureFetch=backoffFetch(fetcher,{provider:'OHLCV',...providerOptions});this.execution=execution;
   this.cache=new Map();this.reports=new Map();this.facts=new Map();this.structures=new Map();this.jobs=new Map();this.h4Memory=new Map();
  }
- targets(markets,tracked,now){return markets.filter(m=>m.dexId==='pumpswap'&&!isPumpCurve(m)&&(tracked.includes(m.mint)||this.rank(m,undefined,now).roughEligible));}
+ targets(markets,tracked,now){return markets.filter(m=>m.dexId==='pumpswap'&&!isPumpCurve(m)&&(tracked.includes(m.mint)||this.canInspectCandidate(m)&&this.rank(m,undefined,now).roughEligible));}
  // Read completed metadata only; keep the market's own price/source timestamps.
- quoteReady(m,value,now){if(!this.requireConfirmedQuote||value?.verificationError)return false;const r=this.rank({...m,...value},undefined,now),size=this.execution?.currentProbeSol,changed=Number.isFinite(size)&&size>0&&Math.abs((value?.evidence?.probeSol??0)-size)>1e-9;return r.preQuoteEligible&&!r.red_flags.includes('UNCONFIRMED_SIGNAL')&&(changed||r.red_flags.some(f=>['ROUND_TRIP_UNVERIFIED','QUOTE_STALE'].includes(f)));}
+ quoteReady(m,value,now){if(!this.requireConfirmedQuote||value?.verificationError||!this.canInspectCandidate(m))return false;const r=this.rank({...m,...value},undefined,now),size=this.execution?.currentProbeSol,changed=Number.isFinite(size)&&size>0&&Math.abs((value?.evidence?.probeSol??0)-size)>1e-9;return r.preQuoteEligible&&!r.red_flags.includes('UNCONFIRMED_SIGNAL')&&(changed||r.red_flags.some(f=>['ROUND_TRIP_UNVERIFIED','QUOTE_STALE'].includes(f)));}
  applyCached(markets){return markets.map(m=>{const value=this.cache.get(m.mint+':'+m.pairAddress)?.value;return value?{...m,verificationError:null,...value}:{...m};});}
  async enrichCached(markets,tracked=[],now=Date.now()){
   const checkedAt=m=>this.cache.get(m.mint+':'+m.pairAddress)?.at??0;
@@ -89,7 +89,7 @@ export class VerificationFeed{
      if(facts)value.evidence={...value.evidence,...facts.value,checkedAt:Math.min(value.evidence.rugFetchedAt,facts.at),mint:m.mint,pairAddress:m.pairAddress,source:'rugcheck+solana-rpc'};
      // No quote for a cheap-filter failure, unsafe holders/LP/program, or a score below entry.
      const quoteRank=this.rank({...m,evidence:value.evidence,verificationError:null},undefined,Date.now());
-     if((this.quoteTracked||!tracked.includes(m.mint))&&this.execution.inspectMarketQuote&&quoteRank.preQuoteEligible&&(!this.requireConfirmedQuote||!quoteRank.red_flags.includes('UNCONFIRMED_SIGNAL'))){
+     if((this.quoteTracked||!tracked.includes(m.mint))&&this.canInspectCandidate(m)&&this.execution.inspectMarketQuote&&quoteRank.preQuoteEligible&&(!this.requireConfirmedQuote||!quoteRank.red_flags.includes('UNCONFIRMED_SIGNAL'))){
       failureStage='Jupiter quote vòng';const proof=await this.execution.inspectMarketQuote(m);value.evidence={...value.evidence,...proof,source:'rugcheck+solana-rpc+jupiter'};
      }
     }catch(error){value.verificationError=providerFailure(failureStage,error);}

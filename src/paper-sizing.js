@@ -1,6 +1,7 @@
 import {TRADE_RULES,canFundBuy} from './desk-rules.js';
+import {SCALP_EXIT_RULES} from './paper-scalp.js';
 
-export const PAPER_SIZING=Object.freeze({version:'paper-capital-2p5-v1',fraction:.025,reserveSol:.1,overheadSol:.005,minOrderSol:.0025,basis:'cash + locked rent + remaining position cost; unrealized gains excluded'});
+export const PAPER_SIZING=Object.freeze({version:'paper-capital-2p5-risk-v2',fraction:.025,riskPerTradeFraction:.003,reserveSol:.1,overheadSol:.005,minOrderSol:.0025,basis:'cash + locked rent + remaining position cost; unrealized gains excluded'});
 // Cost basis avoids forcing a synchronous quote of every holding before a BUY.
 // It is an allocation reference, not a claim that stale holdings are worth their cost.
 export function paperCapitalSol(state){
@@ -14,6 +15,7 @@ export function paperOrderSol(state){
  const cash=typeof state==='number'?state:state?.cashSol,capital=paperCapitalSol(state);
  if(!Number.isFinite(cash)||cash<0||!capital)return 0;
  const available=Math.floor(cash*1e9+1e-6)-Math.round((PAPER_SIZING.reserveSol+PAPER_SIZING.overheadSol)*1e9);
- const amount=Math.min(Math.floor(Math.round(capital*1e9)/40),available),size=amount/1e9;
+ const capitalLamports=Math.round(capital*1e9),byRisk=Math.floor(capitalLamports*PAPER_SIZING.riskPerTradeFraction/(SCALP_EXIT_RULES.stopLossPct/100));
+ const amount=Math.min(Math.floor(capitalLamports/40),byRisk,available),size=amount/1e9;
  return size>=PAPER_SIZING.minOrderSol&&canFundBuy(cash,size,TRADE_RULES.reserveSol,PAPER_SIZING.overheadSol)?size:0;
 }

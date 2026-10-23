@@ -5,7 +5,7 @@ thật. Không ký/gửi giao dịch hoặc chuyển SOL thật. Bản hiện t�
 để thử giao dịch ngắn, có ghi nhãn so sánh bộ luật gốc; không tự huấn luyện hay
 triển khai tham số mới bằng tiền thật.
 
-## Persistence v4 · `paper-5m-persistence-v4`
+## Portfolio risk v5 · `paper-5m-risk-v5`
 
 These are **unvalidated research parameters**, not estimates of optimal returns.
 The dashboard and discovery shortlist rank observed PumpSwap pools by 5-minute
@@ -24,7 +24,9 @@ remain in use; there is no undocumented gainers endpoint or new paid data feed.
 | Score | ≥40; momentum 30, flow 25, acceleration 20, depth 15, cost 10; wash/boost penalties retained |
 | Confirmation | Three actual snapshots spanning 10–30s, each 5–15s apart: price rises on each leg and ≤4% overall, nonnegative rolling buy/sell deltas with buys > sells on BOTH legs; intermediate price retention ≥99.5%, liquidity retention ≥90% |
 | Security / execution gates | Existing authority, token program/extensions, LP, holders, cap/depth, round-trip ≤6%, impact ≤2%, real quote and capital checks retained |
-| Allocation | 2.5% of accounting capital (cash + locked rent + remaining position cost); bounded by cash after 0.1 SOL reserve + 0.005 SOL overhead. No fixed position count or 0.6 SOL order cap. |
+| Allocation | min(2.5% accounting capital, 0.3% capital / current stop fraction, available cash after 0.1 SOL reserve + 0.005 SOL overhead). No 0.6 SOL cap. |
+| Portfolio admission | 1.5% accounting-capital nominal open-risk budget. Fresh exact-amount SELL marks required; current quote losses can increase the charge above nominal stop risk. Missing marks are charged as full principal, never zero. |
+| Surveillance capacity | 10s freshness / measured p95 monitor cadence, with one slot reserved where possible. Baseline 2s tick allows 4 holdings; slower reads/dispatch lower this, potentially to zero. Existing holdings are never force-closed solely because capacity decreases. |
 | Modeled cost screen | Existing raw round-trip ≤6% AND estimated normal loss including 1.5% modeled execution each way ≤6%. Multiplicative unchanged-route estimate, not an additional executable quote. |
 | Reentry | Same mint blocked for 24h after ANY complete close, including profitable exits. |
 | Stop | −12% using net executable SELL quote against allocated cost |
@@ -65,7 +67,7 @@ Stops are evaluated against fresh SELL quotes at the time the read completes.
 A pending BUY cannot suppress held-position monitoring: a triggered exit replaces
 it, and missing exit quotes cancel the unfilled entry. Scalp SOL exits can trigger
 and fill without a fresh DexScreener price or SOL/USD quote. Missing USD values
-remain null; no current USD price is fabricated from entry prices. Each BUY and all of its partial/final SELL fills share a stable `positionId` for audit/training. Each position can queue its own SELL. A delayed/retrying SELL does not prevent checking other holdings or filling another ready SELL; at most one exit per mint is queued. Actual fills and quote reads remain serialized within provider limits. New entries no longer require every holding to have a fresh quote: accounting capital is used for allocation while equity/PnL stay unknown when quotes are stale. Multiple positions and provider outages can still delay exits; no hard stop execution guarantee is claimed.
+remain null; no current USD price is fabricated from entry prices. Each BUY and all of its partial/final SELL fills share a stable `positionId` for audit/training. Each position can queue its own SELL. A delayed/retrying SELL does not prevent checking other holdings or filling another ready SELL; at most one exit per mint is queued. Actual fills and quote reads remain serialized within provider limits. Accounting capital is used for the allocation target, while equity/PnL stay unknown when quotes are stale. V5 defers additional BUYs until held-position exit quotes are fresh. Multiple positions and provider outages can still delay exits; no hard stop execution guarantee is claimed.
 
 The original 12% stop, +15%/+30% profit exits, 8% trailing, 3-minute stall,
 10-minute hold remain. Position sizing is now the requested 2.5% allocation. The emergency 10% haircut stress
@@ -79,7 +81,53 @@ provider calls. They are conditional on the evidence collected by v4, not a
 separately funded v3 strategy. Historical v4 expectancy/PF/drawdown cannot be
 replayed from the uploaded shortened ledger. Collect ≥100 closed v4 positions,
 retain missing observations, compare later time periods and calibrate the fill
-model before any promotion to real funds. Production remains paper-only. The v4 evidence and limitations are detailed below.
+model before any promotion to real funds. Production remains paper-only. The historical v4 research and the operational v5 policy are detailed below.
+
+## Solana portfolio admission v5
+
+This revision learns separation of responsibilities and deterministic risk math
+from the shared example. It does not use EVM RPC, Uniswap, owner(), WETH thresholds,
+15-minute scans, manual made-up PnL or signing agents. PumpSwap/Solana program,
+authority, vault, holder, LP and exact-size Jupiter safety checks remain in place.
+The v4 three-observation persistence and cost filters, SL/TP, 2.5% allocation,
+fee/rent assumptions and 4%/3%/10% slippage caps remain.
+
+At 20 SOL, the allocation target is 0.5 SOL. A 12% nominal stop makes the per-trade
+nominal risk 0.06 SOL (0.3% of capital), not 2.5%. The open nominal-risk budget is
+1.5% of accounting capital = five such risk units; this is a conservative research
+policy derived from existing allocation/stop and the five theoretical 2s quote
+slots within 10s, not a fitted optimum. Operational admission is more restrictive:
+one slot is held back where possible. Retired daily/streak/drawdown halts stay off.
+
+For every holding, admission charges max(remaining principal × its pinned stop,
+current quoted loss). Allocated modeled BUY fees are removed from remaining
+principal when known; old holdings without fee evidence are charged conservatively.
+A missing, future, stale or wrong-quantity quote charges the entire remaining
+principal and defers new entries. Already-triggered stops defer new entries too.
+A pending BUY reserves its risk; its own post-delay recheck excludes that same
+reservation. Capital and admission are checked again after the fill quote returns.
+This cannot guarantee loss limits during gaps, rug events or failed SELL routes.
+
+The monitor records recent quote latency, actual spacing between monitor attempts
+and failures. Capacity uses the worse of the 2s base tick, p95 dispatch spacing,
+and p95 read latency over a five-minute window. It is an estimate, not an execution
+SLA or an independent provider quota. A successful exit read recovers the provider
+health gate. Final closure clears the monitor timestamp so idle hours cannot be
+mistaken for a slow active quote loop. Existing quantities, pinned exits, pending
+SELLs and PnL are preserved across an upgrade; no liquidation occurs to meet a cap.
+
+When admission is blocked, new candidate on-chain/quote probes are deferred while
+held-position safety checks, exit monitoring and passive market labels continue.
+The already-pending BUY may refresh its own proof if its admission still passes.
+The UI distinguishes token eligibility from portfolio rejection, exposes the risk
+budget/capacity and deferral code, and keeps the one-viewport layout. Daily report
+JSON and new fills retain the policy and admission snapshot. Simultaneous −50% and
+−90% shocks to held principal are disclosed separately, before fees/impact; these
+are arithmetic scenarios, not full stress-path backtests.
+
+No v5 market performance is available. The old 50-position ledger still describes
+v3 and cannot validate these admission thresholds. Collect ≥100 closed v5 positions
+and examine a later period before any claim of improved expectancy or drawdown.
 
 ## Evidence for v4 (uploaded 23 October 2026)
 
@@ -129,9 +177,7 @@ Minimum order is 0.0025 SOL: two modeled network fees at this size already consu
 2%, leaving the existing 6% quote-cost budget within the 8% total entry-cost cap.
 Current quote/impact/capital gates still decide whether any token can enter.
 
-At unchanged starting capital, 39 full 0.5 SOL orders plus one clipped order can
-fit after modeled fees/rent. This is a capital calculation, not a promise of 40
-simultaneous opportunities. Normal entries use the v4 persistence/cost rules and existing safety checks;
+At unchanged starting capital, cash alone could fund 39 full 0.5 SOL orders and one clipped order. V5 does not admit that many: portfolio risk and observed SELL-surveillance capacity also apply. Normal entries retain the v4 persistence/cost rules with the v5 portfolio gate;
 no unsafe tokens or fake fills are added to increase sample count.
 
 Fresh market prices and LP/dev alerts prioritize exact SELL quote checks, with an
