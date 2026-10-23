@@ -41,7 +41,7 @@ test('exit provider failure prevents additional BUYs and a later successful read
  const s=newPaperState(now);recordExitSurveillance(s,{at:now,completedAt:now,ok:false});assert.equal(paperPortfolioAdmission(s,{now}).code,'EXIT_PROVIDER_UNAVAILABLE');recordExitSurveillance(s,{at:now,completedAt:now,ok:true});assert.equal(paperPortfolioAdmission(s,{now}).allowed,true);
 });
 test('pending BUY principal/risk is reserved and its own post-delay recheck does not count it twice',()=>{
- const s=newPaperState(now);s.pending={id:'intent',side:'BUY',amount:'500000000'};const a=paperPortfolioAdmission(s,{now});assert.equal(a.code,'PENDING_ENTRY');assert.equal(a.pendingRiskSol,.06);const own=paperPortfolioAdmission(s,{now,ignorePendingId:'intent'});assert.equal(own.pendingRiskSol,0);assert.equal(own.allowed,true);
+ const s=newPaperState(now);s.pending={id:'intent',side:'BUY',amount:'500000000'};const a=paperPortfolioAdmission(s,{now});assert.equal(a.code,'READY');assert.equal(a.reservedEntries,1);assert.equal(a.reservedPrincipalSol,.5);assert.equal(a.pendingRiskSol,.06);const own=paperPortfolioAdmission(s,{now,ignorePendingId:'intent'});assert.equal(own.pendingRiskSol,0);assert.equal(own.allowed,true);
 });
 test('invalid risk data is rejected and portfolio checks never reactivate retired account halts',()=>{
  const s=newPaperState(now);held(s,{stop:NaN});assert.equal(paperPortfolioAdmission(s,{now}).code,'PORTFOLIO_DATA_INVALID');assert.equal(s.settings.maxDailyLossSol,null);assert.equal(s.settings.maxDrawdownPct,null);assert.equal(s.settings.lossStreakLimit,null);assert.equal(s.running,true);

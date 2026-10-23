@@ -16,6 +16,7 @@ function update(value){
  if(value.scanning)remote.push({panels:['gainers-panel','scanner-panel'],active:true,label:'Đang quét thị trường'});
  for(const row of value.verification??[])remote.push({panels:['gainers-panel','scanner-panel'],mint:row.mint,roles:['candidate','decision'],active:true,label:'Đang kiểm tra an toàn token'});
  for(const row of value.market?.active??[]){const sell=row.kind==='SELL',buy=row.kind==='BUY',quote=sell||buy;remote.push({panels:quote?['positions-panel','gainers-panel']:['gainers-panel','scanner-panel'],mint:row.mint,roles:['position','candidate','decision'],active:true,tone:sell?'sell':'work',label:quote?`Đang lấy quote ${row.kind}`:'Đang xác minh token / quote vòng'});}
+ for(const pending of value.pendingEntries??[])remote.push({panels:['positions-panel'],mint:pending.mint,roles:['candidate','position'],active:true,label:'BUY trong hàng chờ riêng'});
  if(value.pending)remote.push({panels:['account-panel','positions-panel','trades-panel'],mint:value.pending.mint,roles:['position','candidate','trade'],active:true,tone:value.pending.side==='SELL'?'sell':'work',label:value.pending.label??`Đang chờ khớp ${value.pending.side} mô phỏng`});
  if(value.reporting||value.telegram)remote.push({panels:['telegram-panel'],active:true,label:value.telegram?'Đang gửi Telegram':'Đang lập báo cáo'});
  if(primed){if(value.scanCompletedAt&&value.scanCompletedAt!==previous?.scanCompletedAt)flash('scan:'+value.scanCompletedAt,{panels:['scanner-panel','gainers-panel'],label:'Đã cập nhật vòng quét'});

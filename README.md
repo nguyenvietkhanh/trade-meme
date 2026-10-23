@@ -5,60 +5,89 @@ thật. Không ký/gửi giao dịch hoặc chuyển SOL thật. Bản hiện t�
 để thử giao dịch ngắn, có ghi nhãn so sánh bộ luật gốc; không tự huấn luyện hay
 triển khai tham số mới bằng tiền thật.
 
-## Multi-bot signal desk · `paper-signal-team-v1`
+## Independent ten-strategy desk · `paper-independent-ten-v2`
 
-Six deterministic paper signal strategies evaluate the same market snapshots:
+All ten deterministic paper strategies evaluate the same source snapshot in each
+scan, using separate observation histories, entry thresholds, candidate rankings,
+proposals and pinned exit policies. They do **not** require NOVA to approve a
+market. They are programmed research strategies, not ten LLMs or trained models.
 
-| Bot | Additional hypothesis (all v5 safety/entry gates still required) |
-|---|---|
-| NOVA | Reference continuation v5 |
-| ORIN | ≥10 buys/5m, buy/sell ≥1.5, incremental buys ≥2×max(1, incremental sells) |
-| VELA | Verified quote reserve ≥50 SOL |
-| KADE | Estimated round-trip loss including normal model haircuts ≤4.5% |
-| RUNE | 5m gain +5% to +25% |
-| ZARA | 5m gain +25% to +60%, volume ≥$1,500 |
+| Bot | Own market hypothesis | Stop / first TP / final TP | Stall / max hold |
+|---|---|---|---|
+| NOVA | Continuation, 5m +5–100%, three snapshots | 12% / 15% / 30% | 3m / 10m |
+| ORIN | 5m +1–45%, ≥10 buys, buy/sell ≥1.8, incremental buys ≥2×max(1, incremental sells), volume ≥$1,000 | 10% / 12% / 25% | 2m / 8m |
+| VELA | 5m +0.5–25%, verified SOL reserve ≥75 | 8% / 10% / 20% | 4m / 10m |
+| KADE | 5m +1–30%, estimated round trip including normal model ≤4.5% | 8% / 8% / 16% | 2m / 5m |
+| RUNE | 5m +1–15%, buy/sell ≥1.2, two real snapshots ≥5s apart with rising price and observed buy-count dominance | 9% / 10% / 20% | 1.5m / 5m |
+| ZARA | 5m +20–100%, volume ≥$2,000, ≥10 buys/15 trades, buy/sell ≥1.4 | 12% / 18% / 36% | 2m / 8m |
+| ATLAS | 5m 0–20%, 0 < H1 ≤60%, volume ≥$750 | 10% / 15% / 30% | 4m / 10m |
+| ECHO | 5m −5–5%, H1 >0, confirmed short recovery +0.25–2% | 8% / 10% / 20% | 2m / 6m |
+| NYX | 5m +1–30%, volume ≥$2,000 and ≥2× average 5m volume in the prior 55m | 10% / 12% / 24% | 2.5m / 7m |
+| SAGE | 5m 0–10%, H1 −5–10%, SOL reserve ≥50, modeled round trip ≤5% | 7% / 8% / 16% | 4m / 8m |
 
-These thresholds are **unvalidated hypotheses**, not fitted optimal settings.
-They only further restrict the v5 universe. Independent signal decisions share
-**one existing 20 SOL book**, executor, verification workers, quote queue, risk
-budget and surveillance admission cap. There are no six extra bank accounts,
-LLM agents, private keys or per-bot polling loops. When multiple bots have a
-candidate, a persisted round-robin cursor grants the next eligible bot a turn;
-within that bot, verified cost/continuation ranking still applies. A held or
-cooldown mint cannot be bought again by another bot. The chosen hypothesis is
-rechecked before and after awaiting the delayed BUY quote. Existing SL/TP,
-modeled costs, sizing, reserve and SELL priority remain unchanged.
+Except RUNE, confirmation uses three real snapshots over 10–30s. Every profile
+retains new data, price continuation, nonnegative rolling trade-count deltas,
+buy dominance, ≥90% liquidity retention and at most 4% confirmation rise (ECHO
+at most 2%). Buy counts are not independent wallets. Common cap, actual pool,
+SPL authorities/extensions, LP, holders, RugCheck, quote age/size/impact and
+slippage checks remain mandatory. The discovery/verification rank is a union
+of the ten strategies; a confirmed RUNE can request a quote while NOVA waits.
+Discovery never requires future confirmation or not-yet-fetched reserve facts.
 
-`agentId` and `agentPolicyVersion` follow intent → position → every partial/full
-SELL → archived receipt, and survive ledger restart. Lifetime counters track
-partial realized PnL separately from full-position expectancy/profit factor.
-The 23:00 Vietnam report includes per-bot fills, outcomes and signal-stage
-counts; older untagged receipts remain LEGACY and are never assigned invented
-bot history. Attributed results are subject to shared-capital/opportunity
-selection bias, **not independently funded backtests**. At least 100 closed
-positions per hypothesis plus time-separated evaluation/uncertainty assessment
-are needed before performance claims.
+These are **unvalidated heuristics**, not optimal parameters or profit evidence.
+Earlier entry/two-snapshot RUNE can admit more noise; tighter stops can increase
+turnover and fees; H1/volume/depth data can be missing, delayed or manipulated.
+All stops are ≤12%; all model cost budgets ≤6%, quote freshness ≤10s and holds
+≤10m. Stop thresholds do not guarantee fills or maximum realized loss.
 
-The responsive one-viewport console includes measured equity history, per-bot
-cards and fill logs, source/decision details, message-only wallet authentication
-and the full Telegram configuration/test flow. Cards pulse only for actual
-pending BUY/SELL intents. Market LIVE describes fresh source data, never real
-money execution; quote gaps are left as gaps in the chart. Long lists remain
-scrollable inside panels or can be expanded; small screens necessarily show
-fewer individual rows, not the entire ledger at once.
+One existing **20 SOL virtual book** funds all strategies. Independent proposals
+reserve no money; accepted BUY intents reserve principal, fee/rent overhead,
+risk and surveillance slots. There is an active intent plus a persistent
+`pendingEntries` queue; failed/retrying BUYs rotate behind healthy due intents.
+At most two benchmark attempts per scheduler tick, from different agents/mints,
+use the existing provider queue/backoff. SELL can preempt an active BUY without
+erasing its queue. Financial mutation and actual quote reads remain serialized
+to avoid double spending; shared-provider outages can still delay everyone.
+All ten continue publishing decisions while other agents wait for execution.
 
-## Portfolio risk v5 · `paper-5m-risk-v5`
+A persisted fair allocator rotates opportunities; each agent can own one newly
+opened position and a mint cannot be duplicated across the shared book. Existing
+legacy holdings are managed even if they exceed these admission limits. Current
+surveillance capacity is about four total positions at the baseline cadence,
+possibly fewer when slow, **not ten forced simultaneous positions**. Existing
+2.5% allocation, 0.1 SOL reserve, 1.5% nominal portfolio risk and disabled
+account drawdown/daily/streak halts remain. Reserved funds cannot be spent by
+another intent, including its post-delay recheck.
+
+`agentId` / `agentPolicyVersion` follow each intent, holding and partial/full
+sale. Old holdings retain pinned exits; unfilled old-policy team BUY intents
+are canceled without changing cash or receipts. Lifetime counters remain, while
+new-policy metrics are separate (`agentPolicyStats`). Daily 23:00 Vietnam JSON
+reports contain `byAgent` and `byAgentPolicy`, plus each profile's signal-stage
+counts. Attributed cohorts share opportunity/capital selection bias; they are
+not independently funded strategy backtests. No old fill is assigned a new bot.
+At least 100 closes per current hypothesis and out-of-time/statistical validation
+are needed for any performance conclusion. No true-market profit claim is made.
+
+The one-viewport console shows all ten cards with evaluated/eligible counts,
+phase, own proposal, execution-wait reason, entry/exit rules and PnL details.
+Wallet message-only authentication and full Telegram configuration/test/reporting
+remain available. Long lists scroll internally or expand in a dialog. Pulse
+means an actual pending intent; a bot with no qualifying signal never gets a
+fabricated order just to animate its card.
+
+## NOVA reference and shared portfolio risk · `paper-5m-risk-v5`
 
 These are **unvalidated research parameters**, not estimates of optimal returns.
-The dashboard and discovery shortlist rank observed PumpSwap pools by 5-minute
-percent gain descending. Executable entries additionally require recent price
+The dashboard radar ranks observed PumpSwap pools by 5-minute
+percent gain descending. NOVA reference entries additionally require recent price
 continuation with positive observed buy-count imbalance, and prefer lower
 verified round-trip loss before incremental flow and score. This is a rank within the bot's discovery universe,
 **not** an integration of DexScreener's entire in-app New Gainers table. The same
 DexScreener/GeckoTerminal discovery, RugCheck, Jupiter and configured RPC sources
 remain in use; there is no undocumented gainers endpoint or new paid data feed.
 
-| Rule | New paper entries |
+| Rule | NOVA reference / shared capital checks |
 |---|---|
 | Five-minute gain | +5% to +100% |
 | Volume / activity 5m | ≥$500, ≥5 buys, ≥10 trades, buy/sell ratio ≥1.1 |

@@ -56,3 +56,14 @@
 @media(prefers-reduced-motion:reduce){.team-dashboard .agent-card{animation:none!important;transition:none}}
 .team-dashboard .dashboard{grid-template-columns:minmax(0,1fr)}
 .team-dashboard .agent-team,.team-dashboard .agent-comms p{min-width:0}
+/* Ten simultaneous strategy states, five columns and two rows. */
+.team-dashboard .dashboard{grid-template-rows:46px 86px auto minmax(0,1fr) 164px 18px}
+.team-dashboard .agent-grid{grid-template-columns:repeat(5,minmax(0,1fr));grid-template-rows:repeat(2,minmax(0,1fr));gap:6px}
+.team-dashboard .agent-card{grid-template-columns:26px minmax(0,1fr);padding:6px 9px;gap:3px 7px}
+.team-dashboard .bot-face{width:26px;height:26px}.team-dashboard .agent-stats{font-size:7px}
+@media(max-width:1200px){.team-dashboard .dashboard{grid-template-rows:42px 78px auto minmax(0,1fr) 150px 17px}}
+@media(max-width:800px){.team-dashboard .agent-card{grid-template-columns:1fr;padding:4px 6px;text-align:left}.team-dashboard .agent-stats{flex-direction:row;grid-column:1}.team-dashboard .bot-face{display:none}}
+@media(max-width:600px){.team-dashboard .dashboard{grid-template-rows:35px 102px auto minmax(0,1fr) 138px 15px}.team-dashboard .agent-grid{grid-template-columns:repeat(5,minmax(0,1fr));gap:4px}.team-dashboard .agent-card{grid-template-columns:1fr;padding:5px 4px;gap:3px;text-align:center}.team-dashboard .bot-face{display:none}.team-dashboard .agent-card strong{font-size:7px;letter-spacing:.5px}.team-dashboard .bot-phase{font-size:5px}.team-dashboard .agent-stats{grid-column:1;flex-direction:column;font-size:5px;gap:2px}.team-dashboard .agent-id{font-size:4px}}
+@media(max-height:680px) and (min-width:601px){.team-dashboard .dashboard{grid-template-rows:32px 65px auto minmax(0,1fr) 118px 14px}.team-dashboard .agent-card{padding:4px 6px;grid-template-columns:1fr;gap:2px}.team-dashboard .bot-face{display:none}.team-dashboard .agent-stats{grid-column:1}.team-dashboard .agent-card strong{font-size:8px}.team-dashboard .bot-phase,.team-dashboard .agent-stats{font-size:6px}}
+@media(max-height:680px) and (max-width:600px){.team-dashboard .dashboard{grid-template-rows:29px 85px auto minmax(0,1fr) 118px 13px}.team-dashboard .agent-card{padding:3px}.team-dashboard .agent-grid{gap:3px}.team-dashboard .agent-card strong{font-size:6px}.team-dashboard .bot-phase,.team-dashboard .agent-stats{font-size:5px}}
+@media(max-height:450px) and (min-width:601px){.team-dashboard .dashboard{grid-template-rows:27px 47px auto minmax(0,1fr) 80px 12px}.team-dashboard .agent-grid{grid-template-columns:repeat(10,minmax(0,1fr));grid-template-rows:1fr;gap:4px}.team-dashboard .agent-card strong{font-size:7px}.team-dashboard .bot-phase,.team-dashboard .agent-stats{font-size:5px}}

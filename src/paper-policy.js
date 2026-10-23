@@ -24,8 +24,8 @@ export function rankExplorationMarket(m,s=TRADE_RULES,now=Date.now()){
  const reason=f=>f==='LOW_SCORE'?'Paper cần ≥40 điểm':f==='UNCONFIRMED_SIGNAL'?'Paper chờ 2 ảnh thị trường mới, cách ít nhất 5 giây':original.reasons[original.red_flags.indexOf(f)]??f;
  return {...original,eligible:flags.length===0,roughEligible,preQuoteEligible,score:original.score,minScore:40,red_flags:flags,reasons:flags.map(reason),primaryFlags:primary,primaryReasons:primary.map(reason),blockingStage:stage,missingData:original.missingData.filter(f=>flags.includes(f)),blockingCategory:primary.some(f=>original.missingData.includes(f))?'missing-data':primary.length?'rule-failed':'ready',baseline:{eligible:original.eligible,score:original.score,minScore:original.minScore,blockingStage:original.blockingStage,flags:original.red_flags},relaxedFlags:original.red_flags.filter(f=>relaxed.has(f)),policyVersion:EXPLORATION_ENTRY_POLICY.version};
 }
-export function observePaperEligibility(state,markets,now=Date.now()){
- state.paperObservations??={};const r=SCALP_ENTRY_RULES;
+export function observePaperEligibility(state,markets,now=Date.now(),r=SCALP_ENTRY_RULES){
+ state.paperObservations??={};
  const result=markets.map(m=>{
   const key=m.mint+':'+m.pairAddress,saved=state.paperObservations[key];
   const good=finite(m.updatedAt)&&m.updatedAt<=now&&now-m.updatedAt<=30000&&finite(m.priceUsd)&&m.priceUsd>0;
@@ -45,9 +45,10 @@ export function observePaperEligibility(state,markets,now=Date.now()){
   const scalpV3Confirmed=scalpV1Confirmed&&risePct>0&&risePct<=r.maxConfirmationRisePct+1e-9&&flowKnown&&deltaBuys>deltaSells;
   const older=prior?[...history].reverse().find(row=>prior.at-row.at>=r.confirmationGapMs&&prior.at-row.at<=r.maxConfirmationGapMs&&row.sourceAt<prior.sourceAt):null;
   const view=row=>({at:row.at,sourceAt:row.sourceAt,priceUsd:row.priceUsd,liquidityUsd:row.liquidityUsd,buys5m:row.fingerprint[2],sells5m:row.fingerprint[3]});
-  const persistence=older&&prior?[view(older),view(prior),{at:now,sourceAt:m.updatedAt,priceUsd:m.priceUsd,liquidityUsd:m.liquidityUsd,buys5m:m.buys5m,sells5m:m.sells5m}]:null;
-  const fullSequence=older?[older,...history.filter(row=>row.at>older.at),m]:[];
-  const pathSafe=!!older&&fullSequence.every((row,i)=>!i||retains(row,older)&&retains(row,fullSequence[i-1]));
+  const currentView={at:now,sourceAt:m.updatedAt,priceUsd:m.priceUsd,liquidityUsd:m.liquidityUsd,buys5m:m.buys5m,sells5m:m.sells5m};
+  const persistence=r.minConfirmationObservations===2&&prior?[view(prior),currentView]:older&&prior?[view(older),view(prior),currentView]:null;
+  const first=r.minConfirmationObservations===2?prior:older,fullSequence=first?[first,...history.filter(row=>row.at>first.at),m]:[];
+  const pathSafe=!!first&&fullSequence.every((row,i)=>!i||retains(row,first)&&retains(row,fullSequence[i-1]));
   const scalpConfirmed=scalpV3Confirmed&&pathSafe&&persistentContinuation(persistence,now,r);
   if(!good)delete state.paperObservations[key];
   else if(!saved||m.updatedAt>saved.sourceAt){const current={at:now,sourceAt:m.updatedAt,priceUsd:m.priceUsd,liquidityUsd:m.liquidityUsd,change5mPct:m.change5mPct,fingerprint:[m.priceUsd,m.volume5mUsd,m.buys5m,m.sells5m]};state.paperObservations[key]={...current,history:[...history,current].slice(-8)};}
@@ -58,7 +59,7 @@ export function observePaperEligibility(state,markets,now=Date.now()){
 
 export const PAPER_ENTRY_POLICY=SCALP_ENTRY_RULES;
 /** Active paper strategy: rank gainers on observed 5m changes; H1/H4 remain labels. */
-function rankPaperRules(m,s=TRADE_RULES,now=Date.now(),r=PAPER_ENTRY_POLICY){
+export function rankPaperRules(m,s=TRADE_RULES,now=Date.now(),r=PAPER_ENTRY_POLICY){
  m=m??{};const prior=rankExplorationMarket(m,s,now);
  const ignore=new Set(['LOW_ACTIVITY','NO_UPTREND','DUMP_OR_CHASE','UNCONFIRMED_SIGNAL','LOW_SCORE']);
  const flags=prior.red_flags.filter(f=>!ignore.has(f)),texts={};
@@ -78,7 +79,7 @@ function rankPaperRules(m,s=TRADE_RULES,now=Date.now(),r=PAPER_ENTRY_POLICY){
  const setup=m.scalpSetup,continuing=!r.requireIncrementalBuyDominance||setup&&finite(setup.at)&&setup.at<=now&&now-setup.at<=r.maxConfirmationGapMs&&finite(setup.anchorAt)&&setup.at-setup.anchorAt>=r.confirmationGapMs&&setup.at-setup.anchorAt<=r.maxConfirmationGapMs&&finite(setup.risePct)&&setup.risePct>0&&setup.risePct<=r.maxConfirmationRisePct+1e-9&&setup.flowKnown===true&&Number.isSafeInteger(setup.deltaBuys)&&Number.isSafeInteger(setup.deltaSells)&&setup.deltaSells>=0&&setup.deltaBuys>setup.deltaSells;
  fail(m.scalpConfirmed===true&&!!continuing,'UNCONFIRMED_SIGNAL',r.requireIncrementalBuyDominance?'Chờ giá tăng tiếp 0–4%, số mua tăng thêm > số bán; dữ liệu mới cách 5–15s, thanh khoản giữ ≥90%':'Chờ 2 lần quét 5m có dữ liệu thay đổi; giá không tụt >0,5%, thanh khoản giữ ≥90%');
  if(r.minConfirmationObservations&&!persistentContinuation(setup?.persistence,now,r)&&!flags.includes('UNCONFIRMED_SIGNAL')){flags.push('UNCONFIRMED_SIGNAL');texts.UNCONFIRMED_SIGNAL='Chờ 3 quan sát mới trong 10–30s: giá tăng tiếp, dòng mua trội ở cả hai nhịp, thanh khoản giữ ≥90%';}
- if(r.minConfirmationObservations&&flags.includes('UNCONFIRMED_SIGNAL'))texts.UNCONFIRMED_SIGNAL='Chờ 3 quan sát mới trong 10–30s: giá tăng tiếp, dòng mua trội ở cả hai nhịp, thanh khoản giữ ≥90%';
+ if(r.minConfirmationObservations&&flags.includes('UNCONFIRMED_SIGNAL'))texts.UNCONFIRMED_SIGNAL=`Chờ ${r.minConfirmationObservations} quan sát mới trong ${r.minPersistenceMs/1000}–${r.maxPersistenceMs/1000}s: giá tăng tiếp, dòng mua trội, thanh khoản giữ ≥90%`;
  const safety=new Set(['VERIFICATION_PROVIDER_ERROR','MISSING_SAFETY_EVIDENCE','UNVERIFIED_QUOTE_RESERVE','ACTIVE_OR_UNKNOWN_AUTHORITY','UNSAFE_TOKEN_PROGRAM','LP_UNVERIFIED','HOLDER_CONCENTRATION','DEV_CONCENTRATION','RUG_WARNINGS','ROUND_TRIP_UNVERIFIED','QUOTE_STALE','PAPER_COST_BUDGET']);
  const cheap=flags.filter(f=>!safety.has(f)&&!['UNCONFIRMED_SIGNAL','LOW_SCORE'].includes(f));
  const originalCoarse=prior.baseline.blockingStage==='discovery'?prior.baseline.flags.filter(f=>prior.primaryFlags.includes(f)):[];

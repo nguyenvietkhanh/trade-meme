@@ -4,7 +4,7 @@ import {paperPortfolioAdmission} from './paper-portfolio.js';
 export function paperPendingView(order,now=Date.now()){
  if(!order)return null;const ageSeconds=Number.isFinite(order.decisionAt)?Math.max(0,Math.floor((now-order.decisionAt)/1000)):0,waitSeconds=Number.isFinite(order.readyAt)?Math.max(0,Math.ceil((order.readyAt-now)/1000)):0,attempts=Number.isSafeInteger(order.attempts)?Math.max(0,order.attempts):0,lastErrorCode=/^[A-Z0-9_]{1,32}$/.test(order.lastErrorCode??'')?order.lastErrorCode:null;
  const detail=attempts?`thử lại ${attempts}/${TRADE_RULES.maxRetries}${lastErrorCode?' · '+lastErrorCode:''}`:waitSeconds?`chờ độ trễ ${waitSeconds}s`:'đang lấy quote mới sau độ trễ';
- return {id:order.id,side:order.side,mint:order.mint,reason:order.reason,decisionAt:order.decisionAt,ageSeconds,waitSeconds,attempts,lastErrorCode,label:`${order.side} mô phỏng · ${ageSeconds}s${attempts?' · thử lại '+attempts+'/'+TRADE_RULES.maxRetries:''}`,message:`${order.side} …${String(order.mint).slice(-6)} · đã chờ ${ageSeconds}s · ${detail}.`};
+ return {id:order.id,agentId:order.agentId??null,side:order.side,mint:order.mint,reason:order.reason,decisionAt:order.decisionAt,ageSeconds,waitSeconds,attempts,lastErrorCode,label:`${order.side} mô phỏng · ${ageSeconds}s${attempts?' · thử lại '+attempts+'/'+TRADE_RULES.maxRetries:''}`,message:`${order.side} …${String(order.mint).slice(-6)} · đã chờ ${ageSeconds}s · ${detail}.`};
 }
 // Ephemeral display telemetry. No trading state, provider requests or credentials.
 export class UiActivity{
