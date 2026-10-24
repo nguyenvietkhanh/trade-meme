@@ -4,16 +4,16 @@ import {paperLotKey} from './paper-identity.js';
 import {scalpExitPlan,isScalpVersion} from './paper-scalp.js';
 import {exitPlan} from './engine.js';
 
-export const LAB_EXECUTION_VERSION='paper-independent-lanes-v2';
+export const LAB_EXECUTION_VERSION='paper-independent-unique-mints-v3';
 const laneKey=o=>o.agentId??'legacy:'+(o.paperPositionId??o.positionId);
 const fresh=(at,now)=>Number.isFinite(at)&&at<=now&&now-at<=30000;
 const quoteKey=(mint,side,amount,reason='')=>[mint,side,amount,reason].join(':');
 // Network I/O never holds the shared ledger lock. Each bot has one independent
 // in-flight job; only cash reservations and ledger commits are serialized.
-function launch(desk,key,work){
+function launch(desk,key,work,cleanup=()=>{}){
  const task=Promise.resolve().then(work).catch(error=>desk.serial(async()=>{
   desk.error(error,desk.clock(),{agentId:key});await desk.save();
- })).finally(()=>{if(desk.executionJobs.get(key)===task)desk.executionJobs.delete(key);});
+ })).finally(()=>{cleanup();if(desk.executionJobs.get(key)===task)desk.executionJobs.delete(key);});
  desk.executionJobs.set(key,task);
 }
 async function capture(desk,quotes,mint,side,amount,reason='',minObservedAt=0){
@@ -77,8 +77,8 @@ async function monitor(desk,position){
 export async function stepIndependent(desk,feed,{exitsOnly=false}={}){
  desk.executionFeed=feed;desk.executionJobs??=new Map();
  await desk.serial(async()=>{
-  const s=desk.state,now=desk.clock(),orders=desk.pendingOrders(),candidates=exitsOnly?[]:desk.entryCandidates(feed.markets,now),ids=[...desk.agents.map(a=>a.id),...s.positions.filter(p=>!p.agentId).map(laneKey)];
-  s.executionPolicy={version:LAB_EXECUTION_VERSION,independentWorkers:true,workers:desk.agents.length,sharedCapitalSol:20};
+  const s=desk.state,now=desk.clock(),orders=desk.pendingOrders(),candidates=exitsOnly?[]:desk.entryCandidates(feed.markets,now),cursor=s.agentCursor??0,agents=desk.agents.map((_,i)=>desk.agents[(cursor+i)%desk.agents.length]),ids=[...agents.map(a=>a.id),...s.positions.filter(p=>!p.agentId).map(laneKey)];
+  s.executionPolicy={version:LAB_EXECUTION_VERSION,uniqueEntryMints:true,independentWorkers:true,workers:desk.agents.length,sharedCapitalSol:20};
   for(const id of ids){
    if(desk.executionJobs.has(id))continue;
    const ownOrders=orders.filter(o=>laneKey(o)===id),due=ownOrders.filter(o=>o.readyAt<=now&&(!exitsOnly||o.side==='SELL')).sort((a,b)=>Number(b.side==='SELL')-Number(a.side==='SELL')||a.decisionAt-b.decisionAt)[0];
@@ -89,8 +89,9 @@ export async function stepIndependent(desk,feed,{exitsOnly=false}={}){
    if(ownOrders.length||!s.running||feed.error||!fresh(feed.updatedAt,now)||!(feed.solUsd>0))continue;
    const candidate=candidates.find(c=>c.agent.id===id),allocation={orderSol:paperOrderSol(s),capitalSol:paperCapitalSol(s)};
    if(!candidate||!desk.admission({now}).allowed||!desk.probeAllowed(candidate.m,allocation.orderSol))continue;
+   const claim=desk.claimEntryToken(id,candidate.m.mint,candidate.m.pairAddress);if(!claim)continue;
    s.agentExecutionStatus??={};s.agentExecutionStatus[id]={at:now,code:'OWN_QUOTE_REQUESTED',message:'Bot tự lấy quote BUY; không chờ bot khác mua/bán.'};
-   launch(desk,id,()=>enter(desk,candidate,allocation));
+   launch(desk,id,()=>enter(desk,candidate,allocation),()=>desk.releaseEntryToken(claim));
   }
   desk.markEquity();await desk.save();
  });

@@ -35,7 +35,7 @@ const entryRank=(m,settings,now=Date.now())=>rankMarket(m,settings,now,desk.stat
 // Keep signal research independent of shared capital/SELL admission. Those
 // limits are enforced again atomically when reserving and filling each BUY.
 const canResearch=m=>desk.state.running&&entryRank(m).roughEligible;
-const verification=new LabExecutionFeed(market,{rankMarket:entryRank,canInspectCandidate:canResearch}),discovery=new DiscoveryQueue(desk.state.discovery);
+const verification=new LabExecutionFeed(market,{rankMarket:entryRank,canInspectCandidate:canResearch,selectTargets:(markets,now,cursor)=>desk.quoteCandidates(markets,now,cursor)}),discovery=new DiscoveryQueue(desk.state.discovery);
 let feed={markets:[],solUsd:null,updatedAt:null,error:null},refreshing=false,closing=false;
 async function refresh(){if(refreshing||closing)return;refreshing=true;try{
  const held=desk.state.positions,latest=await withRpcPriority('background',()=>loadMarkets([...new Set([...held.map(p=>p.mint),...desk.state.watchlist])],Object.fromEntries(held.map(p=>[p.mint,p.pairAddress])),discovery,{rankMarket,compare:compare5m,selectMarkets:selectLabMarkets}));

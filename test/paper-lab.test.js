@@ -9,6 +9,8 @@ import {paperOrderSol,paperCapitalSol} from '../src/paper-sizing.js';
 import {createPaperMarket} from '../src/paper-market.js';
 import {PaperReports} from '../src/paper-reports.js';
 import {paperReportEnd} from '../src/paper-schedule.js';
+import {recordBuy} from '../src/engine.js';
+import {paperEntryWorkflow} from '../src/paper-workflow.js';
 const start=Date.parse('2026-10-24T12:00:00Z');
 async function step(desk,feed){await desk.step(feed);await Promise.allSettled([...(desk.executionJobs?.values()??[])]);}
 function market(now,{change=3,index=0,proof=true,size=.5}={}){return {mint:'11111111111111111111111111111112',pairAddress:'pool',symbol:'LAB',dexId:'pumpswap',priceUsd:.01*1.001**index,updatedAt:now,liquidityUsd:10000,change5mPct:change,change1hPct:5,volume5mUsd:1000,volume1hUsd:3000,buys5m:30+index*3,sells5m:10+index,evidence:proof?{mint:'11111111111111111111111111111112',pairAddress:'pool',certificationMode:'bypassed-paper',checkedAt:now,quoteCheckedAt:now,quoteContextSlot:1,decimals:6,roundTripQuoteOk:true,roundTripLossPct:3,probeSol:size}:undefined};}
@@ -39,26 +41,26 @@ test('production execution facade reads only decimals and real quote, never RugC
  let supply=0,quotes=0;const marketFacade=createPaperMarket(()=>20,{rpc:{getTokenSupply:async()=>{supply++;return {value:{decimals:6}};}},roundTripQuote:async(mint,amount)=>{quotes++;assert.equal(amount,'500000000');return {probeSol:.5,roundTripQuoteOk:true,quoteCheckedAt:start};},inspectMarketFacts:()=>{throw Error('forbidden certificate');},balance:()=>{throw Error('forbidden wallet');}});
  const e=await marketFacade.inspectLabExecution(market(start));assert.equal(supply,1);assert.equal(quotes,1);assert.equal(e.certificationMode,'bypassed-paper');for(const key of ['mintRevoked','lpSecuredPct','devPct','top10Pct','extensionsSafe'])assert.equal(e[key],undefined);
 });
-test('execution feed is bounded and refreshes held token quotes for other bots without a certificate provider',async t=>{
+test('execution feed is bounded and refreshes expired quotes without a certificate provider',async t=>{
  let now=start,calls=0,release;t.mock.method(Date,'now',()=>now);const wait=new Promise(r=>release=r),api={currentProbeSol:.5,inspectLabExecution:async m=>{calls++;await wait;return market(now).evidence;}},feed=new LabExecutionFeed(api,{rankMarket:labRank});
  const m=market(now,{proof:false});await feed.enrichCached([m,m],[],now);assert.equal(feed.jobs.size,1);release();await Promise.all([...feed.jobs.values()]);assert.equal(calls,1);assert.equal(feed.applyCached([m])[0].evidence.roundTripQuoteOk,true);
  now+=11000;await feed.enrichCached([market(now,{proof:false})],[m.mint],now);await Promise.all([...feed.jobs.values()]);assert.equal(calls,2);
 });
-test('all ten can hold separate lots simultaneously with shared 20 SOL, no aggregate certificate/cadence gate, and no account reset',async t=>{
+test('all ten can hold different tokens simultaneously with shared 20 SOL, no aggregate certificate/cadence gate, and no account reset',async t=>{
  const x=await setup(t);let max=0;
- for(let tick=0;tick<45;tick++){x.advance(2000);const markets=[3,7,25].map((change,i)=>{const m=market(x.now(),{change,index:tick,size:paperOrderSol(x.desk.state)});m.mint='mint-'+i;m.pairAddress='pool-'+i;m.evidence={...m.evidence,mint:m.mint,pairAddress:m.pairAddress};return m;}),rows=observeLabMarkets(x.desk.state,markets,x.now());x.desk.evaluate(rows,x.now());await step(x.desk,{updatedAt:x.now(),solUsd:150,error:null,markets:rows});max=Math.max(max,x.desk.state.positions.length);if(max===10)break;}
- assert.equal(max,10,JSON.stringify({agents:x.desk.state.positions.map(p=>p.agentId),last:x.desk.state.agentExecutionStatus,error:x.desk.state.lastExecutionError}));assert.equal(new Set(x.desk.state.positions.map(p=>p.agentId)).size,10);assert.equal(paperCapitalSol(x.desk.state),20);assert.ok(x.desk.state.cashSol>=.1);assert.ok(x.desk.state.trades.every(t=>t.agentPolicyVersion===LAB_VERSION&&t.workflow.verify.certificationsRequired===false));
+ for(let tick=0;tick<45;tick++){x.advance(2000);const markets=tenMarkets(x.now(),tick,paperOrderSol(x.desk.state)),rows=observeLabMarkets(x.desk.state,markets,x.now());x.desk.evaluate(rows,x.now());await step(x.desk,{updatedAt:x.now(),solUsd:150,error:null,markets:rows});max=Math.max(max,x.desk.state.positions.length);if(max===10)break;}
+ assert.equal(max,10,JSON.stringify({agents:x.desk.state.positions.map(p=>p.agentId),last:x.desk.state.agentExecutionStatus,error:x.desk.state.lastExecutionError}));assert.equal(new Set(x.desk.state.positions.map(p=>p.agentId)).size,10);assert.equal(new Set(x.desk.state.positions.map(p=>p.mint)).size,10);assert.equal(paperCapitalSol(x.desk.state),20);assert.ok(x.desk.state.cashSol>=.1);assert.ok(x.desk.state.trades.every(t=>t.agentPolicyVersion===LAB_VERSION&&t.workflow.verify.certificationsRequired===false));
  const cash=x.desk.state.cashSol,restored=new LabPaperDesk(x.dir,x.quote,{clock:x.now});await restored.load();assert.equal(restored.state.cashSol,cash);assert.equal(restored.state.positions.length,10);assert.equal(restored.snapshot().agents.length,10);
  x.desk.state=restored.state;x.value(.39);for(let tick=0;tick<120&&x.desk.state.positions.length;tick++){x.advance(2100);await step(x.desk,{updatedAt:x.now(),solUsd:150,error:null,markets:[]});}
  for(const a of LAB_AGENTS){assert.ok(x.desk.state.agentStats[a.id].buys>0,a.name+' BUY');assert.ok(x.desk.state.agentStats[a.id].sells>0,a.name+' SELL');}assert.equal(x.desk.state.positions.length,0);assert.ok(Math.abs(x.desk.state.cashSol-20-x.desk.state.realizedNetSol)<1e-7);
  // Closed receipts keep historical cooldown timestamps, but LAB v2 has no
  // re-entry gate: the same bot may select the same mint on the next scan.
- assert.ok(Object.values(x.desk.state.agentCooldowns.orin).some(until=>until>x.now()));x.advance(2000);const m=market(x.now(),{size:paperOrderSol(x.desk.state)});m.mint='mint-0';m.pairAddress='pool-0';m.evidence={...m.evidence,mint:m.mint,pairAddress:m.pairAddress};
- const candidates=x.desk.entryCandidates([m],x.now());assert.equal(new Set(candidates.map(c=>c.agent.id)).size,10);
- await step(x.desk,{updatedAt:x.now(),solUsd:150,markets:[m]});assert.equal(x.desk.pendingOrders().filter(o=>o.side==='BUY').length,10);
+ assert.ok(Object.values(x.desk.state.agentCooldowns.orin).some(until=>until>x.now()));x.advance(2000);const m=market(x.now(),{size:paperOrderSol(x.desk.state)});m.mint=Object.keys(x.desk.state.agentCooldowns.orin)[0];m.pairAddress='pool-'+m.mint.slice(5);x.desk.state.agentCursor=1;m.evidence={...m.evidence,mint:m.mint,pairAddress:m.pairAddress};
+ const candidates=x.desk.entryCandidates([m],x.now());assert.equal(candidates.length,1);assert.equal(candidates[0].agent.id,'orin');
+ await step(x.desk,{updatedAt:x.now(),solUsd:150,markets:[m]});assert.equal(x.desk.pendingOrders().filter(o=>o.side==='BUY').length,1);
 });
 test('one failing exit quote does not cancel or globally veto another bot BUY; stale valuations remain unknown',async t=>{
- const x=await setup(t),allCandidates=x.desk.entryCandidates.bind(x.desk);x.desk.entryCandidates=(markets,now)=>allCandidates(markets,now).filter(c=>c.agent.id==='orin');const old=market(x.now()),rows=[old];await step(x.desk,{markets:rows,updatedAt:x.now(),solUsd:150});x.advance(2100);await step(x.desk,{markets:[market(x.now())],updatedAt:x.now(),solUsd:150});assert.ok(x.desk.state.positions.length>0);x.fail(old.mint);x.desk.entryCandidates=allCandidates;x.advance(2000);const other=market(x.now(),{change:25});other.mint='different';other.pairAddress='different-pool';other.evidence={...other.evidence,mint:other.mint,pairAddress:other.pairAddress};await step(x.desk,{markets:[other],updatedAt:x.now(),solUsd:150});assert.ok(x.desk.pendingOrders().some(o=>o.side==='BUY'&&o.mint==='different'));assert.equal(x.desk.valuation().equitySol,null);assert.equal(x.desk.admission().operationalCapacity,10);
+ const x=await setup(t),allCandidates=x.desk.entryCandidates.bind(x.desk);x.desk.state.agentCursor=1;x.desk.entryCandidates=(markets,now)=>allCandidates(markets,now).filter(c=>c.agent.id==='orin');const old=market(x.now()),rows=[old];await step(x.desk,{markets:rows,updatedAt:x.now(),solUsd:150});x.advance(2100);await step(x.desk,{markets:[market(x.now())],updatedAt:x.now(),solUsd:150});assert.ok(x.desk.state.positions.length>0);x.fail(old.mint);x.desk.entryCandidates=allCandidates;x.advance(2000);const other=market(x.now(),{change:25});other.mint='different';other.pairAddress='different-pool';other.evidence={...other.evidence,mint:other.mint,pairAddress:other.pairAddress};await step(x.desk,{markets:[other],updatedAt:x.now(),solUsd:150});assert.ok(x.desk.pendingOrders().some(o=>o.side==='BUY'&&o.mint==='different'));assert.equal(x.desk.valuation().equitySol,null);assert.equal(x.desk.admission().operationalCapacity,10);
 });
 test('23:59 report and cohort separate LAB from previous RUNE history',async t=>{
  const x=await setup(t);(x.desk.state.agentStats??={}).rune={buys:1,sells:1,closed:1,realizedPnlSol:-1};assert.equal(x.desk.snapshot().agents.find(a=>a.id==='rune').stats.closed,0);x.desk.state.archiveOutbox.push({id:'old-rune',at:x.now(),side:'SELL',agentId:'rune',agentPolicyVersion:'old-strict',closed:true,pnlSol:-1,positionPnlSol:-1});const reports=new PaperReports(x.dir),end=paperReportEnd(x.now())+86400000;await reports.tick(x.desk,end);assert.equal(reports.error,null);const text=x.desk.state.telegramOutbox.find(x=>x.id.endsWith(':summary')).text;assert.ok(text.includes(LAB_VERSION));assert.ok(text.includes('RUNE: +0.000000'));const doc=JSON.parse((await reports.document({end,part:1})).content);assert.equal(doc.summary.realizedPnlSol,-1);assert.equal(doc.summary.byAgentPolicy['old-strict'].rune.realizedPnlSol,-1);for(const a of LAB_AGENTS)assert.ok(text.includes(a.name+':'));assert.ok(text.length<4096);
@@ -69,9 +71,9 @@ test('passive research labels use the actual LAB hypothesis and never classify L
 });
 
 function tenMarkets(now,index=2,size=.5){return LAB_AGENTS.map(a=>{const m=market(now,{change:a.id==='zara'?12:3,index,size});m.mint='mint-'+a.id;m.pairAddress='pool-'+a.id;m.evidence={...m.evidence,mint:m.mint,pairAddress:m.pairAddress};return m;});}
-function ownCandidates(desk){const original=desk.entryCandidates.bind(desk);desk.entryCandidates=(markets,now)=>original(markets,now).filter(c=>c.m.mint==='mint-'+c.agent.id);}
+function ownCandidates(desk){desk.entryCandidates=(markets,now)=>LAB_AGENTS.flatMap((agent,index)=>{const m=markets.find(m=>m.mint==='mint-'+agent.id);if(!m||desk.state.positions.some(p=>p.agentId===agent.id)||desk.pendingOrders().some(o=>o.side==='BUY'&&o.agentId===agent.id))return [];const d=desk.entrySignal(agent.id,m,now);return d.eligible?[{agent,index,m,r:d.rank}]:[];});}
 function observedFeed(x){return {updatedAt:x.now(),solUsd:150,error:null,markets:observeLabMarkets(x.desk.state,tenMarkets(x.now(),2,paperOrderSol(x.desk.state)),x.now())};}
-test('all ten reserve on one tick and fill on the next without a two-entry or same-mint turn gate',async t=>{
+test('all ten reserve on one tick and fill on the next with ten distinct mints and no two-entry cycle limit',async t=>{
  const x=await setup(t);observeLabMarkets(x.desk.state,tenMarkets(x.now(),0),x.now());x.advance(6000);const feed=observedFeed(x);
  await step(x.desk,feed);assert.equal(x.desk.pendingOrders().length,10);assert.equal(new Set(x.desk.pendingOrders().map(o=>o.agentId)).size,10);assert.equal(x.desk.snapshot().execution.independentWorkers,true);
  x.advance(2100);await step(x.desk,observedFeed(x));assert.equal(x.desk.state.positions.length,10);assert.equal(x.desk.pendingOrders().length,0);assert.equal(x.desk.state.cashSol>=.1,true);
@@ -95,4 +97,45 @@ test('a different bot realized loss does not resize or cancel an already reserve
  x.advance(2100);const next={...feed,updatedAt:x.now(),markets:rows.map(m=>({...m,updatedAt:x.now(),evidence:{...m.evidence,probeSol:paperOrderSol(x.desk.state),quoteCheckedAt:x.now()}}))};await step(x.desk,next);
  assert.equal(x.desk.state.positions.length,2);assert.ok(x.desk.state.trades.every(t=>t.side==='BUY'));assert.ok(x.desk.state.cashSol>=.1);
  assert.equal(labAdmission(x.desk.state,{orderSol:100}).code,'INSUFFICIENT_CASH');
+});
+
+test('DOAS regression: one quoted token creates exactly one BUY, including across repeated ticks and pool aliases',async t=>{
+ const x=await setup(t),m=market(x.now());m.symbol='DOAS';const alias={...m,pairAddress:'another-pool',evidence:{...m.evidence,pairAddress:'another-pool'}};
+ await step(x.desk,{updatedAt:x.now(),solUsd:150,markets:[m,alias]});assert.equal(x.desk.pendingOrders().length,1);assert.equal(x.calls.filter(c=>c.side==='BUY').length,1);assert.equal(x.desk.entryCandidates([m,alias],x.now()).length,0);
+ x.advance(2100);await step(x.desk,{updatedAt:x.now(),solUsd:150,markets:[{...m,updatedAt:x.now()}, {...alias,updatedAt:x.now()}]});assert.equal(x.desk.state.positions.length,1);assert.equal(x.desk.state.trades.filter(t=>t.side==='BUY').length,1);
+ x.advance(1000);await step(x.desk,{updatedAt:x.now(),solUsd:150,markets:[{...m,updatedAt:x.now()}]});assert.equal(x.desk.pendingOrders().filter(o=>o.side==='BUY').length,0);assert.equal(x.desk.state.positions.length,1);
+});
+test('in-flight token claims prevent same-token races, allow a different token, and release after a failed quote',async t=>{
+ const x=await setup(t);let release;const waiting=new Promise(r=>release=r),base=x.quote.quote,first=market(x.now());
+ x.desk.quotes={quote:async input=>{if(input.mint===first.mint&&input.side==='BUY'){await waiting;throw Error('NO_ROUTE');}return base(input);}};
+ await x.desk.step({updatedAt:x.now(),solUsd:150,markets:[first]});const owner=[...x.desk.entryClaims.values()][0].agentId;
+ assert.equal(x.desk.entryClaims.size,1);assert.equal(x.desk.claimEntryToken(owner,first.mint,'alias'),null);
+ const other=tenMarkets(x.now())[0];await x.desk.step({updatedAt:x.now(),solUsd:150,markets:[first,other]});await Promise.allSettled([...x.desk.executionJobs].filter(([id])=>id!==owner).map(([,job])=>job));
+ assert.equal(x.desk.pendingOrders().length,1);assert.equal(x.desk.pendingOrders()[0].mint,other.mint);assert.equal(x.desk.entrySignal(owner==='nova'?'orin':'nova',first,x.now()).stage,'allocation');
+ release();await Promise.allSettled([...x.desk.executionJobs.values()]);assert.equal(x.desk.entryClaims.size,0);assert.equal(x.desk.state.cashSol,20);
+});
+test('quote research covers distinct per-agent candidates and rotates priority within the shared API limit',async t=>{
+ const x=await setup(t),rows=tenMarkets(start,0).map(m=>({...m,evidence:undefined})),requested=[];let now=start;t.mock.method(Date,'now',()=>now);
+ const api={currentProbeSol:.5,inspectLabExecution:async m=>{requested.push({mint:m.mint,agent:m.labQuoteAgentId});return {...market(now).evidence,mint:m.mint,pairAddress:m.pairAddress};}},feed=new LabExecutionFeed(api,{rankMarket:labRank,selectTargets:(markets,at,cursor)=>x.desk.quoteCandidates(markets,at,cursor)});
+ for(let i=0;i<5;i++){await feed.enrichCached(rows,[],now);await Promise.all([...feed.jobs.values()]);}
+ assert.equal(new Set(requested.map(r=>r.mint)).size,10);assert.equal(new Set(requested.map(r=>r.agent)).size,10);assert.equal(requested.length,10);
+});
+test('NOVA, ORIN and VELA select different preferred tokens from momentum, buy pressure and liquidity data',async t=>{
+ const x=await setup(t),rows=tenMarkets(x.now()).slice(0,3);Object.assign(rows[0],{change5mPct:50,liquidityUsd:5000,buys5m:10,sells5m:10});Object.assign(rows[1],{change5mPct:1,liquidityUsd:10000,buys5m:100,sells5m:1});Object.assign(rows[2],{change5mPct:0,liquidityUsd:1000000,buys5m:10,sells5m:100});
+ const picks=x.desk.entryCandidates(rows,x.now());assert.equal(picks.find(c=>c.agent.id==='nova').m.mint,rows[0].mint);assert.equal(picks.find(c=>c.agent.id==='orin').m.mint,rows[1].mint);assert.equal(picks.find(c=>c.agent.id==='vela').m.mint,rows[2].mint);
+ const targets=x.desk.quoteCandidates(rows.map(m=>({...m,evidence:undefined})),x.now(),0);assert.equal(new Set(targets.map(m=>m.mint)).size,3);assert.equal(targets[0].mint,rows[0].mint);assert.equal(targets[1].mint,rows[1].mint);assert.equal(targets[2].mint,rows[2].mint);
+});
+test('restart removes duplicate unfilled mint reservations without resetting cash or inventing trades',async t=>{
+ const x=await setup(t),rows=tenMarkets(x.now());await step(x.desk,{updatedAt:x.now(),solUsd:150,markets:rows});const orders=x.desk.pendingOrders(),first=orders[0],other=orders[1],agent=LAB_AGENTS.find(a=>a.id===other.agentId),m=rows.find(m=>m.mint===first.mint),duplicate={...structuredClone(first),id:'duplicate-current-cohort',agentId:agent.id,entryPolicy:agent.entryRules,riskPolicy:agent.riskPolicy,exitPolicy:agent.exitPolicy};
+ duplicate.workflow=paperEntryWorkflow(duplicate,m,labSignal(agent.id,m,x.now()).rank,duplicate.decisionAt);if(x.desk.state.pending?.id===other.id)x.desk.state.pending=duplicate;else x.desk.state.pendingEntries=x.desk.state.pendingEntries.map(o=>o.id===other.id?duplicate:o);
+ await x.desk.save();const restored=new LabPaperDesk(x.dir,x.quote,{clock:x.now});await restored.load();assert.equal(restored.pendingOrders().length,9);assert.equal(new Set(restored.pendingOrders().map(o=>o.mint)).size,9);assert.equal(restored.state.cashSol,20);assert.equal(restored.state.trades.length,0);
+});
+test('existing ten DOAS holdings survive restart and all ten can SELL under their original exit policies',async t=>{
+ const x=await setup(t),m=market(x.now());m.symbol='DOAS';
+ // Explicit historical-v2 ledger fixture, built with the accounting function.
+ for(const a of LAB_AGENTS){recordBuy(x.desk.state,m,150,{quantity:9000,costSol:.500025,priceUsd:.5*150/9000,rawQuantity:'9000000000',decimals:6},x.now(),'historical-v2','paper');Object.assign(x.desk.state.positions.at(-1),{agentId:a.id,agentPolicyVersion:'paper-open-lab-v2',paperPositionId:'old-'+a.id,rentSol:0,venue:'pumpswap',exitPolicy:{...a.exitPolicy,agentPolicyVersion:'paper-open-lab-v2'}});}
+ const cash=x.desk.state.cashSol,exits=x.desk.state.positions.map(p=>structuredClone(p.exitPolicy));await x.desk.save();const restored=new LabPaperDesk(x.dir,x.quote,{clock:x.now});await restored.load();x.desk=restored;
+ assert.equal(x.desk.state.cashSol,cash);assert.equal(x.desk.state.positions.length,10);assert.deepEqual(x.desk.state.positions.map(p=>p.exitPolicy),exits);assert.equal(x.desk.entryCandidates([m],x.now()).length,0);
+ x.value(.39);for(let i=0;i<4&&x.desk.state.positions.length;i++){x.advance(2100);await step(x.desk,{updatedAt:x.now(),solUsd:150,markets:[]});}
+ assert.equal(x.desk.state.positions.length,0);assert.equal(x.desk.state.trades.filter(t=>t.side==='SELL').length,10);assert.equal(new Set(x.desk.state.trades.filter(t=>t.side==='SELL').map(t=>t.agentId)).size,10);assert.ok(Number.isFinite(x.desk.state.cashSol));
 });
