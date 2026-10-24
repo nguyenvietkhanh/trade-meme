@@ -25,10 +25,10 @@ for(const scenario of scenarios)test(scenario.name,async()=>{
   for(let i=0;i<100;i++){state=await (await fetch(base+'/api/state')).json();if(state.feed.updatedAt&&state.decisionStats.evaluated>0)break;await delay(20);}
   assert.ok(state.feed.updatedAt,'feed was actually loaded');
   assert.equal(state.agents.agents.length,10);assert.ok(state.agents.agents.every(a=>a.signal&&a.signal.evaluated===state.feed.markets.length&&a.signal.cycle>=1&&Number.isFinite(a.signalAt)),'all ten strategies publish real evaluation telemetry through the HTTP snapshot');
-  assert.equal(state.experiment.certificationsRequired,false);assert.equal(state.experiment.entryMode,'ranking-only');assert.equal(state.experiment.uniqueEntryMints,true);assert.equal(state.entryPolicy.uniqueEntryMints,true);assert.equal(state.entryPolicy.strategyGatesRequired,false);assert.equal(state.entryPolicy.reentryCooldownMs,0);assert.equal(state.portfolio.operationalCapacity,10);assert.equal(state.readOnly,true);assert.equal(state.mode,'paper');
+  assert.equal(state.experiment.certificationsRequired,false);assert.equal(state.experiment.entryMode,'ten-strategy-rules');assert.equal(state.experiment.uniqueEntryMints,true);assert.equal(state.entryPolicy.uniqueEntryMints,true);assert.equal(state.entryPolicy.strategyGatesRequired,true);assert.equal(state.entryPolicy.reentryCooldownMs,1800000);assert.equal(state.portfolio.operationalCapacity,10);assert.equal(state.readOnly,true);assert.equal(state.mode,'paper');
   assert.equal(state.running,true);
   if(scenario.halted){assert.equal(state.cashSol,20);assert.equal(state.positions.length,0);}
-  else{assert.equal(state.positions.length,0,'incomplete external data must never create an entry');assert.ok(state.decisionStats.evaluated>0);assert.ok(state.decisions.some(d=>d.blockingStage==='execution'));}
+  else{assert.equal(state.positions.length,0,'incomplete external data must never create an entry');assert.ok(state.decisionStats.evaluated>0);assert.ok(state.decisions.some(d=>['strategy-data','market','execution'].includes(d.blockingStage)));}
   for(const action of ['reset','pause','buy','sell','add-token']){
    const r=await fetch(base+'/api/command',{method:'POST',headers:{'Content-Type':'application/json','X-Requested-With':'meme-desk'},body:JSON.stringify({action,confirm:'RESET PAPER'})});assert.equal(r.status,403);
   }

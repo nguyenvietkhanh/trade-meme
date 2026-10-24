@@ -85,7 +85,7 @@ export async function stepIndependent(desk,feed,{exitsOnly=false}={}){
    if(due){launch(desk,id,()=>fill(desk,structuredClone(due)));continue;}
    if(exitsOnly)continue;
    const p=s.positions.find(p=>laneKey(p)===id);
-   if(p){if(!ownOrders.some(o=>o.side==='SELL'))launch(desk,id,()=>monitor(desk,structuredClone(p)));continue;}
+   if(p){if(!ownOrders.some(o=>o.side==='SELL')&&now-(p.paperLastMonitorAt??-Infinity)>=(desk.monitorIntervalMs??0))launch(desk,id,()=>monitor(desk,structuredClone(p)));continue;}
    if(ownOrders.length||!s.running||feed.error||!fresh(feed.updatedAt,now)||!(feed.solUsd>0))continue;
    const candidate=candidates.find(c=>c.agent.id===id),allocation={orderSol:paperOrderSol(s),capitalSol:paperCapitalSol(s)};
    if(!candidate||!desk.admission({now}).allowed||!desk.probeAllowed(candidate.m,allocation.orderSol))continue;

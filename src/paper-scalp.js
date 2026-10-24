@@ -31,11 +31,12 @@ export function scalpExitPlan(position,market,now=Date.now()){
  if(!isScalpVersion(r?.version))return null;
  const finite=Number.isFinite;
  const marketFresh=finite(market?.updatedAt)&&market.updatedAt<=now&&now-market.updatedAt<=30000;
- if(marketFresh){position.peakLiquidityUsd=Math.max(position.peakLiquidityUsd??position.entryLiquidityUsd??0,finite(market.liquidityUsd)?market.liquidityUsd:0);
-  if(finite(market.liquidityUsd)&&market.liquidityUsd<position.peakLiquidityUsd*.6||market.evidence?.lpWithdrawn===true||market.evidence?.largeHolderDump===true||market.evidence?.sellSimulationOk===false)return {reason:'emergency-risk',fraction:1};
+ let emergency=false;if(marketFresh){position.peakLiquidityUsd=Math.max(position.peakLiquidityUsd??position.entryLiquidityUsd??0,finite(market.liquidityUsd)?market.liquidityUsd:0);
+  emergency=finite(market.liquidityUsd)&&market.liquidityUsd<position.peakLiquidityUsd*.6||market.evidence?.lpWithdrawn===true||market.evidence?.largeHolderDump===true||market.evidence?.sellSimulationOk===false;
+  if(emergency&&r.exitPriority!=='sl-tp-time-first')return {reason:'emergency-risk',fraction:1};
  }
  const fresh=q?.mint===position.mint&&q.rawAmount===position.rawQuantity&&finite(q.netSol)&&q.netSol>=0&&finite(q.checkedAt)&&q.checkedAt<=now&&now-q.checkedAt<=r.maxQuoteAgeMs;
- if(!fresh){if(now-position.openedAt>=r.maxHoldMs)return {reason:'scalp-max-hold',fraction:1};return null;}
+ if(!fresh){if(now-position.openedAt>=r.maxHoldMs)return {reason:'scalp-max-hold',fraction:1};return emergency?{reason:'emergency-risk',fraction:1}:null;}
  if(!(position.quantity>0&&position.costSol>0))return null;
  const roi=(q.netSol/position.costSol-1)*100,unit=q.netSol/position.quantity;
  position.scalpPeakUnitSol=Math.max(position.scalpPeakUnitSol??unit,unit);
@@ -43,6 +44,14 @@ export function scalpExitPlan(position,market,now=Date.now()){
  const trigger={at:now,quoteCheckedAt:q.checkedAt,expectedNetSol:q.netSol,remainingRaw:position.rawQuantity,roiPct:roi,provider:q.provider??null};
  const plan=(reason,fraction=1)=>({reason,fraction,trigger:{...trigger,expectedNetSol:trigger.expectedNetSol*fraction}});
  if(roi<=-r.stopLossPct+1e-9)return plan('stop-loss');
+ if(r.exitPriority==='sl-tp-time-first'){
+  if(roi>=r.finalProfitPct-1e-9)return plan('scalp-tp2');
+  if(!position.scalpFirstTaken&&roi>=r.firstProfitPct-1e-9)return plan('scalp-tp1',r.firstSellFraction);
+  if(now-position.openedAt>=r.maxHoldMs)return plan('scalp-max-hold');
+  if(!position.scalpFirstTaken&&now-position.openedAt>=r.stallMs&&position.scalpMaxGainPct<r.stallGainPct)return plan('scalp-stall');
+  if(position.scalpFirstTaken&&unit<=position.scalpPeakUnitSol*(1-r.trailingPct/100)*(1+1e-12))return plan('runner-trailing');
+  return emergency?plan('emergency-risk'):null;
+ }
  if(position.scalpFirstTaken&&unit<=position.scalpPeakUnitSol*(1-r.trailingPct/100)*(1+1e-12))return plan('runner-trailing');
  if(now-position.openedAt>=r.maxHoldMs)return plan('scalp-max-hold');
  if(roi>=r.finalProfitPct-1e-9)return plan('scalp-tp2');

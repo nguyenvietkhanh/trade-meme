@@ -31,6 +31,7 @@ export class PaperDesk{
  get agents(){return PAPER_AGENTS;}
  get agentVersion(){return PAPER_AGENT_VERSION;}
  get monitorFailureBlocksEntries(){return true;}
+ onFill(_trade){}
  admission(options={}){return paperPortfolioAdmission(this.state,options);}
  entryCandidates(markets,now){return agentCandidates(this.state,markets,now);}
  entrySignal(id,m,now){return agentSignal(id,m,null,now,this.state.settings);}
@@ -230,7 +231,7 @@ export class PaperDesk{
    trade.workflow=o.side==='BUY'?position.workflow:paperExitWorkflow(position,o,q,fillOut,fillNow);this.workflowTask(o.side==='BUY'?'EXECUTE':'EXIT','fill',o,o.reason,fillNow);
    const fill={...trade,session:s.session,pairAddress:o.pairAddress,rawAmount:o.amount,rawOutput:fillOut,decisionAt:o.decisionAt,fillAt:fillNow,holdingMs:o.side==='SELL'?fillNow-position.openedAt:null,benchmark:o.benchmark,fillQuote:q,latencyMs:fillNow-o.decisionAt,quoteAgeAtFillMs:fillNow-q.checkedAt,marketAgeAtFillMs:fillNow-m.updatedAt,outputVsDecisionPct:(Number(fillOut)/Number(o.benchmark.outAmount)-1)*100,netVsTriggerPct:o.side==='SELL'&&o.triggerNetSol>0?(costOrNet/o.triggerNetSol-1)*100:null,entryFeatures:o.entryFeatures??position.entryFeatures,entryPolicy:o.entryPolicy??position.entryPolicy??{version:'paper-exploration-v1'},exitPolicy:o.exitPolicy??position.exitPolicy??null,scalpSetup:o.scalpSetup??position.scalpSetup??null,exitTrigger:o.exitTrigger??null,baselineAtEntry:o.baseline??position.paperBaseline,relaxedFlagsAtEntry:o.relaxedFlags??position.relaxedFlags,paperMfePct:position.paperMfePct??null,paperMaePct:position.paperMaePct??null,cashAfterSol:s.cashSol,rentLockedSol:s.rentLockedSol,assumptions:PAPER_MODEL};
    trade.sizing=o.sizing??position.sizing??null;trade.portfolioAtEntry=o.portfolioAtEntry??position.portfolioAtEntry??null;if(o.side==='BUY')position.sizing=o.sizing??null;fill.sizing=trade.sizing;fill.portfolioAtEntry=trade.portfolioAtEntry;
-   recordAgentFill(s,trade);s.archiveOutbox.push(fill);s.pending=null;
+   recordAgentFill(s,trade);this.onFill(trade);s.archiveOutbox.push(fill);s.pending=null;
    event(s,`PAPER · ${trade.agentId?.toUpperCase()??'LEGACY'} · ${o.side} ${m.symbol}: ${costOrNet.toFixed(6)} SOL · ${o.reason}`,fillNow);
   }catch(e){o.attempts=(o.attempts??0)+1;o.lastErrorCode=this.error(e,this.clock(),o);o.lastErrorAt=this.clock();o.readyAt=this.clock()+PAPER_MODEL.delayMs;this.workflowTask(o.side==='BUY'?'EXECUTE':'EXIT','error',o,o.lastErrorCode);if(o.attempts>=TRADE_RULES.maxRetries||e.code==='WORKFLOW_GAP'||e.code==='INTENT_EXPIRED'||this.clock()-o.decisionAt>(o.side==='BUY'&&o.strategyVersion===SCALP_STRATEGY_VERSION?10000:30000)){if(o.side==='BUY')this.skipEntrySnapshot(o.workflow?.snapshotKey,o.lastErrorCode);s.pending=null;}else if(o.side==='BUY'){(s.pendingEntries??=[]).push(o);s.pending=null;}if(o.agentId){s.agentExecutionStatus??={};s.agentExecutionStatus[o.agentId]={at:this.clock(),code:o.lastErrorCode,message:'Khớp chưa thành công; ý định của bot khác không bị xóa.'};}}
  }

@@ -54,12 +54,12 @@ export function labSignal(id,m,now=Date.now()){
 }
 export function labTokenConflict(state,agentId,mint,claims=null){return (state.positions??[]).some(p=>p.mint===mint)||[state.pending,...(state.pendingEntries??[])].some(o=>o?.side==='BUY'&&o.mint===mint&&o.agentId!==agentId)||!!(claims?.has(mint)&&claims.get(mint).agentId!==agentId);}
 function available(state,a,m,now,claims=null){const pending=[state.pending,...(state.pendingEntries??[])].filter(Boolean);return !state.positions.some(p=>p.agentId===a.id)&&!pending.some(o=>o.side==='BUY'&&o.agentId===a.id&&o.mint!==m.mint)&&!labTokenConflict(state,a.id,m.mint,claims);}
-export function planLabCandidates(state,markets,now=Date.now(),{cursor=state.agentCursor??0,claims=null,requireQuote=false}={}){
+export function planLabCandidates(state,markets,now=Date.now(),{cursor=state.agentCursor??0,claims=null,requireQuote=false,agents=LAB_AGENTS,signal=labSignal}={}){
  const out=[],chosen=new Set(),pending=[state.pending,...(state.pendingEntries??[])].filter(Boolean);
- for(let n=0;n<LAB_AGENTS.length;n++){
-  const index=(cursor+n)%LAB_AGENTS.length,agent=LAB_AGENTS[index];
+ for(let n=0;n<agents.length;n++){
+  const index=(cursor+n)%agents.length,agent=agents[index];
   if(state.positions.some(p=>p.agentId===agent.id)||pending.some(o=>o.side==='BUY'&&o.agentId===agent.id)||[...(claims?.values()??[])].some(c=>c.agentId===agent.id))continue;
-  const rows=markets.filter(m=>!chosen.has(m.mint)&&available(state,agent,m,now,claims)).map(m=>({agent,index,m,r:labSignal(agent.id,m,now).rank})).filter(c=>requireQuote?c.r.eligible:c.r.preQuoteEligible).sort((x,y)=>y.r.score-x.r.score||String(x.m.mint).localeCompare(String(y.m.mint)));
+  const rows=markets.filter(m=>!chosen.has(m.mint)&&available(state,agent,m,now,claims)).map(m=>({agent,index,m,r:signal(agent.id,m,now).rank})).filter(c=>requireQuote?c.r.eligible:c.r.preQuoteEligible).sort((x,y)=>y.r.score-x.r.score||String(x.m.mint).localeCompare(String(y.m.mint)));
   if(rows.length){out.push(rows[0]);chosen.add(rows[0].m.mint);}
  }
  return out;
