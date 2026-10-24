@@ -1,6 +1,6 @@
 import http from 'node:http';
 import {createPaperAssets} from './paper-assets.js';
-import {PAPER_AGENT_VERSION,paperAgentSnapshot,rankAgentUniverse as rankMarket,observeAgentMarkets} from './paper-agents.js';
+import {PAPER_AGENT_VERSION,paperAgentSnapshot,rankAgentUniverse as rankMarket,rankAgentEntryUniverse,observeAgentMarkets} from './paper-agents.js';
 import path from 'node:path';
 import {mkdir} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
@@ -30,7 +30,11 @@ const auth=new OwnerAuth({origin:process.env.PUBLIC_ORIGIN??(onRailway?'https://
 let desk;const market=createPaperMarket(()=>desk.state);desk=new PaperDesk(dir,market);await desk.load();
 const research=new ResearchJournal(dir);desk.research=research;const reports=new PaperReports(dir,research),telegram=new PaperTelegram(dir,dataDir);await telegram.load();
 const transport={get state(){return desk.state;},vault:{keypair:null},serial:fn=>desk.serial(fn),save:()=>desk.save(),training:reports};
-const verification=new VerificationFeed(globalThis.fetch,market,{rankMarket,ignoreH4:true,compareCandidates:compare5m,cacheMs:10000,quoteTracked:false,requireConfirmedQuote:true,canInspectCandidate:m=>paperPortfolioAdmission(desk.state,{ignorePendingId:desk.pendingOrders().find(o=>o.side==='BUY'&&o.mint===m.mint)?.id??null}).allowed}),discovery=new DiscoveryQueue(desk.state.discovery);
+const entryRank=(m,settings,now=Date.now())=>rankAgentEntryUniverse(desk.state,m,settings,now);
+// Keep signal research independent of shared capital/SELL admission. Those
+// limits are enforced again atomically when reserving and filling each BUY.
+const canResearch=m=>desk.state.running&&entryRank(m).roughEligible;
+const verification=new VerificationFeed(globalThis.fetch,market,{rankMarket:entryRank,ignoreH4:true,compareCandidates:compare5m,cacheMs:10000,quoteTracked:false,quoteTrackedCandidate:canResearch,requireConfirmedQuote:true,canInspectCandidate:canResearch}),discovery=new DiscoveryQueue(desk.state.discovery);
 let feed={markets:[],solUsd:null,updatedAt:null,error:null},refreshing=false,closing=false;
 async function refresh(){if(refreshing||closing)return;refreshing=true;try{
  const held=desk.state.positions,latest=await withRpcPriority('background',()=>loadMarkets([...new Set([...held.map(p=>p.mint),...desk.state.watchlist])],Object.fromEntries(held.map(p=>[p.mint,p.pairAddress])),discovery,{rankMarket,compare:compare5m}));

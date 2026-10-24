@@ -76,11 +76,22 @@ export function agentSignal(agentId,market,_legacyBase=null,now=Date.now(),setti
  const rank={...r,eligible:r.eligible&&accepts&&!riskBlocked,roughEligible:r.roughEligible&&contextPass,preQuoteEligible:r.preQuoteEligible&&accepts&&!risk.some(x=>!x.quote),red_flags:flags,reasons:[...r.reasons,...(!accepts?[agent.rule]:[]),...riskReasons],primaryFlags:ownPrimary?[...r.primaryFlags,'AGENT_RISK']:ownStage!==r.blockingStage&&!accepts?['AGENT_HYPOTHESIS']:r.primaryFlags,primaryReasons:ownPrimary?[...r.primaryReasons,...riskReasons]:ownStage!==r.blockingStage&&!accepts?[agent.rule]:r.primaryReasons,missingData:[...r.missingData,...(risk.some(x=>x.missing)?['AGENT_RISK']:[])],blockingStage:ownStage,agentId};
  return {eligible:rank.eligible,stage:rank.blockingStage,reason:rank.eligible?'Đạt tín hiệu '+agent.name:rank.primaryReasons.join('; ')||agent.rule,rank,m};
 }
-export function rankAgentUniverse(m,settings,now=Date.now()){
- const rows=PAPER_AGENTS.map(a=>agentSignal(a.id,m,null,now,settings));
+function rankAgentRows(rows){
  const order={ready:0,confirmation:1,safety:2,score:3,hypothesis:4,market:5,discovery:6};
- const best=[...rows].sort((a,b)=>Number(b.rank.preQuoteEligible&&!b.rank.red_flags.includes('UNCONFIRMED_SIGNAL'))-Number(a.rank.preQuoteEligible&&!a.rank.red_flags.includes('UNCONFIRMED_SIGNAL'))||Number(b.rank.preQuoteEligible)-Number(a.rank.preQuoteEligible)||Number(b.rank.roughEligible)-Number(a.rank.roughEligible)||(order[a.stage]??9)-(order[b.stage]??9)||b.rank.score-a.rank.score)[0].rank;
- return {...best,eligible:rows.some(x=>x.eligible),roughEligible:rows.some(x=>x.rank.roughEligible),preQuoteEligible:rows.some(x=>x.rank.preQuoteEligible),eligibleAgentIds:rows.filter(x=>x.eligible).map(x=>x.rank.agentId),previousPaper:undefined};
+ const best=[...rows].sort((a,b)=>Number(b.rank.preQuoteEligible&&!b.rank.red_flags.includes('UNCONFIRMED_SIGNAL'))-Number(a.rank.preQuoteEligible&&!a.rank.red_flags.includes('UNCONFIRMED_SIGNAL'))||Number(b.rank.preQuoteEligible)-Number(a.rank.preQuoteEligible)||Number(b.rank.roughEligible)-Number(a.rank.roughEligible)||(order[a.stage]??9)-(order[b.stage]??9)||b.rank.score-a.rank.score)[0]?.rank;
+ return best?{...best,eligible:rows.some(x=>x.eligible),roughEligible:rows.some(x=>x.rank.roughEligible),preQuoteEligible:rows.some(x=>x.rank.preQuoteEligible),eligibleAgentIds:rows.filter(x=>x.eligible).map(x=>x.rank.agentId),previousPaper:undefined}:{eligible:false,roughEligible:false,preQuoteEligible:false,eligibleAgentIds:[],red_flags:['NO_AVAILABLE_AGENT'],blockingStage:'agent',score:0};
+}
+export function rankAgentUniverse(m,settings,now=Date.now()){
+ return rankAgentRows(PAPER_AGENTS.map(a=>agentSignal(a.id,m,null,now,settings)));
+}
+// Research eligibility is per bot/lot, not per mint or current portfolio quota.
+// An existing owner's signal must not stand in for another bot's confirmation.
+export function rankAgentEntryUniverse(state,m,settings=state.settings,now=Date.now()){
+ const orders=[state.pending,...(state.pendingEntries??[]),...(state.pendingExits??[])].filter(Boolean);
+ const available=PAPER_AGENTS.filter(a=>!state.positions.some(p=>p.agentId===a.id||!p.agentId&&p.mint===m.mint)
+  &&!orders.some(o=>o.side==='BUY'&&o.agentId===a.id&&o.mint!==m.mint)
+  &&!((state.agentCooldowns?.[a.id]?.[m.mint]??(!state.agentCooldowns?state.cooldowns?.[m.mint]:0))>now));
+ return rankAgentRows(available.map(a=>agentSignal(a.id,m,null,now,settings)));
 }
 export function agentCandidates(state,markets,now=Date.now()){
  const cursor=Number.isSafeInteger(state.agentCursor)?state.agentCursor%PAPER_AGENTS.length:0,out=[];
