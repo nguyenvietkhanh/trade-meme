@@ -1,3 +1,4 @@
+import {PAPER_WORKFLOW_VERSION,paperEntrySnapshotKey,paperEntryWorkflow,assertPaperEntryWorkflow,paperEntryFilled,paperExitWorkflow} from './paper-workflow.js';
 import path from 'node:path';
 import {PAPER_AGENTS,PAPER_AGENT_VERSION,rankAgentUniverse,agentMarket,agentSignal,agentCandidates,observeAgentSignals,recordAgentFill} from './paper-agents.js';
 import {randomUUID} from 'node:crypto';
@@ -14,7 +15,7 @@ import {paperLotKey,samePaperLot,paperMark} from './paper-identity.js';
 import {withRpcPriority} from './rpc-priority.js';
 import {SCALP_STRATEGY_VERSION,SCALP_EXIT_RULES,SCALP_ENTRY_RULES,scalpExitPlan,compare5m,isScalpVersion,modeledNormalRoundTripPct,PAPER_NORMAL_HAIRCUT_BPS} from './paper-scalp.js';
 export const PAPER_MODEL=Object.freeze({initialSol:20,delayMs:2000,feeSol:.000025,rentSol:.00203928,normalFillSlippageBps:PAPER_NORMAL_HAIRCUT_BPS,fill:'fresh quote after 2s; modeled 1.5% slippage (emergency 10%), bounded by quote and original intent; no MEV/inclusion simulation'});
-const PAPER_ERROR_CODES=new Set(['INTENT_EXPIRED','BUY_GATE_CHANGED','BUY_EVIDENCE_EXPIRED','QUOTE_BEFORE_DELAY','SLIPPAGE_LIMIT','SIZE_DEPTH_COST_LIMIT','PROVIDER_BACKOFF','QUOTE_QUEUE_BUSY','EXIT_QUOTES_STALE','EXIT_REQUIRED','EXIT_PROVIDER_UNAVAILABLE','EXIT_CAPACITY','PORTFOLIO_RISK_LIMIT','PORTFOLIO_DATA_INVALID']);
+const PAPER_ERROR_CODES=new Set(['WORKFLOW_GAP','INTENT_EXPIRED','BUY_GATE_CHANGED','BUY_EVIDENCE_EXPIRED','QUOTE_BEFORE_DELAY','SLIPPAGE_LIMIT','SIZE_DEPTH_COST_LIMIT','PROVIDER_BACKOFF','QUOTE_QUEUE_BUSY','EXIT_QUOTES_STALE','EXIT_REQUIRED','EXIT_PROVIDER_UNAVAILABLE','EXIT_CAPACITY','PORTFOLIO_RISK_LIMIT','PORTFOLIO_DATA_INVALID']);
 const paperError=(code,message)=>Object.assign(Error(message),{code});
 const round=n=>Math.round(n*1e9)/1e9;
 const fresh=(t,now,maxAgeMs=30000)=>Number.isFinite(t)&&t<=now&&now-t<=maxAgeMs;
@@ -35,7 +36,7 @@ export class PaperDesk{
   this.state=docs.sort((a,b)=>b.generation-a.generation)[0]??newPaperState(this.clock());
   // Software rules remain the deployed version; virtual capital is never read from a wallet.
   this.state.settings={...TRADE_RULES,initialSol:20,requireExecutableQuote:true};this.state.model=PAPER_MODEL;this.state.entryPolicy=PAPER_ENTRY_POLICY;this.state.exitPolicy=SCALP_EXIT_RULES;this.state.strategyVersion=SCALP_STRATEGY_VERSION;
-  this.state.sizingPolicy=PAPER_SIZING;this.state.portfolioPolicy=PAPER_PORTFOLIO_POLICY;this.state.pendingExits??=[];this.state.pendingEntries??=[];this.state.concurrentAgentEntries=true;this.state.agentCooldowns??={};
+  this.state.sizingPolicy=PAPER_SIZING;this.state.portfolioPolicy=PAPER_PORTFOLIO_POLICY;this.state.pendingExits??=[];this.state.pendingEntries??=[];this.state.concurrentAgentEntries=true;this.state.agentCooldowns??={};this.state.entryAttemptSkips??={};this.state.workflowStartedAt??=this.clock();this.state.workflowVersion=PAPER_WORKFLOW_VERSION;
   if(!this.state.paperLotMarksVersion){for(const p of this.state.positions){const old=this.state.marks[p.mint];if(p.agentId&&this.state.positions.filter(x=>x.mint===p.mint).length===1&&old?.rawAmount===p.rawQuantity&&!this.state.marks[paperLotKey(p)])this.state.marks[paperLotKey(p)]={...old,positionId:p.paperPositionId};}this.state.paperLotMarksVersion=1;}
   for(const p of this.state.positions)if(p.agentId)delete this.state.marks[p.mint];
   if(!this.state.positions.length&&this.state.exitSurveillance)this.state.exitSurveillance.lastAttemptAt=null;
@@ -47,12 +48,14 @@ export class PaperDesk{
   }
   if(this.state.pending?.side==='BUY'&&this.state.pending.strategyVersion!==SCALP_STRATEGY_VERSION){this.state.pending=null;event(this.state,'Đã hủy ý định BUY của chính sách paper cũ; chờ gainers 5m mới.');}
   this.state.pendingEntries=this.state.pendingEntries.filter(o=>o.agentPolicyVersion===PAPER_AGENT_VERSION);if(this.state.pending?.side==='BUY'&&this.state.pending.agentId&&this.state.pending.agentPolicyVersion!==PAPER_AGENT_VERSION){this.state.pending=null;event(this.state,'PAPER · hủy BUY chưa khớp của nhóm bot cũ; không đổi số dư/vị thế.');}
+  const oldBuys=this.pendingOrders().filter(o=>o.side==='BUY'&&o.workflow?.version!==PAPER_WORKFLOW_VERSION);
+  if(oldBuys.length){this.state.pendingEntries=this.state.pendingEntries.filter(o=>!oldBuys.includes(o));if(oldBuys.includes(this.state.pending))this.state.pending=null;event(this.state,'PAPER · hủy BUY chưa có phiếu SCAN/VERIFY/EXECUTE/EXIT; giữ nguyên vốn và vị thế, chờ ảnh thị trường mới.');}
   await this.save();
  }
  async save(){if(!validPaperState(this.state))throw Error('Paper ledger invariant failed');this.state.generation++;await writeDurable(path.join(this.dir,'ledger.json'),this.state);await writeDurable(path.join(this.dir,'ledger.backup.json'),this.state);}
  pendingOrders(){return [this.state.pending,...(this.state.pendingExits??[]),...(this.state.pendingEntries??[])].filter(Boolean);}
  enqueueExit(order){
-  const s=this.state;if(this.pendingOrders().some(o=>o.side==='SELL'&&samePaperLot(o,order)))return;
+  const s=this.state;if(this.pendingOrders().some(o=>o.side==='SELL'&&samePaperLot(o,order)))return;this.workflowTask('EXIT','trigger',order,order.reason);
   if(s.pending?.side==='BUY'){(s.pendingEntries??=[]).push(s.pending);s.pending=null;}
   if(!s.pending)s.pending=order;else (s.pendingExits??=[]).push(order);
  }
@@ -67,6 +70,11 @@ export class PaperDesk{
   s.pendingEntries=(s.pendingEntries??[]).filter(o=>o!==next);if(s.pending)s.pendingEntries.push(s.pending);s.pending=next;
  }
  entryRank(order,m,now){return order.agentId?agentSignal(order.agentId,m,null,now,this.state.settings).rank:rankLegacyMarket(m,this.state.settings,now);}
+ workflowTask(stage,result,order,reason,at=this.clock()){
+  const counts=this.bucket(at).workflowTasks??={};const group=counts[stage]??={};group[result]=(group[result]??0)+1;
+  this.research?.enqueue({type:'paper_workflow_task',version:PAPER_WORKFLOW_VERSION,at,stage,result,intentId:order?.id??null,agentId:order?.agentId??null,mint:order?.mint??null,pairAddress:order?.pairAddress??null,positionId:order?.positionId??null,marketObservedAt:order?.workflow?.scan?.marketObservedAt??order?.marketObservedAt??null,snapshotKey:order?.workflow?.snapshotKey??order?.snapshotKey??null,reason});
+ }
+ skipEntrySnapshot(key,reason,at=this.clock()){if(!key)return;const skips=this.state.entryAttemptSkips??={};skips[key]={at,reason};this.state.entryAttemptSkips=Object.fromEntries(Object.entries(skips).slice(-256));}
  async prepareEntries(feed){
   const s=this.state;let attempted=0;const attemptedAgents=new Set(),attemptedMints=new Set(),candidates=agentCandidates(s,feed.markets,this.clock());
   for(const {m,r,agent,index}of candidates){
@@ -74,12 +82,16 @@ export class PaperDesk{
    const now=this.clock(),portfolio=paperPortfolioAdmission(s,{now}),size=paperOrderSol(s);s.lastPortfolioAdmission={at:now,...portfolio};
    s.agentExecutionStatus??={};if(!portfolio.allowed){s.agentExecutionStatus[agent.id]={at:now,code:portfolio.code,message:portfolio.message};continue;}
    if(!size||Math.abs((m.evidence?.probeSol??0)-size)>1e-9||size>m.evidence.quoteReserveSol*.02||!Number.isInteger(m.evidence.decimals)){s.agentExecutionStatus[agent.id]={at:now,code:'SIZE_PROOF_WAIT',message:'Chờ quote vòng và decimals đúng cỡ lệnh.'};continue;}
-   attempted++;attemptedAgents.add(agent.id);attemptedMints.add(m.mint);s.agentCursor=(index+1)%PAPER_AGENTS.length;try{const amount=String(Math.round(size*1e9)),q=await this.readQuote(m.mint,'BUY',amount),at=this.clock();if(q.impactPct>agent.riskPolicy.maxImpactPct)throw Error('Paper BUY impact exceeds own risk profile.');
+   const amount=String(Math.round(size*1e9)),snapshotKey=paperEntrySnapshotKey(agent.id,m,amount);
+   if(s.entryAttemptSkips?.[snapshotKey]){s.agentExecutionStatus[agent.id]={at:now,code:'SNAPSHOT_SKIPPED',message:'Ảnh dữ liệu này đã bị bỏ qua; chờ dữ liệu mới, không tạo lại cùng ý định.'};continue;}
+   const task={id:randomUUID(),agentId:agent.id,mint:m.mint,pairAddress:m.pairAddress,marketObservedAt:m.updatedAt,snapshotKey};this.workflowTask('SCAN','lead',task,'fresh-market-candidate',now);this.workflowTask('VERIFY','pass',task,'own-signal-and-hard-checks',now);
+   attempted++;attemptedAgents.add(agent.id);attemptedMints.add(m.mint);s.agentCursor=(index+1)%PAPER_AGENTS.length;try{const q=await this.readQuote(m.mint,'BUY',amount),at=this.clock();if(q.impactPct>agent.riskPolicy.maxImpactPct)throw Error('Paper BUY impact exceeds own risk profile.');
     const latest=agentSignal(agent.id,m,null,at,s.settings),admission=paperPortfolioAdmission(s,{now:at});if(!latest.eligible||!admission.allowed)throw paperError('BUY_GATE_CHANGED','Signal or shared capital changed before intent reservation.');
     const features={...paperEntryFeatures(m,feed.solUsd,at),score:latest.rank.score,scoreParts:latest.rank.scoreParts,strategyVersion:agent.entryRules.version,policyVersion:agent.entryRules.version};
-    const order={agentId:agent.id,agentPolicyVersion:PAPER_AGENT_VERSION,id:randomUUID(),side:'BUY',mint:m.mint,pairAddress:m.pairAddress,amount,reason:`${agent.id}:${m.change5mPct}%:score:${r.score}`,decisionAt:at,readyAt:at+PAPER_MODEL.delayMs,benchmark:q,entryFeatures:features,baseline:r.baseline,relaxedFlags:r.relaxedFlags,entryPolicy:agent.entryRules,riskPolicy:agent.riskPolicy,exitPolicy:agent.exitPolicy,strategyVersion:SCALP_STRATEGY_VERSION,portfolioAtEntry:admission,sizing:{...PAPER_SIZING,capitalSol:paperCapitalSol(s),orderSol:size},scalpSetup:m.scalpSetup??null,decimals:m.evidence.decimals};
+    const order={agentId:agent.id,agentPolicyVersion:PAPER_AGENT_VERSION,id:task.id,side:'BUY',mint:m.mint,pairAddress:m.pairAddress,amount,reason:`${agent.id}:${m.change5mPct}%:score:${r.score}`,decisionAt:at,readyAt:at+PAPER_MODEL.delayMs,benchmark:q,entryFeatures:features,baseline:r.baseline,relaxedFlags:r.relaxedFlags,entryPolicy:agent.entryRules,riskPolicy:agent.riskPolicy,exitPolicy:agent.exitPolicy,strategyVersion:SCALP_STRATEGY_VERSION,portfolioAtEntry:admission,sizing:{...PAPER_SIZING,capitalSol:paperCapitalSol(s),orderSol:size},scalpSetup:m.scalpSetup??null,decimals:m.evidence.decimals};
+    order.workflow=paperEntryWorkflow(order,m,latest.rank,at);this.workflowTask('EXECUTE','reserved',order,'capital-and-exit-plan-reserved',at);
     if(!s.pending)s.pending=order;else (s.pendingEntries??=[]).push(order);s.agentCursor=(index+1)%PAPER_AGENTS.length;s.agentExecutionStatus[agent.id]={at,code:'ENTRY_RESERVED',message:'Đã dành vốn; chờ quote khớp sau độ trễ.'};
-   }catch(error){const code=this.error(error,this.clock(),{side:'BUY',mint:m.mint,agentId:agent.id});s.agentExecutionStatus[agent.id]={at:this.clock(),code,message:'Quote/điều kiện chưa đạt; bot khác vẫn được xét.'};}
+   }catch(error){const code=this.error(error,this.clock(),{side:'BUY',mint:m.mint,agentId:agent.id});this.skipEntrySnapshot(snapshotKey,code);this.workflowTask('EXECUTE','skip',task,code);s.agentExecutionStatus[agent.id]={at:this.clock(),code,message:'Quote/điều kiện chưa đạt; bot khác vẫn được xét.'};}
   }
  }
  monitoring(now=this.clock()){
@@ -125,7 +137,7 @@ export class PaperDesk{
    candidates.sort((a,b)=>{const age=p=>nowAtStart-(p.paperLastMonitorAt??p.openedAt),overdue=p=>age(p)>=30000,unquoted=p=>paperMark(s,p)?.rawAmount!==p.rawQuantity;return Number(overdue(b))-Number(overdue(a))||(overdue(a)&&overdue(b)?age(b)-age(a):Number(risk(b))-Number(risk(a))||Number(unquoted(b))-Number(unquoted(a)))||age(b)-age(a)||a.mint.localeCompare(b.mint);});
    const p=candidates[0];let now=nowAtStart;
    if(p)p.paperLastMonitorAt=now;
-   if(p){const m=feed.markets.find(m=>m.mint===p.mint&&m.pairAddress===p.pairAddress);let q;try{q=await this.readQuote(p.mint,'SELL',p.rawQuantity);}catch(error){recordExitSurveillance(s,{at:nowAtStart,completedAt:this.clock(),ok:false});if(s.pending?.side==='BUY'){event(s,'PAPER · ưu tiên quote SELL; giữ BUY trong hàng chờ riêng.',this.clock());(s.pendingEntries??=[]).push(s.pending);s.pending=null;}const code=this.error(error,this.clock(),{side:'SELL',mint:p.mint});this.research?.enqueue({type:'paper_position_quote_error',at:this.clock(),mint:p.mint,rawAmount:p.rawQuantity,code});return true;}now=this.clock();recordExitSurveillance(s,{at:nowAtStart,completedAt:now,ok:true});const netSol=Math.max(0,Number(q.minOut)/1e9-PAPER_MODEL.feeSol);
+   if(p){const m=feed.markets.find(m=>m.mint===p.mint&&m.pairAddress===p.pairAddress);let q;try{q=await this.readQuote(p.mint,'SELL',p.rawQuantity);}catch(error){recordExitSurveillance(s,{at:nowAtStart,completedAt:this.clock(),ok:false});if(s.pending?.side==='BUY'){event(s,'PAPER · ưu tiên quote SELL; giữ BUY trong hàng chờ riêng.',this.clock());(s.pendingEntries??=[]).push(s.pending);s.pending=null;}const code=this.error(error,this.clock(),{side:'SELL',mint:p.mint});this.workflowTask('EXIT','error',{agentId:p.agentId,mint:p.mint,pairAddress:p.pairAddress},code);this.research?.enqueue({type:'paper_position_quote_error',at:this.clock(),mint:p.mint,rawAmount:p.rawQuantity,code});return true;}now=this.clock();recordExitSurveillance(s,{at:nowAtStart,completedAt:now,ok:true});const netSol=Math.max(0,Number(q.minOut)/1e9-PAPER_MODEL.feeSol);
     s.marks[paperLotKey(p)]={positionId:p.paperPositionId,rawAmount:p.rawQuantity,checkedAt:q.checkedAt,netSol,provider:q.provider};
     const roi=(netSol/p.costSol-1)*100;p.paperMfePct=Math.max(p.paperMfePct??roi,roi);p.paperMaePct=Math.min(p.paperMaePct??roi,roi);this.research?.enqueue({type:'paper_position_mark',at:now,mint:p.mint,rawAmount:p.rawQuantity,netSol,checkedAt:q.checkedAt,remainingCostSol:p.costSol,roiPct:roi});
     if(isScalpVersion(p.exitPolicy?.version)||m&&fresh(m.updatedAt,now)&&feed.solUsd>0){const exitQuote={mint:p.mint,rawAmount:p.rawQuantity,checkedAt:q.checkedAt,netSol},mark={...m,mint:p.mint,pairAddress:p.pairAddress,exitQuote},plan=isScalpVersion(p.exitPolicy?.version)?scalpExitPlan(p,mark,now):exitPlan(p,{...mark,priceUsd:netSol*feed.solUsd/p.quantity},feed.solUsd,s.settings,now);
@@ -167,8 +179,9 @@ export class PaperDesk{
  }
  async fillPending(feed){
   const s=this.state,o=s.pending,now=this.clock();
-  if(now-o.decisionAt>(o.side==='BUY'&&o.strategyVersion===SCALP_STRATEGY_VERSION?10000:30000)){s.pending=null;this.error(paperError('INTENT_EXPIRED','timeout pending paper'),now,o);return;}
+  if(now-o.decisionAt>(o.side==='BUY'&&o.strategyVersion===SCALP_STRATEGY_VERSION?10000:30000)){s.pending=null;if(o.side==='BUY')this.skipEntrySnapshot(o.workflow?.snapshotKey,'INTENT_EXPIRED',now);this.workflowTask(o.side==='BUY'?'EXECUTE':'EXIT','skip',o,'INTENT_EXPIRED',now);this.error(paperError('INTENT_EXPIRED','timeout pending paper'),now,o);return;}
   try{
+   if(o.side==='BUY')assertPaperEntryWorkflow(o);
    const observed=feed.markets.find(m=>m.mint===o.mint&&m.pairAddress===o.pairAddress),held=s.positions.find(p=>samePaperLot(p,o)&&p.pairAddress===o.pairAddress&&(!o.positionId||p.paperPositionId===o.positionId)),m=observed??(o.side==='SELL'&&held?{mint:held.mint,pairAddress:held.pairAddress,symbol:held.symbol,venue:held.venue,updatedAt:null}:null);
    let solUsd=fresh(feed.updatedAt,now)&&Number.isFinite(feed.solUsd)&&feed.solUsd>0?feed.solUsd:null;
    if(!m||o.side==='SELL'&&!held||o.side==='BUY'&&(!fresh(m.updatedAt,now)||solUsd===null))throw Error('Dữ liệu market/giá SOL cũ hoặc không khớp vị thế.');
@@ -185,10 +198,11 @@ export class PaperDesk{
    if(o.side==='BUY'){
     const admission=paperPortfolioAdmission(s,{now:fillNow,orderSol:Number(o.amount)/1e9,ignorePendingId:o.id});if(!admission.allowed)throw paperError(admission.code,admission.message);
     const size=Number(o.amount)/1e9;if(Math.abs(paperOrderSol(s,{ignorePendingId:o.id})-size)>1e-9||q.impactPct>(o.riskPolicy?.maxImpactPct??2)||size>m.evidence.quoteReserveSol*(o.riskPolicy?.maxOrderReservePct??2)/100||Math.abs(m.evidence.probeSol-size)>1e-9||!canFundBuy(s.cashSol,size,s.settings.reserveSol)||m.evidence.roundTripLossPct+2*PAPER_MODEL.feeSol/size*100>8||modeledNormalRoundTripPct(m.evidence.roundTripLossPct)>SCALP_ENTRY_RULES.maxModeledRoundTripPct)throw paperError('SIZE_DEPTH_COST_LIMIT','Paper size/depth/cost limit.');
+    const workflow=paperEntryFilled(o,q,fillOut,fillNow);
     const quantity=Number(fillOut)/10**o.decimals;costOrNet=round(size+PAPER_MODEL.feeSol);
     recordBuy(s,m,feed.solUsd,{quantity,costSol:costOrNet,priceUsd:size*feed.solUsd/quantity,rawQuantity:fillOut,decimals:o.decimals,networkFeeSol:PAPER_MODEL.feeSol},fillNow,o.reason,'paper');
     s.cashSol=round(s.cashSol-PAPER_MODEL.rentSol);s.rentLockedSol=round(s.rentLockedSol+PAPER_MODEL.rentSol);
-    position=s.positions.at(-1);position.agentId=o.agentId??null;position.agentPolicyVersion=o.agentPolicyVersion??null;position.paperPositionId=o.id;position.modeledBuyFeeSol=PAPER_MODEL.feeSol;position.portfolioAtEntry=o.portfolioAtEntry??null;position.entryFeatures=o.entryFeatures;position.paperBaseline=o.baseline;position.relaxedFlags=o.relaxedFlags;position.rentSol=PAPER_MODEL.rentSol;position.venue='pumpswap';position.strategyVersion=o.strategyVersion;position.entryPolicy=o.entryPolicy;position.riskPolicy=o.riskPolicy??null;position.exitPolicy=o.exitPolicy;position.scalpSetup=o.scalpSetup;s.decisionStats.bought++;
+    position=s.positions.at(-1);position.workflow=workflow;position.agentId=o.agentId??null;position.agentPolicyVersion=o.agentPolicyVersion??null;position.paperPositionId=o.id;position.modeledBuyFeeSol=PAPER_MODEL.feeSol;position.portfolioAtEntry=o.portfolioAtEntry??null;position.entryFeatures=o.entryFeatures;position.paperBaseline=o.baseline;position.relaxedFlags=o.relaxedFlags;position.rentSol=PAPER_MODEL.rentSol;position.venue='pumpswap';position.strategyVersion=o.strategyVersion;position.entryPolicy=o.entryPolicy;position.riskPolicy=o.riskPolicy??null;position.exitPolicy=o.exitPolicy;position.scalpSetup=o.scalpSetup;s.decisionStats.bought++;
    }else{
     position=held;if(!position||BigInt(o.amount)>BigInt(position.rawQuantity))throw Error('Paper SELL balance mismatch');
     const remaining=(BigInt(position.rawQuantity)-BigInt(o.amount)).toString(),quantity=Number(o.amount)/10**position.decimals;closed=remaining==='0';costOrNet=round(Math.max(0,Number(fillOut)/1e9-PAPER_MODEL.feeSol));
@@ -203,10 +217,11 @@ export class PaperDesk{
    Object.assign(trade.execution,{decisionQuotedOutput:o.benchmark.outAmount,decisionQuoteMinOut:o.benchmark.minOut,decisionQuoteObservedAt:o.benchmark.checkedAt,quoteOutputChangeVsDecisionPct:(Number(q.outAmount)/Number(o.benchmark.outAmount)-1)*100});
    const signal=o.entryFeatures??position.entryFeatures;trade.entrySignal={score:signal?.score??null,change5mPct:signal?.rank5m?.changePct??null,scalpSetup:o.scalpSetup??position.scalpSetup??null,previousPaper:signal?.previousPaper??null,roundTripLossPct:signal?.safety?.roundTripLossPct??null,estimatedNormalRoundTripPct:modeledNormalRoundTripPct(signal?.safety?.roundTripLossPct),quoteReserveSol:signal?.safety?.quoteReserveSol??null};
    trade.execution.quoteToFillCostSol=o.side==='SELL'?(Number(q.outAmount)-Number(fillOut))/1e9:null;
+   trade.workflow=o.side==='BUY'?position.workflow:paperExitWorkflow(position,o,q,fillOut,fillNow);this.workflowTask(o.side==='BUY'?'EXECUTE':'EXIT','fill',o,o.reason,fillNow);
    const fill={...trade,session:s.session,pairAddress:o.pairAddress,rawAmount:o.amount,rawOutput:fillOut,decisionAt:o.decisionAt,fillAt:fillNow,holdingMs:o.side==='SELL'?fillNow-position.openedAt:null,benchmark:o.benchmark,fillQuote:q,latencyMs:fillNow-o.decisionAt,quoteAgeAtFillMs:fillNow-q.checkedAt,marketAgeAtFillMs:fillNow-m.updatedAt,outputVsDecisionPct:(Number(fillOut)/Number(o.benchmark.outAmount)-1)*100,netVsTriggerPct:o.side==='SELL'&&o.triggerNetSol>0?(costOrNet/o.triggerNetSol-1)*100:null,entryFeatures:o.entryFeatures??position.entryFeatures,entryPolicy:o.entryPolicy??position.entryPolicy??{version:'paper-exploration-v1'},exitPolicy:o.exitPolicy??position.exitPolicy??null,scalpSetup:o.scalpSetup??position.scalpSetup??null,exitTrigger:o.exitTrigger??null,baselineAtEntry:o.baseline??position.paperBaseline,relaxedFlagsAtEntry:o.relaxedFlags??position.relaxedFlags,paperMfePct:position.paperMfePct??null,paperMaePct:position.paperMaePct??null,cashAfterSol:s.cashSol,rentLockedSol:s.rentLockedSol,assumptions:PAPER_MODEL};
    trade.sizing=o.sizing??position.sizing??null;trade.portfolioAtEntry=o.portfolioAtEntry??position.portfolioAtEntry??null;if(o.side==='BUY')position.sizing=o.sizing??null;fill.sizing=trade.sizing;fill.portfolioAtEntry=trade.portfolioAtEntry;
    recordAgentFill(s,trade);s.archiveOutbox.push(fill);s.pending=null;
    event(s,`PAPER · ${trade.agentId?.toUpperCase()??'LEGACY'} · ${o.side} ${m.symbol}: ${costOrNet.toFixed(6)} SOL · ${o.reason}`,fillNow);
-  }catch(e){o.attempts=(o.attempts??0)+1;o.lastErrorCode=this.error(e,this.clock(),o);o.lastErrorAt=this.clock();o.readyAt=this.clock()+PAPER_MODEL.delayMs;if(o.attempts>=TRADE_RULES.maxRetries||e.code==='INTENT_EXPIRED'||this.clock()-o.decisionAt>(o.side==='BUY'&&o.strategyVersion===SCALP_STRATEGY_VERSION?10000:30000))s.pending=null;else if(o.side==='BUY'){(s.pendingEntries??=[]).push(o);s.pending=null;}if(o.agentId){s.agentExecutionStatus??={};s.agentExecutionStatus[o.agentId]={at:this.clock(),code:o.lastErrorCode,message:'Khớp chưa thành công; ý định của bot khác không bị xóa.'};}}
+  }catch(e){o.attempts=(o.attempts??0)+1;o.lastErrorCode=this.error(e,this.clock(),o);o.lastErrorAt=this.clock();o.readyAt=this.clock()+PAPER_MODEL.delayMs;this.workflowTask(o.side==='BUY'?'EXECUTE':'EXIT','error',o,o.lastErrorCode);if(o.attempts>=TRADE_RULES.maxRetries||e.code==='WORKFLOW_GAP'||e.code==='INTENT_EXPIRED'||this.clock()-o.decisionAt>(o.side==='BUY'&&o.strategyVersion===SCALP_STRATEGY_VERSION?10000:30000)){if(o.side==='BUY')this.skipEntrySnapshot(o.workflow?.snapshotKey,o.lastErrorCode);s.pending=null;}else if(o.side==='BUY'){(s.pendingEntries??=[]).push(o);s.pending=null;}if(o.agentId){s.agentExecutionStatus??={};s.agentExecutionStatus[o.agentId]={at:this.clock(),code:o.lastErrorCode,message:'Khớp chưa thành công; ý định của bot khác không bị xóa.'};}}
  }
 }

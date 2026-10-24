@@ -1,3 +1,4 @@
+import {workflowDecisionStage} from './paper-workflow.js';
 import {updateAgentMetrics,agentMetricView} from './paper-agent-metrics.js';
 import {paperPortfolioAdmission} from './paper-portfolio.js';
 import {rankPaperRules,observePaperEligibility} from './paper-policy.js';
@@ -106,7 +107,7 @@ export function agentCandidates(state,markets,now=Date.now()){
 }
 export function observeAgentSignals(state,markets,now=Date.now()){
  const agents={};state.agentIntents??={};const cycle=(state.agentSignals?.cycle??0)+1;
- for(const agent of PAPER_AGENTS){const stages={},decisions=[];let eligible=0;for(const m of markets){const d=agentSignal(agent.id,m,null,now,state.settings);eligible+=Number(d.eligible);stages[d.stage]=(stages[d.stage]??0)+1;decisions.push({mint:m.mint,symbol:m.symbol,stage:d.stage,eligible:d.eligible,reason:d.reason,score:d.rank.score});}agents[agent.id]={at:now,cycle,evaluated:markets.length,eligible,stages,decisions:decisions.slice(0,60)};}
+ for(const agent of PAPER_AGENTS){const stages={},decisions=[];let eligible=0;for(const m of markets){const d=agentSignal(agent.id,m,null,now,state.settings);eligible+=Number(d.eligible);stages[d.stage]=(stages[d.stage]??0)+1;decisions.push({mint:m.mint,symbol:m.symbol,taskStage:workflowDecisionStage(d.stage),taskResult:d.eligible?'pass':'skip',stage:d.stage,eligible:d.eligible,reason:d.reason,score:d.rank.score});}agents[agent.id]={at:now,cycle,evaluated:markets.length,eligible,stages,decisions:decisions.slice(0,60)};}
  // All ten publish proposals from the SAME snapshot, even while another bot's
  // quote/fill is waiting. Proposals reserve no money and never fabricate fills.
  const candidates=agentCandidates(state,markets,now);for(const a of PAPER_AGENTS){const pick=candidates.find(x=>x.agent.id===a.id),old=state.agentIntents[a.id];if(pick)state.agentIntents[a.id]={agentId:a.id,policyVersion:PAPER_AGENT_VERSION,mint:pick.m.mint,pairAddress:pick.m.pairAddress,score:pick.r.score,createdAt:old?.mint===pick.m.mint?old.createdAt:now,observedAt:now,expiresAt:now+15000};else delete state.agentIntents[a.id];}

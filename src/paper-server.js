@@ -1,3 +1,4 @@
+import {PAPER_WORKFLOW_VERSION} from './paper-workflow.js';
 import http from 'node:http';
 import {createPaperAssets} from './paper-assets.js';
 import {PAPER_AGENT_VERSION,paperAgentSnapshot,rankAgentUniverse as rankMarket,rankAgentEntryUniverse,observeAgentMarkets} from './paper-agents.js';
@@ -51,7 +52,7 @@ async function body(req){let bytes=0;const parts=[];for await(const p of req){by
 const server=http.createServer(async(req,res)=>{try{const url=new URL(req.url,'http://localhost'),p=url.pathname;
  // Enforced before authentication or body parsing: no production route can reach a real signer.
  if(/^\/api\/(direct|live|signer)(\/|$)/.test(p))return json(res,410,{mode:'paper',realTradingEnabled:false,error:'Đã chuyển hẳn sang mô phỏng; giao dịch SOL thật bị vô hiệu hóa.'});
- if(req.method==='GET'&&p==='/api/health')return json(res,200,{status:'ok',mode:'paper',initialVirtualSol:20,realTradingEnabled:false,unattendedSigningAvailable:false,signingMode:null,readOnly:true,running:desk.state.running,storageMode,heliusConfigured:market.heliusConfigured,rpcMode:market.rpcMode,signalTeamVersion:PAPER_AGENT_VERSION,strategyVersion:SCALP_STRATEGY_VERSION,entryPolicy:desk.state.entryPolicy,exitPolicy:desk.state.exitPolicy,sizingPolicy:desk.state.sizingPolicy,portfolioPolicy:desk.state.portfolioPolicy,marketReady:!!feed.updatedAt,uiRevision:uiAssets.revision,buildRevision:process.env.RAILWAY_GIT_COMMIT_SHA??'local'});
+ if(req.method==='GET'&&p==='/api/health')return json(res,200,{status:'ok',workflowVersion:PAPER_WORKFLOW_VERSION,mode:'paper',initialVirtualSol:20,realTradingEnabled:false,unattendedSigningAvailable:false,signingMode:null,readOnly:true,running:desk.state.running,storageMode,heliusConfigured:market.heliusConfigured,rpcMode:market.rpcMode,signalTeamVersion:PAPER_AGENT_VERSION,strategyVersion:SCALP_STRATEGY_VERSION,entryPolicy:desk.state.entryPolicy,exitPolicy:desk.state.exitPolicy,sizingPolicy:desk.state.sizingPolicy,portfolioPolicy:desk.state.portfolioPolicy,marketReady:!!feed.updatedAt,uiRevision:uiAssets.revision,buildRevision:process.env.RAILWAY_GIT_COMMIT_SHA??'local'});
  if(req.method==='GET'&&p==='/api/activity')return json(res,200,activityState());
  if(req.method==='GET'&&p==='/api/state')return json(res,200,snapshot(req));
  if(req.method==='GET'&&p==='/api/auth/status')return json(res,200,{owner:auth.owner,authenticated:auth.authenticated(req),walletMode:'paper-admin',signerAvailable:false});

@@ -17,7 +17,7 @@ function renderChart(s){
  $('chart-high').textContent=Number.isFinite(high)?high.toFixed(3):'—';$('chart-low').textContent=Number.isFinite(low)?low.toFixed(3):'—';$('chart-current').textContent=Number.isFinite(s.equitySol)?s.equitySol.toFixed(4)+' SOL':'Chờ quote mới';$('chart-start').textContent=start?time(start):'—';$('chart-end').textContent=end?time(end):'—';$('chart-caption').textContent=curve.length+' mẫu · SOL';
 }
 function renderTrades(trades){
- const nodes=trades.slice(0,50).map(t=>{const row=document.createElement('div');row.className='trade-row';row.dataset.tokenMint=t.mint;row.dataset.activityRole='trade';row.title=`${t.reason} · ${t.symbol} ${t.mint} · ${t.agentId?.toUpperCase()??'LEGACY'} · ${num(t.sol)} SOL · P/L ${num(t.pnlSol)}`;
+ const nodes=trades.slice(0,50).map(t=>{const row=document.createElement('div');row.className='trade-row';row.dataset.tokenMint=t.mint;row.dataset.activityRole='trade';row.title=`${t.workflow?.status==='entry-complete'?'Phiếu SCAN/VERIFY/EXECUTE/EXIT đã lưu':'Lệnh cũ: chưa có phiếu 4 bước'} · ${t.reason} · ${t.symbol} ${t.mint} · ${t.agentId?.toUpperCase()??'LEGACY'} · ${num(t.sol)} SOL · P/L ${num(t.pnlSol)}`;
  const when=textNode('span',time(t.at),'trade-time');when.append(textNode('b',t.agentId?.toUpperCase()??'LEGACY','trade-agent'));
  const token=textNode('span','','trade-token');token.append(textNode('span','['+t.side+']','trade-side'+(t.side==='SELL'?' sell':'')),document.createTextNode(t.symbol+' '+short(t.mint)));
  const value=textNode('span',t.side==='SELL'?signNum(t.pnlSol):num(t.sol),'trade-value'+(t.side==='SELL'?(t.pnlSol>0?' positive':t.pnlSol<0?' negative':''):''));row.append(when,token,value);return row;});
