@@ -1,0 +1,52 @@
+import {observePaperOutcomes} from '../src/paper-outcomes.js';
+import {test} from 'node:test';
+import assert from 'node:assert/strict';
+import {mkdtemp,rm} from 'node:fs/promises';
+import {LabPaperDesk,LAB_AGENTS,LAB_VERSION,labSignal,labRank,labAdmission,observeLabMarkets} from '../src/paper-lab.js';
+import {LabExecutionFeed} from '../src/paper-lab-feed.js';
+import {PaperDesk} from '../src/paper-desk.js';
+import {paperOrderSol,paperCapitalSol} from '../src/paper-sizing.js';
+import {createPaperMarket} from '../src/paper-market.js';
+import {PaperReports} from '../src/paper-reports.js';
+import {paperReportEnd} from '../src/paper-schedule.js';
+const start=Date.parse('2026-10-24T12:00:00Z');
+function market(now,{change=3,index=0,proof=true,size=.5}={}){return {mint:'11111111111111111111111111111112',pairAddress:'pool',symbol:'LAB',dexId:'pumpswap',priceUsd:.01*1.001**index,updatedAt:now,liquidityUsd:10000,change5mPct:change,change1hPct:5,volume5mUsd:1000,volume1hUsd:3000,buys5m:30+index*3,sells5m:10+index,evidence:proof?{mint:'11111111111111111111111111111112',pairAddress:'pool',certificationMode:'bypassed-paper',checkedAt:now,quoteCheckedAt:now,quoteContextSlot:1,decimals:6,roundTripQuoteOk:true,roundTripLossPct:3,probeSol:size}:undefined};}
+async function setup(t){const dir=await mkdtemp('/tmp/paper-lab-test-');t.after(()=>rm(dir,{recursive:true,force:true}));let now=start,value=.5,fail=null;const calls=[],quote={quote:async i=>{calls.push(i);if(i.side==='SELL'&&i.mint===fail)throw Error('HTTP 429');const out=i.side==='BUY'?9000000000:Math.floor(Number(i.amount)/9e9*value*1e9);return {...i,inAmount:i.amount,outAmount:String(out),minOut:String(out),checkedAt:now,contextSlot:1,impactPct:5};}};const desk=new LabPaperDesk(dir,quote,{clock:()=>now});await desk.load();return {desk,dir,quote,calls,now:()=>now,advance:n=>now+=n,value:n=>value=n,fail:x=>fail=x};}
+
+test('certificates are not fabricated or BUY gates in paper LAB, while price and executable quotes remain mandatory',()=>{
+ const raw=market(start),unsafe={...raw,evidence:{...raw.evidence,mintRevoked:false,freezeRevoked:false,extensionsSafe:false,lpSecuredPct:0,top10Pct:100,devPct:100,criticalWarnings:['unknown risk']}};
+ assert.equal(labSignal('orin',raw,start).eligible,true);assert.equal(labSignal('orin',unsafe,start).eligible,true);assert.equal(raw.evidence.mintRevoked,undefined);
+ for(const bad of [{...raw,priceUsd:0},{...raw,updatedAt:start-30001},{...raw,evidence:{}},{...raw,evidence:{...raw.evidence,roundTripQuoteOk:false}},{...raw,evidence:{...raw.evidence,quoteCheckedAt:start-10001}},{...raw,evidence:{...raw.evidence,decimals:undefined}}])assert.equal(labSignal('orin',bad,start).eligible,false);
+ assert.equal(labRank(market(start,{proof:false}),undefined,start).blockingStage,'execution');assert.equal(labSignal('orin',market(start,{proof:false}),start).rank.preQuoteEligible,true,'no future quote requirement blocks its own fetch');
+});
+test('ten entry hypotheses differ and do not inherit a common three-observation gate',()=>{
+ assert.equal(new Set(LAB_AGENTS.map(a=>a.rule)).size,10);assert.equal(new Set(LAB_AGENTS.map(a=>JSON.stringify(a.exitPolicy))).size,10);const m=market(start,{change:25});assert.equal(labSignal('orin',m,start).eligible,true);assert.equal(labSignal('zara',m,start).eligible,true);assert.equal(labSignal('rune',m,start).eligible,false);assert.equal(labSignal('sage',m,start).eligible,false);
+ const s={};observeLabMarkets(s,[market(start)],start);const rows=observeLabMarkets(s,[market(start+6000,{index:3})],start+6000);assert.equal(labSignal('nova',rows[0],start+6000).eligible,true);const next=observeLabMarkets(s,[market(start+8000,{index:4})],start+8000);assert.equal(labSignal('nova',next[0],start+8000).eligible,true,'between scans retain a real anchor instead of oscillating out of the delayed BUY gate');
+});
+test('production execution facade reads only decimals and real quote, never RugCheck, holders, authorities or wallet balance',async()=>{
+ let supply=0,quotes=0;const marketFacade=createPaperMarket(()=>20,{rpc:{getTokenSupply:async()=>{supply++;return {value:{decimals:6}};}},roundTripQuote:async(mint,amount)=>{quotes++;assert.equal(amount,'500000000');return {probeSol:.5,roundTripQuoteOk:true,quoteCheckedAt:start};},inspectMarketFacts:()=>{throw Error('forbidden certificate');},balance:()=>{throw Error('forbidden wallet');}});
+ const e=await marketFacade.inspectLabExecution(market(start));assert.equal(supply,1);assert.equal(quotes,1);assert.equal(e.certificationMode,'bypassed-paper');for(const key of ['mintRevoked','lpSecuredPct','devPct','top10Pct','extensionsSafe'])assert.equal(e[key],undefined);
+});
+test('execution feed is bounded and refreshes held token quotes for other bots without a certificate provider',async t=>{
+ let now=start,calls=0,release;t.mock.method(Date,'now',()=>now);const wait=new Promise(r=>release=r),api={currentProbeSol:.5,inspectLabExecution:async m=>{calls++;await wait;return market(now).evidence;}},feed=new LabExecutionFeed(api,{rankMarket:labRank});
+ const m=market(now,{proof:false});await feed.enrichCached([m,m],[],now);assert.equal(feed.jobs.size,1);release();await Promise.all([...feed.jobs.values()]);assert.equal(calls,1);assert.equal(feed.applyCached([m])[0].evidence.roundTripQuoteOk,true);
+ now+=11000;await feed.enrichCached([market(now,{proof:false})],[m.mint],now);await Promise.all([...feed.jobs.values()]);assert.equal(calls,2);
+});
+test('all ten can hold separate lots simultaneously with shared 20 SOL, no aggregate certificate/cadence gate, and no account reset',async t=>{
+ const x=await setup(t);let max=0;
+ for(let tick=0;tick<45;tick++){x.advance(2000);const markets=[3,7,25].map((change,i)=>{const m=market(x.now(),{change,index:tick,size:paperOrderSol(x.desk.state)});m.mint='mint-'+i;m.pairAddress='pool-'+i;m.evidence={...m.evidence,mint:m.mint,pairAddress:m.pairAddress};return m;}),rows=observeLabMarkets(x.desk.state,markets,x.now());x.desk.evaluate(rows,x.now());await x.desk.step({updatedAt:x.now(),solUsd:150,error:null,markets:rows});max=Math.max(max,x.desk.state.positions.length);if(max===10)break;}
+ assert.equal(max,10,JSON.stringify({agents:x.desk.state.positions.map(p=>p.agentId),last:x.desk.state.agentExecutionStatus,error:x.desk.state.lastExecutionError}));assert.equal(new Set(x.desk.state.positions.map(p=>p.agentId)).size,10);assert.equal(paperCapitalSol(x.desk.state),20);assert.ok(x.desk.state.cashSol>=.1);assert.ok(x.desk.state.trades.every(t=>t.agentPolicyVersion===LAB_VERSION&&t.workflow.verify.certificationsRequired===false));
+ const cash=x.desk.state.cashSol,restored=new LabPaperDesk(x.dir,x.quote,{clock:x.now});await restored.load();assert.equal(restored.state.cashSol,cash);assert.equal(restored.state.positions.length,10);assert.equal(restored.snapshot().agents.length,10);
+ x.desk.state=restored.state;x.value(.39);for(let tick=0;tick<120&&x.desk.state.positions.length;tick++){x.advance(2100);await x.desk.step({updatedAt:x.now(),solUsd:150,error:null,markets:[]});}
+ for(const a of LAB_AGENTS){assert.ok(x.desk.state.agentStats[a.id].buys>0,a.name+' BUY');assert.ok(x.desk.state.agentStats[a.id].sells>0,a.name+' SELL');}assert.equal(x.desk.state.positions.length,0);assert.ok(Math.abs(x.desk.state.cashSol-20-x.desk.state.realizedNetSol)<1e-7);
+});
+test('one failing exit quote does not cancel or globally veto another bot BUY; stale valuations remain unknown',async t=>{
+ const x=await setup(t);const old=market(x.now()),rows=[old];await x.desk.step({markets:rows,updatedAt:x.now(),solUsd:150});x.advance(2100);await x.desk.step({markets:[market(x.now())],updatedAt:x.now(),solUsd:150});assert.equal(x.desk.state.positions.length,1);x.fail(old.mint);x.advance(2000);const other=market(x.now());other.mint='different';other.pairAddress='different-pool';other.evidence={...other.evidence,mint:other.mint,pairAddress:other.pairAddress};await x.desk.step({markets:[other],updatedAt:x.now(),solUsd:150});assert.ok(x.desk.pendingOrders().some(o=>o.side==='BUY'&&o.mint==='different'));assert.equal(x.desk.valuation().equitySol,null);assert.equal(x.desk.admission().operationalCapacity,10);
+});
+test('23:59 report and cohort separate LAB from previous RUNE history',async t=>{
+ const x=await setup(t);(x.desk.state.agentStats??={}).rune={buys:1,sells:1,closed:1,realizedPnlSol:-1};assert.equal(x.desk.snapshot().agents.find(a=>a.id==='rune').stats.closed,0);x.desk.state.archiveOutbox.push({id:'old-rune',at:x.now(),side:'SELL',agentId:'rune',agentPolicyVersion:'old-strict',closed:true,pnlSol:-1,positionPnlSol:-1});const reports=new PaperReports(x.dir),end=paperReportEnd(x.now())+86400000;await reports.tick(x.desk,end);assert.equal(reports.error,null);const text=x.desk.state.telegramOutbox.find(x=>x.id.endsWith(':summary')).text;assert.ok(text.includes(LAB_VERSION));assert.ok(text.includes('RUNE: +0.000000'));const doc=JSON.parse((await reports.document({end,part:1})).content);assert.equal(doc.summary.realizedPnlSol,-1);assert.equal(doc.summary.byAgentPolicy['old-strict'].rune.realizedPnlSol,-1);for(const a of LAB_AGENTS)assert.ok(text.includes(a.name+':'));assert.ok(text.length<4096);
+});
+
+test('passive research labels use the actual LAB hypothesis and never classify LAB fills with the strict certificate policy',()=>{
+ const s={},journal={enqueue:()=>{}};observePaperOutcomes(s,[market(start)],journal,start,{rankPaper:labRank});assert.equal(s.paperOutcomes[0].paper.policyVersion,LAB_VERSION);assert.equal(s.paperOutcomes[0].paper.eligible,true);assert.equal(s.paperOutcomes[0].baseline.eligible,false);
+});

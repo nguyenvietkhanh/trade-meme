@@ -1,12 +1,14 @@
 import {PAPER_WORKFLOW_VERSION} from './paper-workflow.js';
 import http from 'node:http';
 import {createPaperAssets} from './paper-assets.js';
-import {PAPER_AGENT_VERSION,paperAgentSnapshot,rankAgentUniverse as rankMarket,rankAgentEntryUniverse,observeAgentMarkets} from './paper-agents.js';
+
 import path from 'node:path';
 import {mkdir} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
 import {initializeStorage} from './storage.js';
-import {PaperDesk,PAPER_MODEL} from './paper-desk.js';
+import {PAPER_MODEL} from './paper-desk.js';
+import {LabPaperDesk as PaperDesk,LAB_VERSION as PAPER_AGENT_VERSION,labRank as rankMarket,observeLabMarkets as observeAgentMarkets,selectLabMarkets,LAB_POLICY} from './paper-lab.js';
+import {LabExecutionFeed} from './paper-lab-feed.js';
 import {PaperReports} from './paper-reports.js';
 import {PaperTelegram} from './paper-telegram.js';
 import {createPaperMarket} from './paper-market.js';
@@ -14,9 +16,7 @@ import {ResearchJournal} from './research-journal.js';
 import {OwnerAuth} from './security.js';
 import {loadMarkets} from './market.js';
 import {DiscoveryQueue} from './discovery.js';
-import {VerificationFeed} from './verification.js';
 import {scannerMarkets,SCAN_RULES} from './scanner.js';
-import {observeMarkets} from './signals.js';
 
 import {observePaperOutcomes} from './paper-outcomes.js';
 import {withRpcPriority} from './rpc-priority.js';
@@ -31,20 +31,20 @@ const auth=new OwnerAuth({origin:process.env.PUBLIC_ORIGIN??(onRailway?'https://
 let desk;const market=createPaperMarket(()=>desk.state);desk=new PaperDesk(dir,market);await desk.load();
 const research=new ResearchJournal(dir);desk.research=research;const reports=new PaperReports(dir,research),telegram=new PaperTelegram(dir,dataDir);await telegram.load();
 const transport={get state(){return desk.state;},vault:{keypair:null},serial:fn=>desk.serial(fn),save:()=>desk.save(),training:reports};
-const entryRank=(m,settings,now=Date.now())=>rankAgentEntryUniverse(desk.state,m,settings,now);
+const entryRank=(m,settings,now=Date.now())=>rankMarket(m,settings,now,desk.state);
 // Keep signal research independent of shared capital/SELL admission. Those
 // limits are enforced again atomically when reserving and filling each BUY.
 const canResearch=m=>desk.state.running&&entryRank(m).roughEligible;
-const verification=new VerificationFeed(globalThis.fetch,market,{rankMarket:entryRank,ignoreH4:true,compareCandidates:compare5m,cacheMs:10000,quoteTracked:false,quoteTrackedCandidate:canResearch,requireConfirmedQuote:true,canInspectCandidate:canResearch}),discovery=new DiscoveryQueue(desk.state.discovery);
+const verification=new LabExecutionFeed(market,{rankMarket:entryRank,canInspectCandidate:canResearch}),discovery=new DiscoveryQueue(desk.state.discovery);
 let feed={markets:[],solUsd:null,updatedAt:null,error:null},refreshing=false,closing=false;
 async function refresh(){if(refreshing||closing)return;refreshing=true;try{
- const held=desk.state.positions,latest=await withRpcPriority('background',()=>loadMarkets([...new Set([...held.map(p=>p.mint),...desk.state.watchlist])],Object.fromEntries(held.map(p=>[p.mint,p.pairAddress])),discovery,{rankMarket,compare:compare5m}));
+ const held=desk.state.positions,latest=await withRpcPriority('background',()=>loadMarkets([...new Set([...held.map(p=>p.mint),...desk.state.watchlist])],Object.fromEntries(held.map(p=>[p.mint,p.pairAddress])),discovery,{rankMarket,compare:compare5m,selectMarkets:selectLabMarkets}));
  latest.markets=scannerMarkets(desk.state,latest.markets);
- await desk.serial(async()=>{latest.markets=observeAgentMarkets(desk.state,observeMarkets(desk.state,latest.markets));latest.markets=await withRpcPriority('background',()=>verification.enrichCached(latest.markets,desk.state.positions.map(p=>p.mint)));observePaperOutcomes(desk.state,latest.markets,research);feed={...latest,error:null};desk.evaluate(feed.markets);const bucket=desk.bucket();bucket.sourceWarnings??={};for(const warning of feed.warnings??[])bucket.sourceWarnings[warning]=(bucket.sourceWarnings[warning]??0)+1;research.scan(feed);research.enqueue({type:'paper_5m_gainers_scan',at:Date.now(),rows:feed.markets.map(m=>{const r=rankMarket(m);return {mint:m.mint,pairAddress:m.pairAddress,score:r.score,policyVersion:r.policyVersion,scoreParts:r.scoreParts,change5mPct:m.change5mPct,scalpSetup:m.scalpSetup,previousPaper:r.previousPaper,action:r.eligible?'WATCH':'SKIP',stage:r.blockingStage,flags:r.red_flags,baseline:r.baseline,relaxedFlags:r.relaxedFlags};})});desk.state.discovery=discovery.snapshot();await desk.save();});
+ await desk.serial(async()=>{latest.markets=observeAgentMarkets(desk.state,latest.markets);latest.markets=await withRpcPriority('background',()=>verification.enrichCached(latest.markets,desk.state.positions.map(p=>p.mint)));observePaperOutcomes(desk.state,latest.markets,research,Date.now(),{rankPaper:rankMarket});feed={...latest,error:null};desk.evaluate(feed.markets);const bucket=desk.bucket();bucket.sourceWarnings??={};for(const warning of feed.warnings??[])bucket.sourceWarnings[warning]=(bucket.sourceWarnings[warning]??0)+1;research.scan(feed,{rankMarket});research.enqueue({type:'paper_5m_gainers_scan',at:Date.now(),rows:feed.markets.map(m=>{const r=rankMarket(m);return {mint:m.mint,pairAddress:m.pairAddress,score:r.score,policyVersion:r.policyVersion,scoreParts:r.scoreParts,change5mPct:m.change5mPct,scalpSetup:m.scalpSetup,previousPaper:r.previousPaper,action:r.eligible?'WATCH':'SKIP',stage:r.blockingStage,flags:r.red_flags,baseline:r.baseline,relaxedFlags:r.relaxedFlags};})});desk.state.discovery=discovery.snapshot();await desk.save();});
  }catch{feed={...feed,error:'Market API/RPC chưa phản hồi; không tạo dữ liệu thay thế.'};await desk.serial(async()=>{desk.error(Error('RPC market feed'));await desk.save();});}finally{refreshing=false;}}
 function activityState(){const s=desk.state;return {observedAt:Date.now(),scanning:refreshing,scanCompletedAt:s.lastEvaluationAt??null,verification:[...verification.jobs.keys()].map(key=>({mint:key.split(':')[0]})),market:market.activity,pending:paperPendingView(s.pending),pendingEntries:(s.pendingEntries??[]).map(o=>paperPendingView(o)),reporting:reports.busy,telegram:telegram.busy,reportQueuedEnd:s.reportLastEnd,lastSentAt:Math.max(0,...s.telegramOutbox.filter(m=>m.status==='sent').map(m=>m.sentAt??0))};}
-function snapshot(req){const s=desk.state,v=desk.valuation(),portfolio=paperPortfolioAdmission(s),rankings=verification.applyCached(feed.markets).map(m=>{const r=rankMarket(m,s.settings);return {...m,...r,tokenEligible:r.eligible,...(r.eligible&&!portfolio.allowed?{eligible:false,blockingStage:'portfolio',primaryFlags:[portfolio.code],primaryReasons:[portfolio.message],portfolioCode:portfolio.code}:{})};}).sort(compare5m),counts={};for(const m of rankings)counts[m.blockingStage]=(counts[m.blockingStage]??0)+1;
- return {...s,pending:paperPendingView(s.pending),pendingEntries:(s.pendingEntries??[]).map(o=>paperPendingView(o)),agentObservationStates:undefined,archiveOutbox:undefined,telegramOutbox:undefined,periods:undefined,observations:undefined,paperObservations:undefined,paperOutcomes:undefined,paperOutcomeSeeds:undefined,marks:undefined,mode:'paper',readOnly:true,realTradingEnabled:false,agents:paperAgentSnapshot(s),ownerAddress:auth.owner,ownerAuthenticated:auth.authenticated(req),feed,rankings,...v,pnlSol:v.equitySol===null?null:v.equitySol-20,currentOrderSol:paperOrderSol(s),allocationCapitalSol:paperCapitalSol(s),monitoring:desk.monitoring(),portfolio,pendingExits:(s.pendingExits??[]).map(o=>paperPendingView(o)),storageMode,telegram:telegram.status(s),reporting:{sendAt:'23:59',timezone:'Asia/Ho_Chi_Minh',lastQueuedEnd:s.reportLastEnd,error:reports.error},research:research.status(),uiRevision:uiAssets.revision,buildRevision:process.env.RAILWAY_GIT_COMMIT_SHA??'local',diagnostics:{counts,tokenEligibleCount:rankings.filter(m=>m.tokenEligible).length,...explainPaperStatus(s,feed,rankings,v)}};
+function snapshot(req){const s=desk.state,v=desk.valuation(),portfolio=desk.admission(),rankings=verification.applyCached(feed.markets).map(m=>{const r=rankMarket(m,s.settings);return {...m,...r,tokenEligible:r.eligible,...(r.eligible&&!portfolio.allowed?{eligible:false,blockingStage:'portfolio',primaryFlags:[portfolio.code],primaryReasons:[portfolio.message],portfolioCode:portfolio.code}:{})};}).sort(compare5m),counts={};for(const m of rankings)counts[m.blockingStage]=(counts[m.blockingStage]??0)+1;
+ return {...s,pending:paperPendingView(s.pending),pendingEntries:(s.pendingEntries??[]).map(o=>paperPendingView(o)),agentObservationStates:undefined,archiveOutbox:undefined,telegramOutbox:undefined,periods:undefined,observations:undefined,paperObservations:undefined,paperOutcomes:undefined,paperOutcomeSeeds:undefined,marks:undefined,mode:'paper',readOnly:true,realTradingEnabled:false,agents:desk.snapshot(),ownerAddress:auth.owner,ownerAuthenticated:auth.authenticated(req),feed,rankings,...v,pnlSol:v.equitySol===null?null:v.equitySol-20,currentOrderSol:paperOrderSol(s),allocationCapitalSol:paperCapitalSol(s),monitoring:desk.monitoring(),portfolio,pendingExits:(s.pendingExits??[]).map(o=>paperPendingView(o)),storageMode,telegram:telegram.status(s),reporting:{sendAt:'23:59',timezone:'Asia/Ho_Chi_Minh',lastQueuedEnd:s.reportLastEnd,error:reports.error},research:research.status(),uiRevision:uiAssets.revision,buildRevision:process.env.RAILWAY_GIT_COMMIT_SHA??'local',diagnostics:{counts,tokenEligibleCount:rankings.filter(m=>m.tokenEligible).length,...explainPaperStatus(s,feed,rankings,v)}};
 }
 function json(res,status,value){res.writeHead(status,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'});res.end(JSON.stringify(value));}
 async function body(req){let bytes=0;const parts=[];for await(const p of req){bytes+=p.length;if(bytes>4096)throw Error('Request too large');parts.push(p);}return JSON.parse(Buffer.concat(parts).toString()||'{}');}
@@ -52,7 +52,7 @@ async function body(req){let bytes=0;const parts=[];for await(const p of req){by
 const server=http.createServer(async(req,res)=>{try{const url=new URL(req.url,'http://localhost'),p=url.pathname;
  // Enforced before authentication or body parsing: no production route can reach a real signer.
  if(/^\/api\/(direct|live|signer)(\/|$)/.test(p))return json(res,410,{mode:'paper',realTradingEnabled:false,error:'Đã chuyển hẳn sang mô phỏng; giao dịch SOL thật bị vô hiệu hóa.'});
- if(req.method==='GET'&&p==='/api/health')return json(res,200,{status:'ok',workflowVersion:PAPER_WORKFLOW_VERSION,mode:'paper',initialVirtualSol:20,realTradingEnabled:false,unattendedSigningAvailable:false,signingMode:null,readOnly:true,running:desk.state.running,storageMode,heliusConfigured:market.heliusConfigured,rpcMode:market.rpcMode,signalTeamVersion:PAPER_AGENT_VERSION,strategyVersion:SCALP_STRATEGY_VERSION,entryPolicy:desk.state.entryPolicy,exitPolicy:desk.state.exitPolicy,sizingPolicy:desk.state.sizingPolicy,portfolioPolicy:desk.state.portfolioPolicy,marketReady:!!feed.updatedAt,uiRevision:uiAssets.revision,buildRevision:process.env.RAILWAY_GIT_COMMIT_SHA??'local'});
+ if(req.method==='GET'&&p==='/api/health')return json(res,200,{status:'ok',experiment:LAB_POLICY,workflowVersion:PAPER_WORKFLOW_VERSION,mode:'paper',initialVirtualSol:20,realTradingEnabled:false,unattendedSigningAvailable:false,signingMode:null,readOnly:true,running:desk.state.running,storageMode,heliusConfigured:market.heliusConfigured,rpcMode:market.rpcMode,signalTeamVersion:PAPER_AGENT_VERSION,strategyVersion:SCALP_STRATEGY_VERSION,entryPolicy:desk.state.entryPolicy,exitPolicy:desk.state.exitPolicy,sizingPolicy:desk.state.sizingPolicy,portfolioPolicy:desk.state.portfolioPolicy,marketReady:!!feed.updatedAt,uiRevision:uiAssets.revision,buildRevision:process.env.RAILWAY_GIT_COMMIT_SHA??'local'});
  if(req.method==='GET'&&p==='/api/activity')return json(res,200,activityState());
  if(req.method==='GET'&&p==='/api/state')return json(res,200,snapshot(req));
  if(req.method==='GET'&&p==='/api/auth/status')return json(res,200,{owner:auth.owner,authenticated:auth.authenticated(req),walletMode:'paper-admin',signerAvailable:false});
