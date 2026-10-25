@@ -39,16 +39,16 @@ export class BotRuntime{
  monitor(snapshot,now){
   const s=this.state;for(const p of s.positions){const m=snapshot.markets.find(m=>m.mint===p.mint&&m.pairAddress===p.pairAddress),price=m?.spotPriceSol??(m?.priceUsd/snapshot.solUsd),at=m?.priceAt??m?.updatedAt;
    const valid=fresh(at,now,FILL_MODEL.maxPriceAgeMs)&&price>0,net=valid?Math.max(0,p.quantity*price*.985-FILL_MODEL.feeSol):null;
-   const plan=scalpExitPlan(p,{...m,updatedAt:at,exitQuote:valid?{mint:p.mint,rawAmount:p.rawQuantity,checkedAt:at,netSol:net,provider:m.priceSource??'spot-model'}:null},now);
-   if(!plan)continue;const raw=BigInt(p.rawQuantity),amount=plan.fraction===1?raw:raw*BigInt(Math.round(plan.fraction*10000))/10000n;if(amount<=0n)continue;
-   s.pending={id:this.id('sell'),side:'SELL',mint:p.mint,pairAddress:p.pairAddress,symbol:p.symbol,positionId:p.paperPositionId,amount:String(amount),decisionAt:now,readyAt:now+FILL_MODEL.delayMs,reason:plan.reason,trigger:plan.trigger,stopLossPct:p.exitPolicy.stopLossPct,attempts:0};break;
+   const observed={...m,updatedAt:at,exitQuote:valid?{mint:p.mint,rawAmount:p.rawQuantity,checkedAt:at,netSol:net,provider:m.priceSource??'spot-model'}:null};const plan=this.exitPlan?this.exitPlan(p,observed,now):scalpExitPlan(p,observed,now);
+   if(!plan||this.allowExit?.(plan,p)===false)continue;const raw=BigInt(p.rawQuantity),amount=plan.fraction===1?raw:raw*BigInt(Math.round(plan.fraction*10000))/10000n;if(amount<=0n)continue;
+   s.pending={id:this.id('sell'),side:'SELL',mint:p.mint,pairAddress:p.pairAddress,symbol:p.symbol,positionId:p.paperPositionId,amount:String(amount),decisionAt:now,readyAt:now+FILL_MODEL.delayMs,reason:plan.reason,trigger:plan.trigger,stopLossPct:p.exitPolicy.stopLossPct,decisionEngine:p.controlMode==='model'?'model-safety':'rules',modelName:p.modelName??null,attempts:0};break;
   }
  }
  async fill(snapshot,now){
   const s=this.state,o=s.pending,m=snapshot.markets.find(m=>m.mint===o.mint&&m.pairAddress===o.pairAddress);if(!m)return;
   if(o.side==='BUY'&&(now-o.decisionAt>30000||!s.running)){s.pending=null;return;}
   // Recheck signal/lanes at execution, without requiring a new confirmation anchor.
-  if(o.side==='BUY'){
+  if(o.side==='BUY'&&o.decisionEngine!=='model'){
    const signal=independentSignal(this.config,m,now,{snapshotId:snapshot.snapshotId,prior:s.anchors[o.mint+':'+o.pairAddress],liquidityCutoff:s.signalLiquidityCutoff,cooldownUntil:s.cooldowns[o.mint]??0});
    if(!signal.structural){s.pending=null;return;}
   }
@@ -58,18 +58,19 @@ export class BotRuntime{
    if(o.side==='BUY'&&(!Number.isFinite(result.roundTripLossPct)||result.roundTripLossPct>this.config.entryRules.maxRoundTripLossPct))throw Error('Round trip exceeds configured cost gate');
    const haircut=o.reason==='emergency-risk'?FILL_MODEL.emergencyHaircutBps:FILL_MODEL.normalHaircutBps,out=BigInt(q.outAmount)*BigInt(10000-haircut)/10000n;
    if(out<=0n)throw Error('Empty modeled output');
-   const f={type:'fill',id:o.id,at:fillNow,ts:fillNow,agentId:s.id,bot:s.id,mint:o.mint,pairAddress:o.pairAddress,symbol:o.symbol,side:o.side,reason:o.reason,mode:'paper',agentPolicyVersion:INDEPENDENT_VERSION,modeledFeeSol:FILL_MODEL.feeSol,quoteSource:result.quoteSource,execution:{decisionAt:o.decisionAt,fillAt:fillNow,quoteObservedAt:q.checkedAt,quotedOutput:q.outAmount,filledOutput:String(out),assumedHaircutBps:haircut,trigger:o.trigger??null},gapLoss:false};
+   if(o.side==='BUY'&&o.decisionEngine==='model'){const expected=Number(o.amount)/1e9/o.referencePriceSol*10**result.decimals;if(!(expected>0)||Number(out)<expected*.96)throw Error('MODEL_BUY_SLIPPAGE_LIMIT');}
+   const f={type:'fill',id:o.id,at:fillNow,ts:fillNow,agentId:s.id,bot:s.id,mint:o.mint,pairAddress:o.pairAddress,symbol:o.symbol,side:o.side,reason:o.reason,mode:'paper',agentPolicyVersion:INDEPENDENT_VERSION,decisionEngine:o.decisionEngine??'rules',modelName:o.modelName??null,modelConfidence:o.confidence??null,modeledFeeSol:FILL_MODEL.feeSol,quoteSource:result.quoteSource,execution:{decisionAt:o.decisionAt,fillAt:fillNow,quoteObservedAt:q.checkedAt,quotedOutput:q.outAmount,filledOutput:String(out),assumedHaircutBps:haircut,trigger:o.trigger??null},gapLoss:false};
    if(o.side==='BUY'){
     const spend=Number(o.amount)/1e9,cost=sol(spend+FILL_MODEL.feeSol),total=sol(cost+FILL_MODEL.rentSol);if(total>s.cashSol||s.positions.length)throw Error('Own wallet insufficient');
     if(!Number.isInteger(result.decimals)||result.decimals<0||result.decimals>18)throw Error('Missing token decimals');
     const quantity=Number(out)/10**result.decimals;s.cashSol=sol(s.cashSol-total);s.rentLockedSol=sol(s.rentLockedSol+FILL_MODEL.rentSol);
-    s.positions.push({mint:o.mint,pairAddress:o.pairAddress,symbol:o.symbol,agentId:s.id,paperPositionId:o.id,quantity,rawQuantity:String(out),decimals:result.decimals,costSol:cost,initialCostSol:cost,openedAt:fillNow,rentSol:FILL_MODEL.rentSol,realizedPnlSol:0,exitPolicy:this.config.exitPolicy,entryPolicy:this.config.entryRules,entrySignal:o.signal,entryLiquidityUsd:m.liquidityUsd,peakLiquidityUsd:m.liquidityUsd,phase:'open'});
-    f.sol=cost;f.positionId=o.id;f.initialCostSol=cost;
+    s.positions.push({mint:o.mint,pairAddress:o.pairAddress,symbol:o.symbol,agentId:s.id,paperPositionId:o.id,quantity,rawQuantity:String(out),decimals:result.decimals,costSol:cost,initialCostSol:cost,openedAt:fillNow,rentSol:FILL_MODEL.rentSol,realizedPnlSol:0,controlMode:o.decisionEngine??'rules',modelName:o.modelName??null,exitPolicy:this.config.exitPolicy,entryPolicy:this.config.entryRules,entrySignal:o.signal,entryLiquidityUsd:m.liquidityUsd,peakLiquidityUsd:m.liquidityUsd,phase:'open'});
+    f.sol=cost;f.positionId=o.id;f.initialCostSol=cost;f.entryDecisionEngine=o.decisionEngine??'rules';
    }else{
     const p=s.positions.find(p=>p.paperPositionId===o.positionId);if(!p||BigInt(o.amount)>BigInt(p.rawQuantity))throw Error('Own position unavailable');
     const amount=BigInt(o.amount),previous=BigInt(p.rawQuantity),closed=amount===previous,fraction=Number(amount)/Number(previous),allocatedCost=closed?p.costSol:sol(p.costSol*fraction),net=sol(Math.max(0,Number(out)/1e9-FILL_MODEL.feeSol)),pnl=sol(net-allocatedCost);
     s.cashSol=sol(s.cashSol+net);s.realizedPnlSol=sol(s.realizedPnlSol+pnl);p.realizedPnlSol=sol((p.realizedPnlSol??0)+pnl);p.costSol=sol(p.costSol-allocatedCost);p.rawQuantity=String(previous-amount);p.quantity=Number(previous-amount)/10**p.decimals;
-    Object.assign(f,{sol:net,pnlSol:pnl,closed,positionId:p.paperPositionId,initialCostSol:p.initialCostSol,positionPnlSol:closed?p.realizedPnlSol:null,holdingMs:fillNow-p.openedAt});
+    Object.assign(f,{sol:net,pnlSol:pnl,closed,positionId:p.paperPositionId,initialCostSol:p.initialCostSol,positionPnlSol:closed?p.realizedPnlSol:null,holdingMs:fillNow-p.openedAt,entryDecisionEngine:p.controlMode??'rules'});
     const roi=(net/allocatedCost-1)*100;f.gapLoss=o.reason==='stop-loss'&&roi<-(o.stopLossPct??p.exitPolicy.stopLossPct);f.execution.actualRoiPct=roi;f.execution.stopLossPct=o.stopLossPct;
     if(closed){s.cashSol=sol(s.cashSol+(p.rentSol??0));s.rentLockedSol=sol(s.rentLockedSol-(p.rentSol??0));s.positions=s.positions.filter(x=>x!==p);}else p.scalpFirstTaken=true;
    }

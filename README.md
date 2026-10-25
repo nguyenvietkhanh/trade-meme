@@ -6,6 +6,12 @@ shared read-only market data. Multiple bots may buy the same token. No real SOL
 signing or broadcasting is available. Sizing remains 2.5% of each own book:
 initial order approximately **0.05 SOL**, not 0.5 SOL.
 
+Optional [River AI control](docs/river-paper-model.md): setting `MODEL_API_KEY`
+enables separate model BUY/SELL/HOLD decisions for all ten paper wallets.
+`MODEL_BASE_URL` and `MODEL_NAME` select the OpenAI-compatible provider/model.
+No key has been supplied or verified as part of this release. Existing money,
+wallet authentication and Telegram reporting are preserved.
+
 See [current architecture, migration and validation](docs/independent-paper.md).
 The historical sections below describe older releases and do not override this
 architecture or the active `paper-bot-config.js` configuration.
