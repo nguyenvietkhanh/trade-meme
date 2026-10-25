@@ -2,6 +2,10 @@ test_errors_classified_without_proxy_credentials (test_local.DiagnosticTests.tes
 test_dotenv_is_data_and_does_not_load_key (test_local.LocalTests.test_dotenv_is_data_and_does_not_load_key) ... ok
 test_environment_overrides_file (test_local.LocalTests.test_environment_overrides_file) ... ok
 test_verifier_rejects_external_urls_before_request (test_local.LocalTests.test_verifier_rejects_external_urls_before_request) ... ok
+test_ipv4_env_flag_validation (test_network.NetworkTests.test_ipv4_env_flag_validation) ... ok
+test_ipv4_source_binding_and_tls_verification (test_network.NetworkTests.test_ipv4_source_binding_and_tls_verification) ... ok
+test_sdk_books_share_adapter_and_cannot_post (test_network.NetworkTests.test_sdk_books_share_adapter_and_cannot_post) ... ok
+test_transport_is_per_opener_and_retains_proxy_handler (test_network.NetworkTests.test_transport_is_per_opener_and_retains_proxy_handler) ... ok
 test_best_ask_is_not_entire_depth (test_scanner.PricingTests.test_best_ask_is_not_entire_depth) ... ok
 test_budget_and_slippage (test_scanner.PricingTests.test_budget_and_slippage) ... ok
 test_depth_vwap_and_asymmetric_quantities (test_scanner.PricingTests.test_depth_vwap_and_asymmetric_quantities) ... ok
@@ -24,6 +28,6 @@ test_unprofitable_diagnostic (test_scanner.SafetyTests.test_unprofitable_diagnos
 test_v2_position_ids_and_unknown_version (test_scanner.SafetyTests.test_v2_position_ids_and_unknown_version) ... ok
 
 ----------------------------------------------------------------------
-Ran 24 tests in 0.469s
+Ran 28 tests in 1.031s
 
 OK

@@ -5,7 +5,7 @@ from pathlib import Path
 
 def load_env(path=Path(".env")):
     if not path.exists(): return
-    allowed = {"DRY_RUN", "MIN_LIQUIDITY", "MIN_VOLUME", "MIN_EDGE_PCT", "SLIPPAGE_BPS",
+    allowed = {"DRY_RUN", "FORCE_IPV4", "MIN_LIQUIDITY", "MIN_VOLUME", "MIN_EDGE_PCT", "SLIPPAGE_BPS",
                "MAX_USD_PER_TRADE", "MAX_OPEN_EXPOSURE", "DAILY_LOSS_LIMIT", "INTERVAL",
                "MAX_BOOK_AGE", "MAX_BOOK_SKEW", "REQUEST_SPACING", "MAX_MARKETS", "MAX_PAGES",
                "RETRIES", "OUTPUT_DIR", "STOP_FILE"}

@@ -1,3 +1,9 @@
+> Sửa kết nối IPv4: curl -4 đã thành công trên máy người dùng. Scanner và verifier
+> giờ dùng HTTPS bind IPv4, giữ nguyên hostname/SNI, kiểm chứng TLS và proxy hệ thống.
+> Không tắt IPv6 Windows. FORCE_IPV4=true mặc định; đặt false dùng transport hệ thống.
+> Bản kiểm tra mới đọc thêm order book hai chân khi Gamma trả market hợp lệ.
+> Chưa xác nhận Python kết nối thành công trên máy người dùng sau thay đổi này.
+
 > Cập nhật 26/10/2026: đã đọc tài liệu migration từ báo cáo local; sửa chọn ID theo
 > `version` (v2 dùng positionIds, v1 dùng clobTokenIds). Gamma/CLOB local vẫn lỗi.
 > Để chẩn đoán nhanh chạy `verify.bat --api-only` (Windows) hoặc

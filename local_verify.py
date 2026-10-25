@@ -10,6 +10,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from pathlib import Path
+from polymarket_arb.network import build_opener
 
 HOSTS = {"docs.polymarket.com", "gamma-api.polymarket.com", "clob.polymarket.com"}
 
@@ -26,7 +27,7 @@ def fetch(url):
     parts = urllib.parse.urlsplit(url)
     if parts.scheme != "https" or parts.hostname not in HOSTS or parts.username or parts.port not in (None, 443):
         raise ValueError("Non-official URL blocked")
-    opener = urllib.request.build_opener(Redirects())
+    opener = build_opener(Redirects(), force_ipv4=True)
     req = urllib.request.Request(url, headers={"User-Agent": "polymarket-local-verifier/0.1", "Accept": "text/plain, application/json, text/html"})
     with opener.open(req, timeout=20) as response:
         body = response.read(4_000_001)
@@ -67,7 +68,7 @@ def main():
     directory = Path("verification") / datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     directory.mkdir(parents=True, exist_ok=False)
     report = {"mode": "PUBLIC_READ_ONLY", "keys_read": False, "orders_sent": False,
-              "production_verified": False, "report_version": 2, "results": []}
+              "production_verified": False, "report_version": 3, "force_ipv4": True, "results": []}
     sources = ["https://docs.polymarket.com/llms.txt",
                "https://clob.polymarket.com/time",
                "https://gamma-api.polymarket.com/markets?active=true&closed=false&limit=1"]
@@ -75,6 +76,7 @@ def main():
         sources = sources[1:]
     candidates = []
     condition = None
+    selected_market = None
     for index, url in enumerate(sources):
         row = {"url": url}
         try:
@@ -91,7 +93,10 @@ def main():
                 markets = json.loads(body)
                 if isinstance(markets, list) and markets:
                     c = markets[0].get("conditionId")
-                    if isinstance(c, str) and re.fullmatch(r"0x[0-9a-fA-F]{64}", c): condition = c
+                    if isinstance(c, str) and re.fullmatch(r"0x[0-9a-fA-F]{62}(?:[0-9a-fA-F]{2})?", c): condition = c
+                    from polymarket_arb.config import Config
+                    from polymarket_arb.market_data import market_from_gamma
+                    selected_market = market_from_gamma(markets[0], Config(min_liquidity=0, min_volume=0))
         except Exception as exc:
             row.update(safe_error(exc))
         report["results"].append(row)
@@ -103,6 +108,9 @@ def main():
         candidates = list(dict.fromkeys(["https://docs.polymarket.com/" + path for path in required] + candidates))
     if condition:
         candidates.append("https://clob.polymarket.com/clob-markets/" + condition)
+    if selected_market:
+        for asset_id in (selected_market.yes, selected_market.no):
+            candidates.append("https://clob.polymarket.com/book?" + urllib.parse.urlencode({"token_id": asset_id}))
     for index, url in enumerate(candidates):
         row = {"url": url}
         try:

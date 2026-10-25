@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from decimal import Decimal
 from .config import number
 from .pricing import Fees, levels
+from .network import build_opener
 
 GAMMA = "https://gamma-api.polymarket.com"
 CLOB = "https://clob.polymarket.com"
@@ -31,7 +32,7 @@ class Requests:
     def __init__(self, config, sleep=time.sleep, clock=time.monotonic):
         self.config, self.sleep, self.clock = config, sleep, clock
         self.last = -float("inf")
-        self.opener = urllib.request.build_opener(NoRedirect())
+        self.opener = build_opener(NoRedirect(), force_ipv4=config.force_ipv4)
 
     def call(self, fn):
         for attempt in range(self.config.retries + 1):
@@ -60,14 +61,17 @@ class Requests:
     def get(self, origin, path, params=None):
         if origin not in (GAMMA, CLOB) or not path.startswith("/") or path.startswith("//") or "?" in path:
             raise ValueError("Non-official endpoint blocked")
+        return self.call(lambda: self.read_json(origin, path, params))
+
+    def read_json(self, origin, path, params=None):
+        if origin not in (GAMMA, CLOB) or not path.startswith("/") or path.startswith("//") or "?" in path:
+            raise ValueError("Non-official endpoint blocked")
         url = origin + path + ("?" + urllib.parse.urlencode(params) if params else "")
-        def read():
-            request = urllib.request.Request(url, headers={"Accept": "application/json", "User-Agent": "polymarket-readonly-scanner/0.1"})
-            with self.opener.open(request, timeout=10) as response:
-                data = response.read(8_000_001)
-            if len(data) > 8_000_000: raise APIError("Response too large")
-            return json.loads(data, parse_float=Decimal)
-        return self.call(read)
+        request = urllib.request.Request(url, headers={"Accept": "application/json", "User-Agent": "polymarket-readonly-scanner/0.1"})
+        with self.opener.open(request, timeout=10) as response:
+            data = response.read(8_000_001)
+        if len(data) > 8_000_000: raise APIError("Response too large")
+        return json.loads(data, parse_float=Decimal)
 
 
 @dataclass(frozen=True)
@@ -153,7 +157,22 @@ class MarketData:
             except ImportError:
                 raise RuntimeError("Install requirements.txt (py-clob-client-v2 required)") from None
             # No key, credentials, funder, order builder or authentication.
-            client = ClobClient(host=CLOB, chain_id=137, retry_on_error=False)
+            adapter = self.requests
+            class ReadOnlyV2Client(ClobClient):
+                # Pinned SDK 1.2.1 public reads delegate through _get. Keep SDK
+                # methods, but use the same IPv4/TLS/proxy/size-limited transport.
+                def _get(self, endpoint, headers=None, params=None):
+                    parsed = urllib.parse.urlsplit(endpoint)
+                    if parsed.scheme != "https" or parsed.netloc != "clob.polymarket.com" or parsed.query or parsed.fragment or headers:
+                        raise ValueError("Unexpected SDK read target")
+                    return adapter.read_json(CLOB, parsed.path, params)
+
+                def _post(self, *args, **kwargs):
+                    raise RuntimeError("STAGE_1_READ_ONLY")
+
+                _delete = _put = _post
+
+            client = ReadOnlyV2Client(host=CLOB, chain_id=137, retry_on_error=False)
         self.client = client
 
     def markets(self):

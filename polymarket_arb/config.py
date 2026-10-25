@@ -33,6 +33,7 @@ class Config:
     output_dir: Path = Path("data")
     stop_file: Path = Path("STOP")
     dry_run: bool = True
+    force_ipv4: bool = True
 
     def __post_init__(self):
         for name in ("min_liquidity", "min_volume", "min_edge_pct", "slippage_bps",
@@ -73,6 +74,10 @@ class Config:
         for name in ("output_dir", "stop_file"):
             if name.upper() in os.environ:
                 values[name] = Path(os.environ[name.upper()])
+        ipv4 = os.getenv("FORCE_IPV4", "true").lower()
+        if ipv4 not in ("true", "false"):
+            raise ValueError("FORCE_IPV4 must be true or false")
+        values["force_ipv4"] = ipv4 == "true"
         flag = os.getenv("DRY_RUN", "true").lower()
         if flag not in ("true", "false"):
             raise ValueError("DRY_RUN must be true or false")

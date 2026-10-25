@@ -44,3 +44,10 @@ Không có auto-deploy, transfer, approve, wrap hoặc order trong các script l
 Đã đọc docs trong ZIP của bạn. Cả Gamma và CLOB lỗi URLError, chưa biết nguyên
 nhân. Tải lại nhánh mới rồi chạy `verify.bat --api-only` để lấy mã lỗi phân loại;
 không cần setup lại nếu dependency đã cài. Không tắt kiểm tra chứng chỉ TLS.
+
+## Sửa kết nối IPv4
+
+Bản mới bind IPv4 trong HTTPS của ứng dụng, không sửa Windows, DNS, proxy hay
+chứng chỉ. Áp dụng cùng transport cho Gamma, fee metadata, SDK public book reads
+và công cụ verify. Chạy `verify.bat --api-only` trước; nếu thành công hãy chạy
+`setup.bat` trong thư mục mới và `run.bat` để quét. Scanner vẫn chỉ đọc.
