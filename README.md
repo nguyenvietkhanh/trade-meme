@@ -3,9 +3,10 @@
 One AI decides BUY/SELL/HOLD, token selection and allocation from the current
 on-chain balance. Previous KADE/NYX/SAGE strategies no longer generate entries,
 profit targets or time exits. The internal `kade` journal ID is retained for
-reconciliation; the UI shows **AI**. New entries target verified market cap strictly between $2k and $20k and upward
-short-term momentum; the AI assesses impulse quality. Existing holdings outside
-that range remain sellable. Manual wallet sales/transfers reconcile on-chain;
+reconciliation; the UI shows **AI**. No fixed market-cap range limits entries. AI selects rising tokens, explicitly
+accepts or rejects their risk from supplied observations, lists unknown evidence
+and chooses an SL for every buy. Radar keeps its own discovery list even when
+AI decides to buy nothing. Manual wallet sales/transfers reconcile on-chain;
 missing proceeds stay explicitly unknown instead of trapping a stale SELL.
 
 Existing positions are adopted without

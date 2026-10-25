@@ -19,6 +19,14 @@ test('provider adapter filters chains/native impersonators and selects highest-l
 test('provider failure is surfaced instead of generating fallback prices',async t=>{
  t.mock.method(globalThis,'fetch',async()=>new Response('blocked',{status:403}));await assert.rejects(loadMarkets(),/Không truy cập được/);
 });
+test('radar retains real gainers even when no market is selected for execution',async t=>{
+ const {aiMarketEligible,compareAIMarkets}=await import('../src/autonomous-policy.js');
+ const outside={...pair('outside-cap','RADAR',200000),marketCap:1000000,priceChange:{m5:27}},unknown={...pair('unknown-cap','FDV',10000),marketCap:null,fdv:8000,priceChange:{m5:12}};
+ t.mock.method(globalThis,'fetch',async url=>new Response(JSON.stringify({pairs:String(url).endsWith(SOL)?[{...pair(SOL,'SOL',999999),priceUsd:'150'}]:[outside,unknown]})));
+ const feed=await loadMarkets([],{},null,{compare:compareAIMarkets,selectMarkets:()=>[]});
+ assert.equal(feed.markets.length,0);assert.equal(feed.radarMarkets.length,2);assert.deepEqual(feed.radarMarkets.map(m=>m.mint),['outside-cap','unknown-cap']);assert.equal(feed.radarMarkets[0].change5mPct,27);assert.equal(feed.radarMarkets[1].marketCapUsd,null);assert.equal(feed.sources.discoveredCandidates,2);
+ const {MarketData}=await import('../src/paper-market-data.js');const data=new MarketData({});data.setFeed(feed);assert.equal(data.snapshot().markets.length,0);assert.equal(data.snapshot().radarMarkets.length,2);
+});
 test('open holdings are retained even outside the discovery display limit',async t=>{
  const list=Array.from({length:65},(_,i)=>pair('mint-'+i,'MEME'+i,100000+i));
  t.mock.method(globalThis,'fetch',async url=>new Response(JSON.stringify({pairs:String(url).endsWith(SOL)?[{...pair(SOL,'SOL',999999),priceUsd:'150'}]:list}),{status:200}));

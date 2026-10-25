@@ -28,7 +28,7 @@ test('profit transfer cannot touch gas or change the fixed recipient, and open a
 });
 test('parent rechecks 90% against the actual wallet and persists AI stop updates without moving money',async t=>{
  const f=await fixture(t),now=Date.now(),market={mint:'mint',pairAddress:'pool',marketCapUsd:10000,change5mPct:20,updatedAt:now};
- await assert.rejects(f.tr.request({id:'live:kade:cap',side:'BUY',aiOnly:true,aiStopLossPct:10,mint:'mint',pairAddress:'pool',amount:'910000000',decisionAt:now-3000,readyAt:now-1000},market,'kade'),{code:'LIVE_CAPITAL_CHANGED'});assert.equal(f.sends,0);
+ await assert.rejects(f.tr.request({id:'live:kade:cap',side:'BUY',aiOnly:true,aiStopLossPct:10,aiRiskAssessment:{approved:true,reason:'Fixture risk accepted',risks:[],unknowns:['holders']},mint:'mint',pairAddress:'pool',amount:'910000000',decisionAt:now-3000,readyAt:now-1000},market,'kade'),{code:'LIVE_CAPITAL_CHANGED'});assert.equal(f.sends,0);
  f.tr.s.positions=[{agentId:'kade',paperPositionId:'lot',mint:'mint',pairAddress:'pool',rawQuantity:'100',costSol:.1}];await f.tr.request({side:'SET_STOP',positionId:'lot',mint:'mint',aiStopLossPct:13},market,'kade');assert.equal(f.tr.s.positions[0].aiStopLossPct,13);assert.equal(f.tr.s.trades.length,0);assert.equal(f.sends,0);
  const loaded=await f.reload();assert.equal(loaded.s.positions[0].aiStopLossPct,13);
 });

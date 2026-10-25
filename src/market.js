@@ -56,5 +56,5 @@ export async function loadMarkets(extraMints=[],preferredPools={},discovery=null
   const priority=new Map(all.map(m=>[m,analyst(m).roughEligible?2:coarseMarket(m).eligible?1:0]));
   const ordered=all.sort((a,b)=>priority.get(b)-priority.get(a)||compare(a,b));
   const markets=typeof options.selectMarkets==='function'?[...new Map([...options.selectMarkets(ordered,60),...ordered.filter(m=>extraMints.includes(m.mint))].map(m=>[m.mint,m])).values()]:ordered.filter((m,i)=>i<60||extraMints.includes(m.mint));
-  return {solUsd,markets,updatedAt:Date.now(),warnings,sources:{searches:good.length,newSolanaProfiles:profileMints.length,newPumpSwapPools:newPoolMints.length,revisitedTokens:revisited.length,discoveryQueue:discovery?.entries.size??0,preMigrationEnabled:false,discoveredCandidates:all.length,shortlistedCandidates:markets.length}};
+  return {solUsd,markets,radarMarkets:[...all].sort(compare).slice(0,100),updatedAt:Date.now(),warnings,sources:{searches:good.length,newSolanaProfiles:profileMints.length,newPumpSwapPools:newPoolMints.length,revisitedTokens:revisited.length,discoveryQueue:discovery?.entries.size??0,preMigrationEnabled:false,discoveredCandidates:all.length,shortlistedCandidates:markets.length}};
 }

@@ -5,13 +5,19 @@ ID; the trading UI calls it AI. NYX/SAGE no longer start. Existing holdings are
 assigned to AI after any pending historical signature settles; lot IDs, raw units
 and cost basis do not change. Historical fills keep their original attribution.
 
-The live discovery list now targets actual market capitalization **strictly above
-$2,000 and strictly below $20,000**, with a positive M5 move. FDV alone is not
-treated as market cap. Candidates are prioritized by M5 gain, then volume within
-the existing PumpSwap source capacity. The AI assesses whether the impulse is
-strong and sustained; a positive M5 does not force a BUY. The parent rechecks
-fresh cap/momentum before preparation and again immediately before signing.
-Existing holdings outside these entry bounds remain monitored and sellable.
+Radar retains up to 100 discovered PumpSwap tokens independent of the AI entry
+shortlist and displays up to 25 gainers. It does not disappear when no BUY is
+approved. There is no minimum or maximum market-cap threshold. Positive M5
+candidates are prioritized by gain, then volume; AI decides whether the momentum
+and risk justify entry. Market cap/FDV remain observations, not approval gates.
+The parent supplies immutable on-chain mint facts through one batched read,
+caches valid irreversible facts and labels unavailable/rejected facts explicitly.
+Holder concentration, LP lock and RugCheck are unknown unless actually supplied;
+no third-party safety certificate is inferred.
+Each BUY requires a structured AI risk acceptance with reason, risks and unknowns,
+as well as its AI-selected SL. The acceptance and the parent-supplied evidence
+are saved with the order/fill; BUY Telegram messages show SL, risk reason and
+unknowns. This is risk judgment, not a safety guarantee.
 Up to 60 fresh candidates
 are supplied by default (`MODEL_MAX_CANDIDATES`); missing M1/flow fields remain null
 and do not invoke legacy BUY gates. The model is the sole entry/discretionary

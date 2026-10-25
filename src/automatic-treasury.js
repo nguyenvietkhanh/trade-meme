@@ -1,7 +1,7 @@
 import {LiveTreasury} from './live-treasury.js';
 import {AutomaticSigner} from './automatic-signer.js';
 import {reconcileExternalInventory} from './external-inventory.js';
-import {aiBuyLimit,validAIStop,aiMarketEligible} from './autonomous-policy.js';
+import {aiBuyLimit,validAIStop,aiMarketEligible,validAIRisk} from './autonomous-policy.js';
 import {initAIProfit,reservedAIProfit,stepAIProfit,earnedAIProfit} from './automatic-profit.js';
 import {treasuryAvailable} from './live-treasury.js';
 import {PROFIT_RECIPIENT} from './desk-rules.js';
@@ -23,6 +23,6 @@ export class AutomaticTreasury extends LiveTreasury{
  async disconnect(){this.lock();return this.serial(async()=>{for(const o of Object.values(this.s.orders))if(!o.terminal&&!o.signature){o.terminal=true;o.status='cancelled';delete o.unsignedTransaction;}await this.save();});}
  async unsignedReconcile(o){await super.unsignedReconcile(o);delete o.unsignedTransaction;}
  async adoptPortfolio(){return this.serial(async()=>{let changed=false;for(const p of this.s.positions)if(p.agentId!=='kade'&&!Object.values(this.s.orders).some(o=>!o.terminal&&(o.positionId===p.paperPositionId||o.mint===p.mint))){p.originAgentId??=p.agentId;p.agentId='kade';changed=true;}if(changed)await this.save();});}
- request(input,m,id){if(input.side==='SET_STOP')return this.serial(async()=>{if(id!=='kade'||!this.ownerConnected||!this.signingReady()||!validAIStop(input.aiStopLossPct))throw fail('LIVE_AI_STOP_REQUIRED');const p=this.s.positions.find(p=>p.agentId===id&&p.paperPositionId===input.positionId&&p.mint===input.mint);if(!p)throw fail('LIVE_SELL_LOT_MISMATCH');p.aiStopLossPct=input.aiStopLossPct;await this.save();return {terminal:true,status:'stop-updated',view:this.view(id)};});if(input.side==='BUY'&&!Object.hasOwn(this.s.orders,input.id)&&!validAIStop(input.aiStopLossPct))throw fail('LIVE_AI_STOP_REQUIRED');if(id!=='kade'&&!Object.hasOwn(this.s.orders,input.id))throw fail('LIVE_RETIRED_AGENT');return super.request(input,m,id);}
+ request(input,m,id){if(input.side==='SET_STOP')return this.serial(async()=>{if(id!=='kade'||!this.ownerConnected||!this.signingReady()||!validAIStop(input.aiStopLossPct))throw fail('LIVE_AI_STOP_REQUIRED');const p=this.s.positions.find(p=>p.agentId===id&&p.paperPositionId===input.positionId&&p.mint===input.mint);if(!p)throw fail('LIVE_SELL_LOT_MISMATCH');p.aiStopLossPct=input.aiStopLossPct;await this.save();return {terminal:true,status:'stop-updated',view:this.view(id)};});if(input.side==='BUY'&&!Object.hasOwn(this.s.orders,input.id)&&!validAIRisk(input.aiRiskAssessment))throw fail('LIVE_AI_RISK_ASSESSMENT_REQUIRED');if(input.side==='BUY'&&!Object.hasOwn(this.s.orders,input.id)&&!validAIStop(input.aiStopLossPct))throw fail('LIVE_AI_STOP_REQUIRED');if(id!=='kade'&&!Object.hasOwn(this.s.orders,input.id))throw fail('LIVE_RETIRED_AGENT');return super.request(input,m,id);}
  view(id){return {...super.view(id),externalInventoryRevision:this.s.externalInventoryRevision??0,requiresWalletSignature:false,aiOnly:true};}
 }
