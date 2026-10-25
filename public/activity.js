@@ -9,7 +9,7 @@ export function syncActivity(){
  }painted=new Set(next.keys());
 }
 function flash(key,item){if(seen.has(key))return;seen.add(key);if(seen.size>200)seen.delete(seen.values().next().value);flashes.set(key,{...item,active:false,until:Date.now()+2800});}
-export function showFillActivity(trade){const sell=trade.side==='SELL';flash('fill:'+trade.id,{panels:['account-panel','positions-panel','trades-panel'],mint:trade.mint,roles:['position','trade','candidate'],tone:sell?'sell':'work',label:sell?'Đã khớp SELL mô phỏng':'Đã khớp BUY mô phỏng'});syncActivity();}
+export function showFillActivity(trade){const sell=trade.side==='SELL',label=trade.side==='EXTERNAL'?'Đã đồng bộ số dư ví · PnL chưa xác minh':trade.side==='FEE'?'Đã ghi nhận phí mạng':trade.mode==='live'?'Đã xác nhận '+trade.side+' on-chain':sell?'Đã khớp SELL mô phỏng':'Đã khớp BUY mô phỏng';flash('fill:'+trade.id,{panels:['account-panel','positions-panel','trades-panel'],mint:trade.mint,roles:['position','trade','candidate'],tone:sell?'sell':'work',label});syncActivity();}
 export async function runActivity(panel,label,work){const key='local:'+ ++sequence;local.set(key,{panels:[panel],label,active:true});syncActivity();try{const result=await work();flash(key,{panels:[panel],label:'Đã xử lý'});return result;}finally{local.delete(key);syncActivity();}}
 function update(value){
  remote=[];if(!value){syncActivity();return;}

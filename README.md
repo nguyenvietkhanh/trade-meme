@@ -3,7 +3,12 @@
 One AI decides BUY/SELL/HOLD, token selection and allocation from the current
 on-chain balance. Previous KADE/NYX/SAGE strategies no longer generate entries,
 profit targets or time exits. The internal `kade` journal ID is retained for
-reconciliation; the UI shows **AI**. Existing positions are adopted without
+reconciliation; the UI shows **AI**. New entries target verified market cap strictly between $2k and $20k and upward
+short-term momentum; the AI assesses impulse quality. Existing holdings outside
+that range remain sellable. Manual wallet sales/transfers reconcile on-chain;
+missing proceeds stay explicitly unknown instead of trapping a stale SELL.
+
+Existing positions are adopted without
 changing token quantities or basis; already-signed legacy orders settle first.
 
 Each buy is limited to **90% of the current native SOL balance**, with **0.05 SOL

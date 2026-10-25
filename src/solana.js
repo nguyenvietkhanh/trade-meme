@@ -133,6 +133,35 @@ export class SolanaExecution{
   if(mint&&all.some(a=>!Buffer.isBuffer(a.account.data)||a.account.data.length<165||new PublicKey(a.account.data.subarray(0,32)).toBase58()!==mint||!new PublicKey(a.account.data.subarray(32,64)).equals(key)))throw new TradePolicyError('Số dư token trả về không khớp lệnh/ví chủ.');
   if(all.length>64)throw new TradePolicyError('Ví có quá nhiều tài khoản token để kiểm tra an toàn.');return all;
  }
+ async confirmedInventory(owner,mints,minContextSlot=0){
+  const key=new PublicKey(owner),wanted=new Set(mints),balances=Object.fromEntries(mints.map(m=>[m,{rawAmount:'0',rentLamports:0}]));let slot=Infinity;
+  for(const programId of [TOKEN,TOKEN2022]){
+   const r=await this.rpc.getTokenAccountsByOwner(key,{programId},{commitment:'confirmed',...(minContextSlot?{minContextSlot}:{})});
+   if(!Array.isArray(r.value)||r.value.length>2048||!Number.isSafeInteger(r.context?.slot)||r.context.slot<minContextSlot)throw new TradePolicyError('LIVE_INVENTORY_UNVERIFIED');slot=Math.min(slot,r.context.slot);
+   for(const a of r.value){const d=a.account?.data;if(!Buffer.isBuffer(d)||d.length<165||!a.account.owner?.equals(programId)||!new PublicKey(d.subarray(32,64)).equals(key)||!Number.isSafeInteger(a.account.lamports)||a.account.lamports<0)throw new TradePolicyError('LIVE_INVENTORY_UNVERIFIED');const mint=new PublicKey(d.subarray(0,32)).toBase58();if(!wanted.has(mint))continue;const row=balances[mint];row.rawAmount=String(BigInt(row.rawAmount)+d.readBigUInt64LE(64));row.rentLamports+=a.account.lamports;}
+  }
+  return {complete:true,slot,balances};
+ }
+ async externalSaleReceipt(owner,mint,{sinceSlot=0,sinceAt=0,knownSignatures=[],missingAmount,maxSlot=Infinity}={}){
+  const known=new Set(knownSignatures),history=await this.rpc.getSignaturesForAddress(new PublicKey(owner),{limit:30},'confirmed');let reads=0;
+  for(const h of history){
+   if(known.has(h.signature)||h.err||h.slot<=sinceSlot||h.slot>maxSlot||h.blockTime&&h.blockTime*1000<sinceAt-5000)continue;if(++reads>8)break;
+   const tx=await this.rpc.getParsedTransaction(h.signature,{maxSupportedTransactionVersion:0,commitment:'confirmed'});if(!tx||tx.meta?.err||tx.slot!==h.slot||tx.transaction.message.accountKeys[0]?.pubkey.toBase58()!==owner||!tx.transaction.message.accountKeys[0]?.signer)continue;
+   const pre=tx.meta.preTokenBalances??[],post=tx.meta.postTokenBalances??[],sum=(rows,m)=>rows.filter(b=>b.owner===owner&&b.mint===m).reduce((n,b)=>n+atomic(b.uiTokenAmount.amount),0n),delta=sum(post,mint)-sum(pre,mint);
+   if(delta!==-BigInt(missingAmount))continue;
+   const owned=[...pre,...post].filter(b=>b.owner===owner),changed=[...new Set(owned.map(b=>b.mint))].filter(m=>sum(post,m)!==sum(pre,m));
+   if(changed.some(m=>m!==mint))continue;
+   const instructions=[...tx.transaction.message.instructions,...(tx.meta.innerInstructions??[]).flatMap(x=>x.instructions)];
+   const swaps=instructions.filter(ix=>ix.programId?.toBase58()===PUMP_PROGRAM.toBase58());if(!swaps.length)continue;
+   const poolAccounts=new Set(swaps.flatMap(ix=>(ix.accounts??[]).map(k=>k.toBase58()))),ownerAccounts=new Set(owned.filter(b=>b.mint===mint).map(b=>tx.transaction.message.accountKeys[b.accountIndex].pubkey.toBase58()));let transferred=0n,ambiguous=false;
+   for(const ix of instructions){const info=ix.parsed?.info;if(!['transfer','transferChecked'].includes(ix.parsed?.type)||!['spl-token','spl-token-2022'].includes(ix.program)||!ownerAccounts.has(info?.source)||ownerAccounts.has(info.destination))continue;const raw=info.amount??info.tokenAmount?.amount;if(!poolAccounts.has(info.destination)||!/^\d+$/.test(raw??'')){ambiguous=true;break;}transferred+=BigInt(raw);}
+   if(ambiguous||transferred!==BigInt(missingAmount))continue;
+   if(instructions.some(ix=>ix.program==='system'&&ix.parsed?.type==='transfer'&&ix.parsed.info.destination===owner))continue;
+   const unrelated=[...new Set(owned.filter(b=>b.mint!==mint).map(b=>b.accountIndex))];if(unrelated.some(i=>tx.meta.postBalances[i]!==tx.meta.preBalances[i]))continue;
+   const receipt=await this.receipt(h.signature,owner,mint,{includeRent:true});if(receipt?.solDelta>0&&String(receipt.tokenDelta)===String(delta))return {...receipt,tokenDelta:String(delta),signature:h.signature};
+  }
+  return null;
+ }
  async roundTripQuote(mint,amount,market){if(isPumpCurve(market))return curveRoundTrip(await curveState(this.rpc,mint,market.pairAddress),amount);const q=await jupiterRoundTrip(mint,this.quoteFetch,Number(amount)/1e9),slot=await this.rpc.getSlot('confirmed');if(q.quoteContextSlot>slot+20||slot-q.quoteContextSlot>20)throw Error('Jupiter quote slot không còn mới.');return q;}
  // Read-only SDK quotes for isolated shadow accounts. No transaction is built or signed.
  async paperCurveQuotes(requests){

@@ -5,8 +5,14 @@ ID; the trading UI calls it AI. NYX/SAGE no longer start. Existing holdings are
 assigned to AI after any pending historical signature settles; lot IDs, raw units
 and cost basis do not change. Historical fills keep their original attribution.
 
-The live discovery list is selected by observed market volume within the existing
-PumpSwap source capacity, not legacy strategy scores. Up to 60 fresh candidates
+The live discovery list now targets actual market capitalization **strictly above
+$2,000 and strictly below $20,000**, with a positive M5 move. FDV alone is not
+treated as market cap. Candidates are prioritized by M5 gain, then volume within
+the existing PumpSwap source capacity. The AI assesses whether the impulse is
+strong and sustained; a positive M5 does not force a BUY. The parent rechecks
+fresh cap/momentum before preparation and again immediately before signing.
+Existing holdings outside these entry bounds remain monitored and sellable.
+Up to 60 fresh candidates
 are supplied by default (`MODEL_MAX_CANDIDATES`); missing M1/flow fields remain null
 and do not invoke legacy BUY gates. The model is the sole entry/discretionary
 exit decision maker. Token program checks, quotes and transaction simulation
@@ -50,6 +56,27 @@ same durable update. Profit transfers also enqueue confirmations. Live delivery
 retries without a six-attempt cutoff and only marks `sent` after Telegram returns
 `message_id`; a network timeout can still cause a duplicate Telegram message.
 Financial execution is not retried because notification delivery failed.
+
+## Manual wallet actions
+
+The parent reconciles tracked SPL/Token-2022 quantities against complete confirmed
+RPC snapshots (at or after the last receipt slot) every five seconds. Failed RPC
+responses never imply a zero balance. In-flight app orders and profit transfers
+settle before external reconciliation. Unsubmitted SELL intents are cleared when
+the holding disappears or their quantity exceeds the current holding. Signed
+intents keep their original reconciliation path and are never simply discarded.
+
+For a single unambiguous manual PumpSwap sale with the owner's signature, exact
+token outflow to the swap accounts and native SOL proceeds, the receipt updates
+quantity, basis, actual PnL and notifications once, marked `external-wallet`.
+This also handles partial sales while preserving the AI-selected stop.
+
+If a transfer/burn/complex route or missing transaction evidence cannot establish
+sale proceeds, two consistent confirmed snapshots update inventory at remaining
+basis instead. An `EXTERNAL` audit event and Telegram notice explicitly state
+that PnL is unknown. No zero-price sale, win/loss or profit payout is invented.
+The total-wallet PnL stays unknown when such unresolved events exist, and records
+remain on disk for later analysis. AI can continue managing other positions.
 
 The live destination is `1766285817` exactly, with no invented `-100` prefix.
 Reuse the token from `TELEGRAM_BOT_TOKEN`, the encrypted Volume config or the
