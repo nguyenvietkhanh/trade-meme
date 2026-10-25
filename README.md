@@ -1,20 +1,24 @@
-# Meme Pilot · 10 independent paper wallets
+# Meme Pilot · KADE / NYX / SAGE
 
-Current production architecture: **`paper-isolated-2sol-v1`**. Ten child processes,
-2 virtual SOL initially per bot (20 SOL total), separate wallets/state/cooldowns,
-shared read-only market data. Multiple bots may buy the same token. No real SOL
-signing or broadcasting is available. Sizing remains 2.5% of each own book:
-initial order approximately **0.05 SOL**, not 0.5 SOL.
+Current release: **three independent AI decision workers with a shared real SOL
+wallet**. Docker defaults to `TRADING_MODE=live`; local runs without this flag
+remain paper. Every restart starts with the existing encrypted signer locked.
+Connect the owner wallet and unlock the vault in **Chi tiết ví** to allow real
+orders. Persistent Railway storage is required to unlock.
 
-Optional [River AI control](docs/river-paper-model.md): setting `MODEL_API_KEY`
-enables separate model BUY/SELL/HOLD decisions for all ten paper wallets.
-`MODEL_BASE_URL` and `MODEL_NAME` select the OpenAI-compatible provider/model.
-No key has been supplied or verified as part of this release. Existing money,
-wallet authentication and Telegram reporting are preserved.
+AI chooses BUY/SELL/HOLD and order amounts from the actual current spendable
+wallet balance. Live trading has no 20 SOL virtual bankroll, 2 SOL allocations,
+2.5% sizing, or fixed 0.6 SOL order. Pending orders reserve funds centrally;
+0.1 SOL gas and execution protections remain. Existing Telegram reports remain
+scheduled at 23:59 Vietnam time.
 
-See [current architecture, migration and validation](docs/independent-paper.md).
-The historical sections below describe older releases and do not override this
-architecture or the active `paper-bot-config.js` configuration.
+See [live setup, autonomy boundaries, accounting and tests](docs/live-three-ai.md).
+`MODEL_API_KEY` and `HELIUS_API_KEY` stay server-side in Railway Variables.
+Provider/model availability and the actual Railway deployment have to be
+verified independently; a successful build is not proof of a live fill.
+
+The sections below are historical paper documentation and do not override the
+current live-mode setup above. Old paper ledgers are retained separately.
 
 # Meme Pilot · Paper 20 SOL
 

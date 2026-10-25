@@ -13,7 +13,8 @@
     "build": "esbuild src/wallet-browser.js --bundle --platform=browser --format=esm --outfile=public/wallet.js && esbuild src/paper-browser.js --bundle --platform=browser --format=esm --outfile=public/paper-wallet.js",
     "test:offline": "node scripts/run-tests.js --offline",
     "test:isolation": "node test/paper-runtime-isolation.test.js && node test/paper-supervisor.test.js",
-    "test:model": "node --test --test-isolation=none --test-concurrency=1 test/paper-model-client.test.js test/paper-model-runtime.test.js test/paper-supervisor.test.js"
+    "test:model": "node --test --test-isolation=none --test-concurrency=1 test/paper-model-client.test.js test/paper-model-runtime.test.js test/paper-supervisor.test.js",
+    "test:live": "node --test --test-isolation=none --test-concurrency=1 test/live-treasury.test.js test/live-model-runtime.test.js test/live-fleet.test.js test/pump-swap.test.js"
   },
   "dependencies": {
     "@pump-fun/pump-sdk": "4.1.0",

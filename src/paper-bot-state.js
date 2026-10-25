@@ -10,7 +10,7 @@ export function initialBotState(config,now=Date.now()){
  return {schema:1,version:INDEPENDENT_VERSION,id:config.id,initialSol:2,cashSol:2,rentLockedSol:0,positions:[],pending:null,cooldowns:{},anchors:{},nextAt:now+seed%config.scanIntervalMs,seed,sequence:0,cycle:0,evaluations:0,scoreHistogram:Array(101).fill(0),trades:[],decisions:[],outbox:[],curve:[],peakEquity:2,maxDrawdownPct:0,startedAt:now,heartbeatAt:now,restarts:0,failures:0,breakerUntil:0,running:true,realizedPnlSol:0,signal:null};
 }
 export function validateBotState(s,id){
- if(s?.schema!==1||s.id!==id||s.initialSol!==2||!Number.isFinite(s.cashSol)||s.cashSol<0||!Number.isFinite(s.rentLockedSol)||s.rentLockedSol<0||!Array.isArray(s.positions)||!Array.isArray(s.trades)||!Array.isArray(s.outbox))throw Error('Invalid bot state: '+id);
+ if(s?.schema!==1||s.id!==id||(s.mode==='live'?s.initialSol!==0:s.initialSol!==2)||!Number.isFinite(s.cashSol)||s.cashSol<0||!Number.isFinite(s.rentLockedSol)||s.rentLockedSol<0||!Array.isArray(s.positions)||!Array.isArray(s.trades)||!Array.isArray(s.outbox))throw Error('Invalid bot state: '+id);
  for(const p of s.positions)if(p.agentId!==id||!(p.quantity>0)||!(p.costSol>=0)||!/^\d+$/.test(p.rawQuantity??''))throw Error('Invalid isolated position: '+id);
  return s;
 }

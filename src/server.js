@@ -1,2 +1,2 @@
-// Production is paper-only. No environment flag can enable a signer or broadcasts.
+// Explicit live mode uses the owner vault; every restart starts locked.
 await import('./paper-server.js');

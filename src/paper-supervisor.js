@@ -1,5 +1,5 @@
 import {fork} from 'node:child_process';
-import {BOT_CONFIGS} from './paper-bot-config.js';
+import {ACTIVE_BOT_CONFIGS as BOT_CONFIGS} from './paper-bot-config.js';
 import {startPaperLoop} from './paper-loop.js';
 export class BotSupervisor{
  constructor(dir,{execute,decide=null,cancelDecision=()=>{},modelSettings={},onState=()=>{},onError=console.error,clock=Date.now,running=true}={}){this.dir=dir;this.execute=execute;this.decide=decide;this.cancelDecision=cancelDecision;this.modelSettings=modelSettings;this.onState=onState;this.onError=onError;this.clock=clock;this.workers=new Map();this.closing=false;this.desiredRunning=running;}
@@ -11,12 +11,13 @@ export class BotSupervisor{
    if(message.type==='state'){row.lastHeartbeat=this.clock();row.state=message.state;this.onState(id,message.state,row);}
    else if(message.type==='error')this.onError({bot:id,...message.error});
    else if(message.type==='model')Promise.resolve().then(()=>{if(!this.decide)throw Object.assign(Error('MODEL_NOT_CONFIGURED'),{code:'MODEL_NOT_CONFIGURED'});return this.decide(id,message.context);}).then(result=>{if(worker.connected)worker.send({type:'reply',requestId:message.requestId,result});},error=>{if(worker.connected)worker.send({type:'reply',requestId:message.requestId,error:error.code??'MODEL_UNAVAILABLE',code:error.code??'MODEL_UNAVAILABLE',retryAt:error.retryAt??null});});
-   else if(message.type==='execute')this.execute(message.input,message.market).then(result=>{if(worker.connected)worker.send({type:'reply',requestId:message.requestId,result});},error=>{this.onError({bot:id,message:error.message});if(worker.connected)worker.send({type:'reply',requestId:message.requestId,error:String(error.message).slice(0,250)});});
+   else if(message.type==='execute')Promise.resolve().then(()=>this.execute(message.input,message.market,id)).then(result=>{if(worker.connected)worker.send({type:'reply',requestId:message.requestId,result});},error=>{this.onError({bot:id,message:error.message});if(worker.connected)worker.send({type:'reply',requestId:message.requestId,error:String(error.message).slice(0,250),code:error.code});});
   });
   worker.on('exit',(code,signal)=>{row.exited=true;this.cancelDecision(id);if(!this.closing){this.onError({bot:id,code,signal,message:'Worker exited; isolated restart scheduled'});row.restartTimer=setTimeout(()=>this.spawn(id),Math.min(30000,1000*2**Math.min(row.restarts,5)));}});
  }
  check(){for(const row of this.workers.values())if(!row.exited&&!row.stopping&&this.clock()-row.lastHeartbeat>60000){row.stopping=true;this.onError({bot:row.id,message:'Heartbeat missing 60s; restarting only this worker'});row.worker.kill('SIGKILL');}}
  publish(snapshot){for(const row of this.workers.values())if(row.worker.connected&&!row.exited)row.worker.send({type:'snapshot',snapshot});}
+ books(views){for(const [id,row]of this.workers)if(row.worker.connected&&!row.exited&&views[id])row.worker.send({type:'book',book:views[id]});}
  running(value){this.desiredRunning=value;for(const row of this.workers.values())if(row.worker.connected)row.worker.send({type:'running',running:value});}
  async stop(){this.closing=true;this.watchdog?.stop();await Promise.all([...this.workers.values()].map(row=>new Promise(resolve=>{clearTimeout(row.restartTimer);if(row.exited)return resolve();const timer=setTimeout(()=>row.worker.kill('SIGKILL'),10000);row.worker.once('exit',()=>{clearTimeout(timer);resolve();});row.worker.send({type:'shutdown'});})));await this.watchdog?.done;}
 }

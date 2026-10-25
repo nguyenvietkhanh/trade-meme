@@ -66,3 +66,13 @@ test('per-mint token balances work independently of global inventory and reject 
  assert.equal((await execution.holdings(f.user,mint))[0].account.data.readBigUInt64LE(64),100000000n);assert.equal(calls.length,1);
  const account=f.map.get(f.baseAta.toBase58());Keypair.generate().publicKey.toBuffer().copy(account.data,32);await assert.rejects(execution.holdings(f.user,mint),/không khớp/);
 });
+
+test('internal live budget permits AI sizes above the legacy 0.6 SOL cap while retaining reserve, owner and simulation checks',async()=>{
+ const {LIVE_BUDGET_AUTHORITY}=await import('../src/live-budget-authority.js');
+ const f=await pumpFixture({walletLamports:2000000000}),execution=new SolanaExecution();execution.rpc=f.rpc;f.map.get(f.pool.poolQuoteTokenAccount.toBase58()).data.writeBigUInt64LE(1000000000000n,64);
+ const r={ownerAddress:f.user.toBase58(),input:SOL,output:f.mint.toBase58(),amount:'900000000',poolAddress:f.poolKey.toBase58()};
+ await assert.rejects(execution.prepare(r),/cỡ lệnh không khớp/);
+ await assert.rejects(execution.prepare({...r,budgetAuthority:'live-fleet-wallet-budget'}),/cỡ lệnh không khớp/);
+ const result=await execution.prepare({...r,budgetAuthority:LIVE_BUDGET_AUTHORITY});assert.equal(result.quote.inAmount,'900000000');assert.equal(result.signature,null);assert.equal(result.simulatedSolDeltaLamports,-902059280);
+ await assert.rejects(execution.prepare({...r,amount:'1900000000',budgetAuthority:LIVE_BUDGET_AUTHORITY}),/LIVE_CAPITAL_LIMIT/);
+});

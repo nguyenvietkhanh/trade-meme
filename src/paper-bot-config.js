@@ -35,3 +35,7 @@ export function breakEvenScenarios(config,size=.05){
  const scenarios=[config.exitPolicy.firstProfitPct,config.exitPolicy.finalProfitPct].map(gain=>{const netWin=(1+gain/100)*h*h-1-fee;return {grossGainPct:gain,netWinPct:netWin*100,netLossPct:loss*100,breakEvenWinRate:netWin>0?loss/(loss+netWin):null};});
  return {orderSol:size,scenarios,warning:scenarios.some(s=>s.breakEvenWinRate===null||s.breakEvenWinRate>.6),assumptions:'Static gross TP/SL scenarios, 1.5% each side and fixed fees; excludes unknown pool fees, gaps and mixed partial/trailing exits. Rent assumed returned.'};
 }
+// Retired bots remain in the schema so their historical books stay readable.
+// Only these three may run or submit new decisions.
+export const ACTIVE_BOT_IDS=Object.freeze(['kade','nyx','sage']);
+export const ACTIVE_BOT_CONFIGS=Object.freeze(ACTIVE_BOT_IDS.map(id=>BOT_CONFIGS.find(c=>c.id===id)));

@@ -1,6 +1,7 @@
 import {BotRuntime} from './paper-bot-runtime.js';
 import {createModelContext,validateModelDecision,walletFingerprint} from './paper-model-context.js';
-import {paperOrderSol,PAPER_SIZING} from './paper-sizing.js';
+import {PAPER_SIZING} from './paper-sizing.js';
+import {decisionOrderSol as paperOrderSol} from './decision-capital.js';
 import {lamports} from './paper-bot-state.js';
 import {FILL_MODEL} from './paper-bot-config.js';
 import {scalpExitPlan} from './paper-scalp.js';
@@ -35,7 +36,7 @@ export class ModelBotRuntime extends BotRuntime{
   else if(decision.action==='HOLD')applied=true;
   else if(decision.action==='BUY'){
    const m=snapshot.markets.find(m=>m.mint===decision.mint&&context.candidates.some(c=>c.mint===m.mint&&c.pool===m.pairAddress)),reference=context.candidates.find(c=>c.mint===decision.mint),size=Math.floor(decision.order_sol*1e9)/1e9;
-   if(!s.running||s.positions.length||size<PAPER_SIZING.minOrderSol||size>paperOrderSol(s)+1e-9)reason='MODEL_BUY_CAPITAL_LIMIT';
+   if(!s.running||s.positions.length||size<PAPER_SIZING.minOrderSol||size>paperOrderSol(s,now)+1e-9)reason='MODEL_BUY_CAPITAL_LIMIT';
    else if((s.cooldowns[decision.mint]??0)>now)reason='MODEL_OWN_COOLDOWN';
    else if(!m||!(m.priceUsd>0)||now-m.updatedAt>5000||now<m.updatedAt||now-(m.marketObservedAt??m.updatedAt)>5000||now<(m.marketObservedAt??m.updatedAt))reason='MODEL_MARKET_STALE';
    else if(!(reference?.priceSol>0))reason='MODEL_REFERENCE_PRICE_MISSING';
@@ -63,7 +64,7 @@ export class ModelBotRuntime extends BotRuntime{
   const s=this.state,o=s.pending;
   if(o?.decisionEngine==='model'&&o.side==='BUY'){
    const m=snapshot.markets.find(m=>m.mint===o.mint&&m.pairAddress===o.pairAddress),size=Number(o.amount)/1e9;
-   if(!s.running||s.positions.length||!m||now-m.updatedAt>5000||now<m.updatedAt||now-(m.marketObservedAt??m.updatedAt)>5000||now<(m.marketObservedAt??m.updatedAt)||size>paperOrderSol(s)+1e-9||(s.cooldowns[o.mint]??0)>now){this.recordAI(snapshot,now,'WAIT','MODEL_BUY_RECHECK_FAILED',{mint:o.mint});s.pending=null;return;}
+   if(!s.running||s.positions.length||!m||now-m.updatedAt>5000||now<m.updatedAt||now-(m.marketObservedAt??m.updatedAt)>5000||now<(m.marketObservedAt??m.updatedAt)||size>paperOrderSol(s,now)+1e-9||(s.cooldowns[o.mint]??0)>now){this.recordAI(snapshot,now,'WAIT','MODEL_BUY_RECHECK_FAILED',{mint:o.mint});s.pending=null;return;}
   }
   return super.fill(snapshot,now);
  }
