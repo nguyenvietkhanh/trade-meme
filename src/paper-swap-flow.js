@@ -32,16 +32,26 @@ export function flowSummary(m,signatures,receipts,checkedAt,now=Date.now()){
  const lastTen=events.slice(0,10),buys=events.filter(t=>t.side==='BUY'),sells=events.filter(t=>t.side==='SELL'),volume=events.reduce((sum,t)=>sum+t.quoteSol,0);
  return {mint:m.mint,pairAddress:m.pairAddress,checkedAt,provider:'confirmed-pumpswap-events',windowStart,windowComplete,walletsComplete:windowComplete&&events.every(t=>t.user!==null),lastTenComplete:prefixComplete&&lastTen.length===10,lastTen,uniqueBuyers:new Set(buys.filter(t=>t.user).map(t=>t.user)).size,uniqueSellers:new Set(sells.filter(t=>t.user).map(t=>t.user)).size,largestBuySharePct:volume>0?Math.max(0,...buys.map(t=>t.quoteSol))/volume*100:null,smallBuyFraction:buys.length&&volume>0?buys.filter(t=>t.quoteSol<=volume*.05).length/buys.length:null,eventsObserved:events.length,coverageNote:'Distinct signing addresses, not independently funded humans. Partial RPC windows never count as complete.'};
 }
-export function createSwapFlowReader(rpc,{clock=Date.now}={}){
+export function createSwapFlowReader(rpc,{clock=Date.now,rolling=false}={}){
  const pools=new Map();return async m=>{
   if(m.dexId!=='pumpswap')throw Error('PumpSwap only');const key=m.mint+':'+m.pairAddress,checkedAt=clock();let cache=pools.get(key);
   if(!cache){const account=await rpc.getAccountInfo(new PublicKey(m.pairAddress),'confirmed');if(!account?.owner?.equals(PUMP_AMM_PROGRAM_ID))throw Error('Pool program mismatch');const pool=program.coder.accounts.decode('pool',account.data);if(pool.baseMint.toBase58()!==m.mint||pool.quoteMint.toBase58()!==SOL)throw Error('Pool mint mismatch');cache={receipts:new Map(),at:checkedAt};pools.set(key,cache);}
-  const signatures=await rpc.getSignaturesForAddress(new PublicKey(m.pairAddress),{limit:40},'confirmed');if(!Array.isArray(signatures)||signatures.length>40||signatures.some(s=>typeof s.signature!=='string'||!s.signature)||new Set(signatures.map(s=>s.signature)).size!==signatures.length)throw Error('Missing/invalid signature window');
+  let signatures=await rpc.getSignaturesForAddress(new PublicKey(m.pairAddress),{limit:40},'confirmed');if(!Array.isArray(signatures)||signatures.length>40||signatures.some(s=>typeof s.signature!=='string'||!s.signature)||new Set(signatures.map(s=>s.signature)).size!==signatures.length)throw Error('Missing/invalid signature window');
+  let pagesComplete=true;
+  if(rolling){
+   cache.signatures??=new Map();cache.cursors??=[];const old=new Set(cache.signatures.keys()),head=signatures;
+   const boundary=page=>page.length<40||page.some(s=>Number.isFinite(s.blockTime)&&s.blockTime*1000<=checkedAt-300000)||page.some(s=>old.has(s.signature));
+   if(!boundary(head)&&head.length&&!cache.cursors.includes(head.at(-1).signature))cache.cursors.unshift(head.at(-1).signature);
+   for(const s of head)cache.signatures.set(s.signature,s);
+   if(cache.cursors.length){const cursor=cache.cursors[0],page=await rpc.getSignaturesForAddress(new PublicKey(m.pairAddress),{limit:40,before:cursor},'confirmed');if(!Array.isArray(page)||page.some(s=>typeof s.signature!=='string'))throw Error('Invalid backfill page');const done=boundary(page);for(const s of page)cache.signatures.set(s.signature,s);if(done)cache.cursors.shift();else cache.cursors[0]=page.at(-1).signature;}
+   const ordered=[...cache.signatures.values()].sort((a,b)=>b.slot-a.slot||b.signature.localeCompare(a.signature)),keep=ordered.filter(s=>!Number.isFinite(s.blockTime)||s.blockTime*1000>=checkedAt-360000);for(const s of ordered)if(!keep.includes(s))cache.signatures.delete(s.signature);
+   signatures=keep;pagesComplete=cache.cursors.length===0;
+  }
   const missing=signatures.filter(s=>!s.err&&(!cache.receipts.has(s.signature)||cache.receipts.get(s.signature).complete!==true&&clock()-(cache.receipts.get(s.signature).readAt??0)>=30000)).slice(0,12);
   // At most two background receipt reads concurrently; existing RPC scheduler
   // reserves capacity for SELL and never broadcasts any transaction here.
-  for(let i=0;i<missing.length;i+=2)await Promise.all(missing.slice(i,i+2).map(async s=>{try{const tx=await rpc.getTransaction(s.signature,{commitment:'confirmed',maxSupportedTransactionVersion:0});if(tx)cache.receipts.set(s.signature,{...decodeSwapTrades(tx,m,s.signature),readAt:clock()});}catch{}}));
+  for(let i=0;i<missing.length;i+=2)await Promise.all(missing.slice(i,i+2).map(async s=>{try{const tx=await rpc.getTransaction(s.signature,{commitment:'confirmed',maxSupportedTransactionVersion:0});if(tx)cache.receipts.set(s.signature,{...decodeSwapTrades(tx,m,s.signature),readAt:clock()});}catch(error){console.error('paper flow receipt',s.signature,error.message);}}));
   const keep=new Set(signatures.map(s=>s.signature));for(const s of cache.receipts.keys())if(!keep.has(s))cache.receipts.delete(s);cache.at=clock();for(const [k,v]of pools)if(clock()-v.at>600000)pools.delete(k);while(pools.size>60)pools.delete(pools.keys().next().value);
-  return flowSummary(m,signatures,cache.receipts,checkedAt,clock());
+  const summary=flowSummary(m,signatures,cache.receipts,checkedAt,clock());if(!pagesComplete){summary.windowComplete=false;summary.walletsComplete=false;}return summary;
  };
 }

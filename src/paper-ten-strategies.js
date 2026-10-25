@@ -30,9 +30,9 @@ export function validMinuteBars(data,m,now){
  return closed;
 }
 export function tenSignal(id,m,now=Date.now(),context={}){
- const a=TEN_AGENTS.find(a=>a.id===id),r=a?.entryRules,e=m.evidence??{},data=m.strategyData??{},missing=[],blocked=[],parts={},fresh=t=>finite(t)&&t<=now&&now-t<=5000;
- const require=(known,ok,key,label)=>{if(!known)missing.push({key,label});else if(!ok)blocked.push({key,label});};
- const common=!!a&&m.dexId==='pumpswap'&&!!m.mint&&!!m.pairAddress&&finite(m.priceUsd)&&m.priceUsd>0&&fresh(m.updatedAt);
+ const a=TEN_AGENTS.find(a=>a.id===id),r=a?.entryRules,e=m.evidence??{},data=m.strategyData??{},missing=[],blocked=[],checks=[],parts={},fresh=t=>finite(t)&&t<=now&&now-t<=5000;
+ const require=(known,ok,key,label)=>{checks.push({key,label,status:!known?'unknown':ok?'pass':'fail'});if(!known)missing.push({key,label});else if(!ok)blocked.push({key,label});};
+ const common=!!a&&m.dexId==='pumpswap'&&!!m.mint&&!!m.pairAddress&&finite(m.priceUsd)&&m.priceUsd>0&&fresh(m.updatedAt)&&fresh(m.marketObservedAt??m.updatedAt);
  if(!common)return result('discovery','Thiếu giá ≤5 giây hoặc mint/pool PumpSwap hợp lệ',false,false,0);
  require(finite(m.liquidityUsd),m.liquidityUsd>=r.minLiquidityUsd,'LIQUIDITY','Thanh khoản cần ≥$'+r.minLiquidityUsd);
  const cheap=missing.length===0&&blocked.length===0;
@@ -68,10 +68,11 @@ export function tenSignal(id,m,now=Date.now(),context={}){
   require(!!last,green(last),'M1_GREEN','M1 cần xanh');require(finite(p),p>0,'M5_GREEN','M5 cần xanh');require(finite(ratio),ratio>=1.3,'BUY_SELL_RATIO','Mua/bán cần ≥1,3');if(data.holders?.mint===m.mint&&data.holders.pairAddress===m.pairAddress&&finite(data.holders.top10Pct))require(true,data.holders.top10Pct<=35,'TOP_TEN','Top 10 holder có dữ liệu cần ≤35%');strength=finite(ratio)?clamp(ratio/2):0;break;
  }
  const prior=context.prior,confirmation=prior&&finite(prior.at)&&now-prior.at>=5000&&now-prior.at<=60000&&prior.sourceAt<m.updatedAt&&prior.priceUsd>0&&prior.liquidityUsd>0;
- require(!!confirmation,confirmation&&m.priceUsd>=prior.priceUsd*.995&&m.liquidityUsd>=prior.liquidityUsd*.9,'TWO_SNAPSHOTS','Cần 2 snapshot riêng ≥5 giây; giữ giá ≥99,5% và thanh khoản ≥90%');
+ if(!context.signalOnly)require(!!confirmation,confirmation&&m.priceUsd>=prior.priceUsd*.995&&m.liquidityUsd>=prior.liquidityUsd*.9,'TWO_SNAPSHOTS','Cần 2 snapshot riêng ≥5 giây; giữ giá ≥99,5% và thanh khoản ≥90%');
  if(context.cooldownUntil>now)blocked.push({key:'REENTRY_30M',label:'Token đang nghỉ giao dịch 30 phút trong sổ riêng'});
  const structural=missing.length===0&&blocked.length===0,loss=e.roundTripLossPct,cost=finite(loss)?15*clamp(1-loss/6):0,liquidity=15*clamp(m.liquidityUsd/r.minLiquidityUsd-1),score=Math.round(55+liquidity+15*strength+cost);
  Object.assign(parts,{base:55,liquidity,strength:15*strength,quoteCost:finite(loss)?cost:null,definition:'Explicit heuristic weights, not fitted probabilities or backtest results'});
+ if(context.signalOnly)return result(structural?'ready':missing.length?'strategy-data':'market',structural?'Đạt tín hiệu gốc':(missing[0]??blocked[0]).label,cheap,structural,score,structural?'ready':(missing[0]??blocked[0]).key);
  const proof=e.certificationMode==='bypassed-paper'&&e.mint===m.mint&&e.pairAddress===m.pairAddress&&e.roundTripQuoteOk===true&&fresh(e.quoteCheckedAt)&&Number.isInteger(e.decimals)&&e.decimals>=0&&e.decimals<=18&&finite(e.probeSol)&&e.probeSol>0&&finite(loss)&&loss>=0;
  if(!structural){const issue=missing[0]??blocked[0];return result(missing.length?'strategy-data':'market',issue.label,cheap,false,score,issue.key);}
  if(!proof)return result('execution','Cần quote vòng thật ≤5 giây và decimals đúng cỡ lệnh',cheap,score+15>=r.minScore,score,'EXECUTION_QUOTE');
@@ -79,7 +80,7 @@ export function tenSignal(id,m,now=Date.now(),context={}){
  if(score<r.minScore)return result('score','Điểm '+score+' dưới '+r.minScore,cheap,false,score,'SCORE');
  return result('ready','Đạt luật '+a.name,cheap,true,score);
  function result(stage,reason,roughEligible,preQuoteEligible,score,key=stage){
-  const flags=stage==='ready'?[]:[key],rank={agentId:id,eligible:stage==='ready',roughEligible,preQuoteEligible,blockingStage:stage,primaryFlags:flags,red_flags:flags,primaryReasons:flags.length?[reason]:[],reasons:flags.length?[reason]:[],missingData:missing.map(x=>x.key),score:finite(score)?Math.min(100,score):0,minScore:r?.minScore??100,scoreParts:parts,policyVersion:TEN_STRATEGY_VERSION,certificationsRequired:false,baseline:{eligible:null},relaxedFlags:['SHARED_20_SOL','LOSS_HALTS_DISABLED'],strategyChecks:{missing,blocked}};
+  const flags=stage==='ready'?[]:[key],rank={agentId:id,eligible:stage==='ready',roughEligible,preQuoteEligible,blockingStage:stage,primaryFlags:flags,red_flags:flags,primaryReasons:flags.length?[reason]:[],reasons:flags.length?[reason]:[],missingData:missing.map(x=>x.key),score:finite(score)?Math.min(100,score):0,minScore:r?.minScore??100,scoreParts:parts,policyVersion:TEN_STRATEGY_VERSION,certificationsRequired:false,baseline:{eligible:null},relaxedFlags:['SHARED_20_SOL','LOSS_HALTS_DISABLED'],strategyChecks:{missing,blocked,checks}};
   return {eligible:rank.eligible,stage,reason,rank,m};
  }
 }

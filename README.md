@@ -1,3 +1,15 @@
+# Meme Pilot · 10 independent paper wallets
+
+Current production architecture: **`paper-isolated-2sol-v1`**. Ten child processes,
+2 virtual SOL initially per bot (20 SOL total), separate wallets/state/cooldowns,
+shared read-only market data. Multiple bots may buy the same token. No real SOL
+signing or broadcasting is available. Sizing remains 2.5% of each own book:
+initial order approximately **0.05 SOL**, not 0.5 SOL.
+
+See [current architecture, migration and validation](docs/independent-paper.md).
+The historical sections below describe older releases and do not override this
+architecture or the active `paper-bot-config.js` configuration.
+
 # Meme Pilot · Paper 20 SOL
 
 Bản hiện tại chạy hoàn toàn bằng **20 SOL mô phỏng**, dùng dữ liệu thị trường
