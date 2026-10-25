@@ -1,27 +1,30 @@
-# Meme Pilot · KADE / NYX / SAGE
+# Meme Pilot · KADE / NYX / SAGE · autonomous AI
 
-Three independent AI decision workers share the current real SOL wallet balance.
-**Connect Phantom/Solflare and sign the owner-authentication message. There is no
-application password or server wallet vault in the production flow.** AI chooses
-BUY/SELL/HOLD and amounts; each actual transaction still requires the owner wallet
-to sign. Connection or message authentication alone does not grant spending rights.
-Use **Chi tiết ví → Ký lệnh AI** to review and sign a pending proposal. No owner
-private key is imported or sent to the server.
+AI independently chooses BUY/SELL/HOLD and order amounts for three workers, then
+the authorized server signer signs and broadcasts swaps. **There is no per-trade
+Phantom/Solflare approval and no application password.** Owner wallet connection
+and message authentication start API verification immediately, even when the
+market shortlist is empty or the signing key is not configured yet.
+
+Real autonomous execution requires `LIVE_SIGNER_SECRET_KEY` for the configured
+owner wallet in Railway secret Variables. Accepted encodings are Base58 or a
+JSON array of 64 bytes, not a seed phrase. The signer rejects keys for a different
+wallet. Do not put real keys in this repository or send them in chat. Helius and
+River API keys do not authorize Solana transactions. Connection alone cannot
+reveal a Phantom/Solflare private key to the server.
 
 Docker defaults to `TRADING_MODE=live`; local runs without that flag remain paper.
-The shared treasury reserves pending funds, keeps 0.1 SOL gas and records only
-confirmed receipts. Real mode uses no fixed 20 SOL bankroll, 2 SOL allocation,
-2.5% sizing or fixed 0.6 SOL order. Persistent storage preserves the journal.
+After a restart, connect and authenticate the owner wallet to activate autonomous
+execution. AI chat verification, signer readiness and wallet/RPC readiness are
+shown separately. API failure never silently switches to rule-based buying.
+Pending signatures are journaled before broadcast; real PnL uses confirmed
+receipts and excludes external capital flows. The treasury keeps 0.1 SOL gas
+and retains execution safeguards and dynamic shared-wallet sizing.
 
-Telegram at 23:59 Vietnam time uses Bot token + Chat ID without an application
-password. Existing environment credentials continue to work; new dashboard
-credentials use a server-managed storage key. An old password-encrypted config
-without its original unlock secret requires re-entering token/Chat ID or setting
-the Telegram environment variables; it cannot be decrypted by wallet connection.
-
-See [wallet signing, accounting and validation](docs/live-three-ai.md).
-Provider availability and the deployed revision must be verified separately;
-a successful build does not imply any live trade or profitable strategy.
+Telegram reports remain at 23:59 Vietnam time, using token/Chat ID without an
+application password. See [autonomous setup and validation](docs/live-three-ai.md).
+A build or mock test does not prove that the actual River key/model works, a
+Railway deployment is Active, or a profitable trading edge exists.
 
 The sections below are historical paper documentation and do not override the
 current live-mode setup above. Old paper ledgers are retained separately.

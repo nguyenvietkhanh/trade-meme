@@ -34,47 +34,52 @@ pool identity, simulated owner debits, and the existing stop/maximum holding
 protections still apply. A stop does not guarantee its trigger price. Daily,
 streak and drawdown BUY halts remain disabled as previously requested.
 
-## Connect and sign — no application password
+## Connect once, then autonomous execution
 
-Production uses `WalletFleet` and `WalletTreasury`. No wallet private key or seed
-is imported, and the existing encrypted wallet vault is not loaded or decrypted.
-AI controls proposals; custody remains with the connected owner wallet.
+Production uses `AutomaticFleet`, `AutomaticTreasury` and a parent-only
+`AutomaticSigner`. AI decisions are executed by this authorized server signer;
+no per-order browser signature or app password is required. Historical
+`WalletFleet` code is retained for regression tests, but its signing-request
+endpoints are not enabled by the production server.
 
-1. Keep `MODEL_API_KEY` and `HELIUS_API_KEY` in Railway Variables. Mount persistent
-   storage for the real intent/receipt journal. A Railway container without a
-   Volume cannot safely retain pending real orders across a restart, so it is
-   refused before trading is enabled. This does not require a wallet vault.
-2. Click **Kết nối ví** in Phantom/Solflare and sign the owner-authentication
-   message. The dashboard connects the authenticated owner session to the AI
-   fleet. This message is not a transfer and does not grant spending authority.
-3. Each AI independently chooses BUY/SELL/HOLD and its amount. A proposed trade
-   becomes an exact unsigned SDK transaction, with reserved funds and slippage
-   limits. **Chi tiết ví → Ký lệnh AI** calls the wallet's `signTransaction`.
-   The server verifies the owner signature and exact prepared message before
-   sending. No automatic `signAndSendTransaction` bypass is used.
-4. **Dừng BUY** disables new buys but keeps monitoring positions. **Ngắt kết nối
-   giao dịch** cancels unsigned proposals and stops new execution. Already signed
-   and submitted transactions may still confirm. Reconnect after a restart;
-   no application password is requested.
+1. Keep `MODEL_API_KEY` and `HELIUS_API_KEY` in Railway Variables. Add
+   **`LIVE_SIGNER_SECRET_KEY`** as a secret Variable for the configured owner
+   wallet. Use a Base58 private key or a JSON array of 64 bytes, not a seed
+   phrase. A wrong-wallet key is refused. Never send this key in chat, put it
+   in model context, or commit it to the repository. This key grants the server
+   transaction-signing authority; API keys for Helius/River do not replace it.
+2. Keep the live journal on a Railway Volume. Owner authentication is a signed
+   message, not a transfer or a way to extract a wallet private key. Immediately
+   after authentication, a real chat-completions request checks the configured
+   AI model. It contains no wallet balance, candidate token or signing secret;
+   the only valid result is HOLD. No fabricated fill or trade is recorded.
+3. Once the API check succeeds and signer/RPC/storage are ready, the three bots
+   choose, sign and send orders without human order approval. The signer stays
+   in the parent process. Workers receive only their own book and market data;
+   neither the signing secret nor model API key is inherited in worker env.
+4. **Dừng BUY** prevents new buys and keeps automatic SELL monitoring. **Ngắt kết
+   nối giao dịch** disables signing and new execution; already submitted
+   transactions can still confirm. Closing the browser does not stop an active
+   server fleet. A process restart requires owner authentication again.
 
-Each fill and every protective exit requires the owner's actual wallet signature.
-If the owner is absent, an automatic stop cannot sell the position; unsigned
-quotes expire and the bot must reassess. BUY proposals expire after 30 seconds;
-SELL proposals have a 90-second preparation limit and also require a valid
-blockhash. Human approval adds unknown latency to the 2-second minimum simulation
-pipeline delay. This setup is not unattended trading based on connection alone.
+`/api/live/connect` reuses an in-flight or recent successful verification, so
+login and connection do not duplicate the check. A new authenticated login
+explicitly checks again. Backoff, timeout, request budget, response validation
+and key redaction are shared with normal inference. `MODEL_HTTP_401`, 403, 404,
+402, 429, network failures and invalid outputs remain explicit errors.
+Authentication itself succeeds independently of provider readiness; a failed
+API check cannot be misreported as a wallet password failure.
 
-The compatibility URL `/api/paper/pause` and the live `/api/live/pause` both require
-owner authentication, same origin and a boolean `paused`. Missing input cannot
-implicitly resume. Missing wallet connection is HTTP 409 with an actionable
-`LIVE_WALLET_NOT_CONNECTED` code. Rate limiting returns HTTP 429 and `Retry-After`,
-rather than an invalid-password HTTP 400. Old password-based live signing routes
-are removed (HTTP 410); wallet signing routes remain authenticated.
+The compatibility `/api/paper/pause` and live `/api/live/pause` require owner
+authentication, same origin and a boolean `paused`. Missing input cannot resume.
+Rate limiting returns HTTP 429 with `Retry-After`. Missing or invalid server
+signing credentials have their own status and messages, independently from AI
+API verification. Browser wallet-order/sign/submit routes return HTTP 410.
 
 ## Receipts, recovery and accounting
 
 `live/live-ledger.json` is the authoritative treasury journal, separate from
-`paper20/`. A reservation and unsigned message are durable before requesting the wallet signature. Signed bytes, signature
+`paper20/`. A reservation is durable before the parent signs the SDK swap. Signed bytes, signature
 and block expiry are durable before broadcast. A timeout keeps the same intent
 and signature for reconciliation; it never creates a replacement trade.
 On restart the parent restores pending orders and children cannot submit a
@@ -102,7 +107,7 @@ The deployment does not fabricate a test message or claim a Telegram delivery.
 
 Mock tests cover independent child contexts, dynamic capital, concurrent
 reservations, same-mint lot ownership, unknown submission/restart, no duplicate
-broadcasts, wrong/failed receipts, rent, external flows, owner authentication, exact-message wallet signatures, cancellation/expiry, password-free Telegram reopening, typed control errors,
+broadcasts, wrong/failed receipts, rent, external flows, owner authentication, parent-only signing, automatic broadcast/idempotency, API verification without any market data, wrong-owner key rejection, password-free Telegram reopening, typed control errors,
 CSRF rejection, immutable UI assets and report generation. The SDK simulation
 also tests AI amounts above the old 0.6 SOL limit while preserving the reserve.
 No mainnet transaction is broadcast by the tests. These are software checks,

@@ -9,9 +9,18 @@ export function readModelConfiguration(env=process.env){
 }
 export class PaperModelClient{
  #apiKey;
+ #verificationTask=null;
  constructor({env=process.env,fetcher=(...args)=>fetch(...args),clock=Date.now}={}){const c=readModelConfiguration(env);this.#apiKey=c.apiKey;delete c.apiKey;this.config=c;this.fetcher=fetcher;this.clock=clock;this.inflight=new Map();this.times=[];this.retryAt=0;this.stats={requests:0,successes:0,errors:0,http429:0,inputTokens:0,outputTokens:0};this.lastError=null;this.lastSuccessAt=null;}
  settings(){const c={...this.config,endpoint:undefined};if(this.#apiKey)for(const field of ['name','host'])if(typeof c[field]==='string'&&c[field].includes(this.#apiKey))c[field]='[REDACTED]';return c;}
- status(){return {...this.settings(),verified:this.lastSuccessAt!==null,lastSuccessAt:this.lastSuccessAt,lastError:this.lastError,retryAt:this.retryAt,activeBots:[...this.inflight.keys()],...this.stats};}
+ status(){return {...this.settings(),verified:this.lastSuccessAt!==null,lastSuccessAt:this.lastSuccessAt,lastError:this.lastError,verification:this.verification??{status:'idle'},retryAt:this.retryAt,activeBots:[...this.inflight.keys()].filter(id=>id!=='__api_verify__'),...this.stats};}
+ verify({reuseForMs=0}={}){
+  if(this.#verificationTask)return this.#verificationTask;
+  const now=this.clock();if(reuseForMs>0&&!this.lastError&&this.verification?.status==='verified'&&now>=this.verification.checkedAt&&now-this.verification.checkedAt<reuseForMs)return Promise.resolve(this.status());
+  this.verification={status:'verifying',requestedAt:now};
+  const context={schema:'model-api-verification-v1',botId:'__api_verify__',snapshotId:'verify-'+now,asOf:now,wallet:{running:false},positions:[],candidates:[],limits:{minOrderSol:.0025,maxOrderSol:0}};
+  this.#verificationTask=Promise.resolve().then(()=>this.decide('__api_verify__',context)).then(()=>{this.verification={status:'verified',requestedAt:now,checkedAt:this.clock()};return this.status();},error=>{const code=typeof error.code==='string'&&error.code.startsWith('MODEL_')?error.code:'MODEL_VERIFICATION_FAILED';this.verification={status:'error',requestedAt:now,checkedAt:this.clock(),code};this.lastError={at:this.clock(),code};throw failure(code,{retryAt:error.retryAt??null});}).finally(()=>{this.#verificationTask=null;});
+  return this.#verificationTask;
+ }
  cancel(botId){this.inflight.get(botId)?.abort();}
  async decide(botId,context){
   const c=this.config,now=this.clock();if(!c.enabled||!c.configured)throw failure(c.error??'MODEL_NOT_CONFIGURED');if(context.botId!==botId)throw failure('MODEL_BOT_ID_MISMATCH');

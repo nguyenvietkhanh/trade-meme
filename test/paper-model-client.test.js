@@ -40,3 +40,13 @@ test('canceling one inference aborts its request and never creates a verified de
 test('a provider cannot reflect the API key into saved decisions or public status',async()=>{
  const client=new PaperModelClient({env,clock:()=>TEN_AT,fetcher:async()=>response({...hold,reason:env.MODEL_API_KEY})});await assert.rejects(client.decide('nova',context()),/MODEL_SENSITIVE_RESPONSE/);assert.equal(client.status().verified,false);assert.ok(!JSON.stringify(client.status()).includes(env.MODEL_API_KEY));
 });
+
+test('API verification makes a real chat request without market candidates, trading funds or wallet key, and can only return HOLD',async()=>{
+ let calls=0,packet;const client=new PaperModelClient({env,clock:()=>TEN_AT,fetcher:async(_url,o)=>{calls++;packet=JSON.parse(o.body);return response({...hold,reason:'API_OK'});}});
+ const result=await client.verify();assert.equal(calls,1);assert.equal(result.verified,true);assert.equal(result.verification.status,'verified');assert.equal(result.activeBots.length,0);assert.match(packet.messages[0].content,/connection check/);assert.ok(!JSON.stringify(packet).includes('secretKey'));await client.verify({reuseForMs:60000});assert.equal(calls,1);await client.verify();assert.equal(calls,2,'a new successful owner login may explicitly verify again');
+ const buy=new PaperModelClient({env,clock:()=>TEN_AT,fetcher:async()=>response({action:'BUY',mint:'made-up',order_sol:1,sell_percent:null,confidence:1,reason:'Buy'})});await assert.rejects(buy.verify(),/MODEL_INVALID_DECISION/);assert.equal(buy.status().verified,false);assert.equal(buy.status().verification.status,'error');
+});
+test('simultaneous connection checks share one request, with explicit pending/error states and redacted provider failures',async()=>{
+ let resolve,calls=0;const client=new PaperModelClient({env,clock:()=>TEN_AT,fetcher:async()=>{calls++;return new Promise(r=>resolve=r);}});const a=client.verify(),b=client.verify();await Promise.resolve();assert.equal(client.status().verification.status,'verifying');assert.equal(calls,1);resolve(new Response('private provider text '+env.MODEL_API_KEY,{status:401}));await assert.rejects(a,/MODEL_HTTP_401/);await assert.rejects(b,/MODEL_HTTP_401/);assert.equal(client.status().verification.code,'MODEL_HTTP_401');assert.equal(client.status().verified,false);assert.ok(!JSON.stringify(client.status()).includes(env.MODEL_API_KEY));
+ const missing=new PaperModelClient({env:{MODEL_TRADING_ENABLED:'true'},fetcher:()=>{throw Error('must not fetch');}});await assert.rejects(missing.verify(),/MODEL_NOT_CONFIGURED/);assert.equal(missing.status().verification.code,'MODEL_NOT_CONFIGURED');
+});
