@@ -7,6 +7,12 @@ administration remain. Deploying or adding a model key never resets capital.
 
 ## Railway variables
 
+The deployed Docker image already sets the three non-secret defaults below:
+`MODEL_BASE_URL`, `MODEL_NAME`, and `MODEL_TRADING_ENABLED=true`. Only add the
+secret `MODEL_API_KEY` in Railway Variables. Existing Railway variables override
+container defaults if you previously set different values. The API key is never
+baked into the image. Without a key, the container waits for model configuration.
+
 ```ini
 MODEL_BASE_URL=https://api.river.ai/v1
 MODEL_NAME=deepseek-ai/DeepSeek-V4.1-Flash
