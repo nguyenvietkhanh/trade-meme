@@ -25,11 +25,11 @@ export function validateQuote(q,input,output,amount,maxSlippageBps=LIVE_LIMITS.s
  if(!Number.isInteger(q.slippageBps)||q.slippageBps<1)throw new TradePolicyError('Thiếu slippage được xác minh.');
  if(!Array.isArray(q.routePlan)||!q.routePlan.length||q.slippageBps>maxSlippageBps)throw new TradePolicyError('Route hoặc slippage không hợp lệ.');
 }
-export function validateSimulation({beforeSol,afterSol,before,after,input,output,amount,minOut,closeInputIndices=[]}){
+export function validateSimulation({beforeSol,afterSol,before,after,input,output,amount,minOut,closeInputIndices=[],reserveSol=TRADE_RULES.reserveSol}){
  if(!Number.isSafeInteger(beforeSol)||!Number.isSafeInteger(afterSol))throw new TradePolicyError('Không xác minh được thay đổi SOL.');
  const spend=beforeSol-afterSol;
  if(input===SOL&&spend>Number(amount)+LIVE_LIMITS.maxOverheadLamports)throw new TradePolicyError('Giao dịch có thể chi SOL quá giới hạn.');
- if(input===SOL&&afterSol<TRADE_RULES.reserveSol*1e9)throw new TradePolicyError('Mô phỏng mua dùng vào khoản SOL dự phòng gas.');
+ if(input===SOL&&afterSol<reserveSol*1e9)throw new TradePolicyError('Mô phỏng mua dùng vào khoản SOL dự phòng gas.');
  if(input!==SOL&&afterSol-beforeSol<Number(minOut)-LIVE_LIMITS.maxOverheadLamports)throw new TradePolicyError('SOL nhận sau phí thấp hơn giới hạn.');
  let outputChange=0n,inputChange=0n;
  for(let i=0;i<after.length;i++){
@@ -147,7 +147,7 @@ export class SolanaExecution{
   if(input===SOL&&venue==='pumpfun')throw new TradePolicyError('Đã tắt BUY pump.fun trước migrate; SELL vị thế cũ vẫn hoạt động.');
   if(input===SOL&&!validBuyLamports(String(amount)))throw new TradePolicyError('Cỡ lệnh SOL không hợp lệ.');
   await this.network();const owner=keypair?.publicKey??new PublicKey(ownerAddress);
-  if(input===SOL){const balance=await this.balance(owner,minContextSlot);if(budgetAuthority===LIVE_BUDGET_AUTHORITY){if(Math.round(balance*1e9)-Number(amount)<105000000)throw new TradePolicyError('LIVE_CAPITAL_LIMIT');}else{const size=walletOrderSol(balance,venue==='pumpfun'?CURVE_RULES.orderFraction:WALLET_ORDER_FRACTION);if(!size||String(amount)!==String(Math.round(size*1e9)))throw new TradePolicyError('Số dư đã đổi hoặc cỡ lệnh không khớp trần 0,6 SOL và dự phòng gas 0,1 SOL; tính lại quote trước khi ký.');}}
+  if(input===SOL){const balance=await this.balance(owner,minContextSlot);if(budgetAuthority===LIVE_BUDGET_AUTHORITY){if(Number(amount)>Math.floor(Math.round(balance*1e9)*9/10)||Math.round(balance*1e9)-Number(amount)<55000000)throw new TradePolicyError('LIVE_CAPITAL_LIMIT');}else{const size=walletOrderSol(balance,venue==='pumpfun'?CURVE_RULES.orderFraction:WALLET_ORDER_FRACTION);if(!size||String(amount)!==String(Math.round(size*1e9)))throw new TradePolicyError('Số dư đã đổi hoặc cỡ lệnh không khớp trần 0,6 SOL và dự phòng gas 0,1 SOL; tính lại quote trước khi ký.');}}
   const cap=executionSlippageBps(input===SOL?'BUY':'SELL',reason),emergency=cap===TRADE_RULES.emergencySlippageCapBps;
   const route=venue==='pumpfun'?await this.curveRoute(input===SOL?output:input,input===SOL?'BUY':'SELL',poolAddress):{venue:'pumpswap',poolAddress};
   const build=route.venue==='pumpfun'?buildPumpCurve:buildPumpSwap;
@@ -170,7 +170,7 @@ export class SolanaExecution{
   if(!beforeInfo[0]?.owner.equals(SystemProgram.programId)||sim.value.accounts[0]?.owner!==SystemProgram.programId.toBase58()||sim.value.accounts[0]?.executable||sim.value.accounts[0]?.data?.[0])throw new TradePolicyError('Giao dịch thay đổi cấu trúc ví SOL.');
   const before=beforeInfo.slice(1).map(tokenData),after=sim.value.accounts.slice(1).map(tokenData);
   if(after.some(a=>a&&a.owner!==owner.toBase58()))throw new TradePolicyError('Tài khoản nhận token không thuộc ví bot.');
-  validateSimulation({beforeSol:beforeInfo[0]?.lamports,afterSol:sim.value.accounts[0]?.lamports,before,after,input,output,amount:String(amount),minOut:q.otherAmountThreshold,closeInputIndices:closedInputAccount?addresses.slice(1).flatMap((k,i)=>k.toBase58()===closedInputAccount?[i]:[]):[]});
+  validateSimulation({reserveSol:budgetAuthority===LIVE_BUDGET_AUTHORITY ? .05 : TRADE_RULES.reserveSol,beforeSol:beforeInfo[0]?.lamports,afterSol:sim.value.accounts[0]?.lamports,before,after,input,output,amount:String(amount),minOut:q.otherAmountThreshold,closeInputIndices:closedInputAccount?addresses.slice(1).flatMap((k,i)=>k.toBase58()===closedInputAccount?[i]:[]):[]});
   const minNativeOutLamports=output===SOL?BigInt(Math.min(Number(q.otherAmountThreshold)-fee.value,sim.value.accounts[0].lamports-beforeInfo[0].lamports-(Number(q.outAmount)-Number(q.otherAmountThreshold)))):null;
   if(output===SOL&&minNativeOutLamports<=0n)throw new TradePolicyError('SOL nhận sau phí không dương; không yêu cầu ví ký.');
   if(input===SOL&&venue==='pumpfun'&&Date.now()-q.quotedAt>CURVE_RULES.maxQuoteAgeMs)throw new TradePolicyError('Quote curve quá 5 giây trước ký; tính lại.');
@@ -181,7 +181,7 @@ export class SolanaExecution{
   }
   if(keypair)tx.sign([keypair]);
   const simulatedSolDeltaLamports=sim.value.accounts[0].lamports-beforeInfo[0].lamports;
-  if(budgetAuthority===LIVE_BUDGET_AUTHORITY&&input===SOL&&(-simulatedSolDeltaLamports>Number(amount)+5000000||sim.value.accounts[0].lamports<100000000))throw new TradePolicyError('LIVE_FEE_RENT_RESERVE_LIMIT');
+  if(budgetAuthority===LIVE_BUDGET_AUTHORITY&&input===SOL&&(-simulatedSolDeltaLamports>Number(amount)+5000000||sim.value.accounts[0].lamports<50000000))throw new TradePolicyError('LIVE_FEE_RENT_RESERVE_LIMIT');
   return {bytes:tx.serialize(),signature:keypair?bs58.encode(tx.signatures[0]):null,lastValidBlockHeight,quote:q,minNativeOutLamports,closedInputAccount,entryQuoteProof,venue:route.venue,poolAddress:route.poolAddress,...(budgetAuthority===LIVE_BUDGET_AUTHORITY?{simulatedSolDeltaLamports}:{})};
  }
  async sellQuote({ownerAddress,mint,amount,poolAddress,venue}){
@@ -201,6 +201,14 @@ export class SolanaExecution{
   const fee=await this.rpc.getFeeForMessage(tx.message);
   if(!Number.isSafeInteger(fee.value)||fee.value>PROFIT_RULES.feeBufferLamports||balance-lamports-fee.value<Math.max(PROFIT_RULES.reserveLamports,Math.ceil(initialSol*1e9)))throw new TradePolicyError('Không đủ dự phòng vốn/phí để chuyển lãi.');
   const sim=await this.rpc.simulateTransaction(tx,{sigVerify:false,replaceRecentBlockhash:true});if(sim.value.err)throw new TradePolicyError('Kiểm tra chuyển lãi thất bại.');
+  return {bytes:tx.serialize(),lastValidBlockHeight:block.lastValidBlockHeight};
+ }
+ async prepareAIProfit(ownerAddress,lamports){
+  if(!Number.isSafeInteger(lamports)||lamports<=0)throw new TradePolicyError('LIVE_PROFIT_INVALID_AMOUNT');
+  await this.network();const owner=new PublicKey(ownerAddress),recipient=new PublicKey(PROFIT_RECIPIENT),balance=await this.rpc.getBalance(owner),block=await this.rpc.getLatestBlockhash();
+  const tx=new VersionedTransaction(new TransactionMessage({payerKey:owner,recentBlockhash:block.blockhash,instructions:[SystemProgram.transfer({fromPubkey:owner,toPubkey:recipient,lamports})]}).compileToV0Message()),fee=await this.rpc.getFeeForMessage(tx.message);
+  if(!Number.isSafeInteger(fee.value)||fee.value<0||fee.value>10000||balance-lamports-fee.value<55000000)throw new TradePolicyError('LIVE_PROFIT_GAS_RESERVE');
+  const sim=await this.rpc.simulateTransaction(tx,{sigVerify:false,replaceRecentBlockhash:true});if(sim.value.err)throw new TradePolicyError('LIVE_PROFIT_SIMULATION_FAILED');
   return {bytes:tx.serialize(),lastValidBlockHeight:block.lastValidBlockHeight};
  }
  async profitReceipt(signature,ownerAddress,amount){

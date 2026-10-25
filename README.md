@@ -1,30 +1,46 @@
-# Meme Pilot · KADE / NYX / SAGE · autonomous AI
+# Meme Pilot · one autonomous AI · live Solana
 
-AI independently chooses BUY/SELL/HOLD and order amounts for three workers, then
-the authorized server signer signs and broadcasts swaps. **There is no per-trade
-Phantom/Solflare approval and no application password.** Owner wallet connection
-and message authentication start API verification immediately, even when the
-market shortlist is empty or the signing key is not configured yet.
+One AI decides BUY/SELL/HOLD, token selection and allocation from the current
+on-chain balance. Previous KADE/NYX/SAGE strategies no longer generate entries,
+profit targets or time exits. The internal `kade` journal ID is retained for
+reconciliation; the UI shows **AI**. Existing positions are adopted without
+changing token quantities or basis; already-signed legacy orders settle first.
 
-Real autonomous execution requires `LIVE_SIGNER_SECRET_KEY` for the configured
-owner wallet in Railway secret Variables. Accepted encodings are Base58 or a
-JSON array of 64 bytes, not a seed phrase. The signer rejects keys for a different
-wallet. Do not put real keys in this repository or send them in chat. Helius and
-River API keys do not authorize Solana transactions. Connection alone cannot
-reveal a Phantom/Solflare private key to the server.
+Each buy is limited to **90% of the current native SOL balance**, with **0.05 SOL
+gas** and a separate **0.005 SOL execution buffer** taking priority. The AI must
+choose `stop_loss_pct` for every buy. HOLD with a held mint can update its stop.
+AI-selected stops are monitored independently of inference/API availability using
+fresh prices, then sent as normal on-chain swaps. They do not guarantee a fill
+price. No old stop/TP/holding timer or fixed strategy score decides trades.
 
-Docker defaults to `TRADING_MODE=live`; local runs without that flag remain paper.
-After a restart, connect and authenticate the owner wallet to activate autonomous
-execution. AI chat verification, signer readiness and wallet/RPC readiness are
-shown separately. API failure never silently switches to rule-based buying.
-Pending signatures are journaled before broadcast; real PnL uses confirmed
-receipts and excludes external capital flows. The treasury keeps 0.1 SOL gas
-and retains execution safeguards and dynamic shared-wallet sizing.
+Net realized profit since enabling this version, after intervening realized
+losses and payout fees, is automatically transferred to
+`5uYdJyFmZkvZT5S3A7iq1kLx2aLwcMgVXMfxjdGf5qVZ`. Unrealized appreciation and deposits
+are not profit. Dust accumulates until it exceeds the 0.00001 SOL transfer fee
+buffer. Transfers preserve gas/execution buffers; the signed transaction is
+journaled before broadcast and reconciled after timeouts/restarts. Withdrawn
+profits remain in total-performance calculations and are not external deposits.
 
-Telegram reports remain at 23:59 Vietnam time, using token/Chat ID without an
-application password. See [autonomous setup and validation](docs/live-three-ai.md).
-A build or mock test does not prove that the actual River key/model works, a
-Railway deployment is Active, or a profitable trading edge exists.
+Telegram sends each **confirmed BUY, SELL and profit transfer** to `1766285817`,
+plus the 23:59 Vietnam report. The existing bot token is reused from Variables or
+the encrypted Volume configuration; a chat ID alone is not a bot credential.
+The owner-authenticated UI still supports token configuration and a test message.
+Live delivery uses a persistent outbox, retries failures, and marks sent only
+when Telegram returns `message_id`. API keys and signing keys never enter prompts.
+
+The authorized server signer signs and broadcasts; there is no per-trade wallet
+approval or application password. Wallet message authentication starts AI API
+verification immediately. Once connected and BUY enabled, inference runs every
+5 seconds by default with no daily/losing-streak pause, including after closing
+the page. Durable connection authorization resumes on restart; disconnect revokes
+it. Provider rate limits, unavailable data and credit errors still require retry;
+they never switch trading to a legacy algorithm. The AI may continue choosing HOLD.
+
+Docker defaults to `TRADING_MODE=live`; local reference runs remain paper unless
+configured otherwise. The existing `LIVE_SIGNER_SECRET_KEY` and River credentials
+remain server-only, and the Volume retains financial state. A successful build
+or mock test does not establish a profitable edge, real Telegram delivery or an
+Active Railway deployment. See [live operation](docs/live-single-ai.md).
 
 The sections below are historical paper documentation and do not override the
 current live-mode setup above. Old paper ledgers are retained separately.

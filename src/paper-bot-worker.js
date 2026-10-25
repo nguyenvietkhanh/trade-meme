@@ -1,4 +1,4 @@
-import {BOT_CONFIGS} from './paper-bot-config.js';
+import {ACTIVE_BOT_CONFIGS as BOT_CONFIGS} from './paper-bot-config.js';
 import {BotStateStore} from './paper-bot-state.js';
 import {ModelBotRuntime as BotRuntime} from './paper-model-runtime.js';
 import {LiveModelBotRuntime} from './live-model-runtime.js';

@@ -74,5 +74,5 @@ test('internal live budget permits AI sizes above the legacy 0.6 SOL cap while r
  await assert.rejects(execution.prepare(r),/cỡ lệnh không khớp/);
  await assert.rejects(execution.prepare({...r,budgetAuthority:'live-fleet-wallet-budget'}),/cỡ lệnh không khớp/);
  const result=await execution.prepare({...r,budgetAuthority:LIVE_BUDGET_AUTHORITY});assert.equal(result.quote.inAmount,'900000000');assert.equal(result.signature,null);assert.equal(result.simulatedSolDeltaLamports,-902059280);
- await assert.rejects(execution.prepare({...r,amount:'1900000000',budgetAuthority:LIVE_BUDGET_AUTHORITY}),/LIVE_CAPITAL_LIMIT/);
+ await assert.rejects(execution.prepare({...r,amount:'1960000000',budgetAuthority:LIVE_BUDGET_AUTHORITY}),/LIVE_CAPITAL_LIMIT/);
 });

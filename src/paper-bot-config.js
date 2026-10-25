@@ -37,5 +37,5 @@ export function breakEvenScenarios(config,size=.05){
 }
 // Retired bots remain in the schema so their historical books stay readable.
 // Only these three may run or submit new decisions.
-export const ACTIVE_BOT_IDS=Object.freeze(['kade','nyx','sage']);
-export const ACTIVE_BOT_CONFIGS=Object.freeze(ACTIVE_BOT_IDS.map(id=>BOT_CONFIGS.find(c=>c.id===id)));
+export const ACTIVE_BOT_IDS=Object.freeze(['kade']);
+export const ACTIVE_BOT_CONFIGS=Object.freeze(ACTIVE_BOT_IDS.map(id=>Object.freeze({...BOT_CONFIGS.find(c=>c.id===id),name:'AI',role:'Autonomous portfolio decisions',rule:'AI tự chọn BUY/SELL/HOLD và phân bổ vốn'})));

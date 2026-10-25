@@ -5,7 +5,7 @@ const failure=(code,extra={})=>Object.assign(Error(code),{code,...extra});
 export function readModelConfiguration(env=process.env){
  const apiKey=typeof env.MODEL_API_KEY==='string'?env.MODEL_API_KEY.trim():'',enabled=env.MODEL_TRADING_ENABLED==='false'?false:env.MODEL_TRADING_ENABLED==='true'||!!apiKey;
  let endpoint=null,host=null,error=null;try{const url=new URL(env.MODEL_BASE_URL??'https://api.river.ai/v1');if(url.protocol!=='https:'||url.username||url.password||url.search||url.hash)throw Error();url.pathname=url.pathname.replace(/\/$/,'')+'/chat/completions';endpoint=url.toString();host=url.host;}catch{error='MODEL_INVALID_BASE_URL';}
- return {apiKey,endpoint,host,error,enabled,explicitRulesMode:env.MODEL_TRADING_ENABLED==='false',configured:!!apiKey&&!error,name:env.MODEL_NAME??'deepseek-ai/DeepSeek-V4.1-Flash',pollMs:number(env.MODEL_POLL_MS,30000,15000,600000),timeoutMs:number(env.MODEL_TIMEOUT_MS,15000,1000,20000),maxTokens:number(env.MODEL_MAX_TOKENS,500,128,2048),maxConcurrency:number(env.MODEL_MAX_CONCURRENCY,10,1,10),maxRequestsPerMinute:number(env.MODEL_REQUESTS_PER_MINUTE,30,1,120),maxCandidates:number(env.MODEL_MAX_CANDIDATES,8,1,12)};
+ return {apiKey,endpoint,host,error,enabled,explicitRulesMode:env.MODEL_TRADING_ENABLED==='false',configured:!!apiKey&&!error,name:env.MODEL_NAME??'deepseek-ai/DeepSeek-V4.1-Flash',pollMs:number(env.MODEL_POLL_MS,5000,1000,600000),timeoutMs:number(env.MODEL_TIMEOUT_MS,15000,1000,20000),maxTokens:number(env.MODEL_MAX_TOKENS,500,128,2048),maxConcurrency:number(env.MODEL_MAX_CONCURRENCY,10,1,10),maxRequestsPerMinute:number(env.MODEL_REQUESTS_PER_MINUTE,30,1,120),maxCandidates:number(env.MODEL_MAX_CANDIDATES,60,1,100)};
 }
 export class PaperModelClient{
  #apiKey;

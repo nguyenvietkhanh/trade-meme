@@ -14,7 +14,7 @@
     "test:offline": "node scripts/run-tests.js --offline",
     "test:isolation": "node test/paper-runtime-isolation.test.js && node test/paper-supervisor.test.js",
     "test:model": "node --test --test-isolation=none --test-concurrency=1 test/paper-model-client.test.js test/paper-model-runtime.test.js test/paper-supervisor.test.js",
-    "test:live": "node --test --test-isolation=none --test-concurrency=1 test/automatic-trading.test.js test/paper-model-client.test.js test/wallet-treasury.test.js test/wallet-fleet.test.js test/wallet-telegram.test.js test/control-errors.test.js test/live-treasury.test.js test/live-model-runtime.test.js test/live-fleet.test.js test/pump-swap.test.js"
+    "test:live": "node --test --test-isolation=none --test-concurrency=1 test/automatic-trading.test.js test/automatic-profit.test.js test/single-ai.test.js test/paper-model-client.test.js test/wallet-treasury.test.js test/wallet-fleet.test.js test/wallet-telegram.test.js test/control-errors.test.js test/live-treasury.test.js test/live-model-runtime.test.js test/live-fleet.test.js test/pump-swap.test.js"
   },
   "dependencies": {
     "@pump-fun/pump-sdk": "4.1.0",

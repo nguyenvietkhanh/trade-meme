@@ -45,7 +45,7 @@ export class TelegramReporter{
   catch{this.error='Chưa giải mã được cấu hình Telegram bằng khóa ví chủ.';}finally{key?.fill(0);plain?.fill(0);}
  }
  async disable(){await writeDurable(this.file,{version:1,owner:this.owner,disabled:true});this.doc=null;this.creds=null;this.enabled=false;this.configured=false;this.error=null;}
- status(state){return {configured:this.configured,enabled:this.enabled,unlocked:!!this.creds,pending:(state?.telegramOutbox??[]).filter(m=>m.status==='queued').length,failed:(state?.telegramOutbox??[]).filter(m=>m.status==='failed').length,error:this.error};}
+ status(state){return {configured:this.configured,enabled:this.enabled,unlocked:!!this.creds,pending:(state?.telegramOutbox??[]).filter(m=>m.status==='queued').length,failed:(state?.telegramOutbox??[]).filter(m=>m.status==='failed').length,error:this.error,chatId:this.creds?.chatId??null};}
  async send(text){
   return this.post('sendMessage',JSON.stringify({chat_id:this.creds?.chatId,text,link_preview_options:{is_disabled:true}}),{'Content-Type':'application/json'},5000);
  }
@@ -69,13 +69,13 @@ export class TelegramReporter{
   try{
    await this.unlock(agent.vault.keypair);if(!this.creds)return;
    let message;
-   await agent.serial(async()=>{const s=agent.state;if(!s)return;const next=(s.telegramOutbox??[]).find(m=>m.status==='queued'&&m.nextAttemptAt<=Date.now());if(!next)return;next.attempts++;next.nextAttemptAt=Date.now()+60000;await agent.save();message={id:next.id,text:next.text,report:next.report};});
+   await agent.serial(async()=>{const s=agent.state;if(!s)return;const next=(s.telegramOutbox??[]).find(m=>(m.status==='queued'||agent.retryForever&&m.status==='failed')&&m.nextAttemptAt<=Date.now());if(!next)return;next.status='queued';next.attempts++;next.nextAttemptAt=Date.now()+60000;await agent.save();message={id:next.id,text:next.text,report:next.report};});
    if(!message)return;
    let messageId,error;try{messageId=message.report?await this.sendReport(message.report,message.text,agent.training):await this.send(message.text);}catch(e){error=e;}
    await agent.serial(async()=>{
     const s=agent.state,entry=s?.telegramOutbox?.find(m=>m.id===message.id);if(!entry)return;
     if(!error){entry.status='sent';entry.messageId=messageId;entry.sentAt=Date.now();this.error=null;}
-    else{this.error=error.message;entry.status=entry.attempts>=6?'failed':'queued';entry.nextAttemptAt=Date.now()+(error.retryAfter??Math.min(600,2**entry.attempts*5))*1000;}
+    else{this.error=error.message;entry.status=!agent.retryForever&&entry.attempts>=6?'failed':'queued';entry.nextAttemptAt=Date.now()+(error.retryAfter??Math.min(600,2**entry.attempts*5))*1000;}
     const sent=s.telegramOutbox.filter(m=>m.status==='sent');if(sent.length>100){const keep=new Set(sent.slice(-100).map(m=>m.id));s.telegramOutbox=s.telegramOutbox.filter(m=>m.status!=='sent'||keep.has(m.id));}
     await agent.save();
    });
