@@ -112,3 +112,22 @@ CSRF rejection, immutable UI assets and report generation. The SDK simulation
 also tests AI amounts above the old 0.6 SOL limit while preserving the reserve.
 No mainnet transaction is broadcast by the tests. These are software checks,
 not a measured trading edge, a backtest, or evidence of future returns.
+
+## Runtime variable diagnostics
+
+Adding a Variable in Railway and the running container receiving it are distinct
+steps: use Apply changes / Deploy to create a deployment with the updated values.
+The signer checks the runtime environment again when connection/start is retried
+after a missing/invalid startup value. It does not fetch Railway settings, expose
+the secret, or replace an enabled signer underneath open orders.
+
+`/api/health` includes `buildRevision` and safe signer metadata:
+`runtimeVariablePresent`, `lastLoadHadValue`, `checkedAt`, `configured`, `format`,
+and `error`. Missing-key connection responses include this same metadata. No key
+value, prefix, seed, signature, or environment dump is included.
+
+The parser accepts quoted/whitespace-normalized Base58, JSON keypair exports,
+Base64 and hex. Every decoded key must derive the exact configured owner. A public
+SOL address is diagnosed as `LIVE_SIGNER_PUBLIC_ADDRESS`, not treated as a private
+key. A wrong-wallet private key remains rejected. Raw 32-byte private signing
+seeds are supported by owner derivation; mnemonic seed phrases are not.
