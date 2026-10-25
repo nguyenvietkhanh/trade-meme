@@ -1,6 +1,6 @@
 import {spawn} from 'node:child_process';
 import {readdir} from 'node:fs/promises';
-const offline=process.argv.includes('--offline'),httpFiles=new Set(['live-http.test.js','owner-http.test.js','paper-http.test.js','public.test.js','roundtrip.test.js','scanner.test.js','server.test.js']);
+const offline=process.argv.includes('--offline'),httpFiles=new Set(['perps-transition-http.test.js','live-http.test.js','owner-http.test.js','paper-http.test.js','public.test.js','roundtrip.test.js','scanner.test.js','server.test.js']);
 const all=(await readdir(new URL('../test/',import.meta.url))).filter(n=>n.endsWith('.test.js')).sort(),files=all.filter(n=>!offline||!httpFiles.has(n));
 let failures=0;
 for(const name of files){

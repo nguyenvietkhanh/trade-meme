@@ -1,6 +1,8 @@
 // Only public, allowlisted reasons may cross the HTTP boundary. Never echo RPC,
 // filesystem paths, request bodies, passwords or arbitrary exception messages.
 const reasons=Object.freeze({
+ PERPS_NOT_READY:[409,'Đã chọn perps trên Solana nhưng API và quyền giao dịch LONG/SHORT chưa được xác minh. BUY meme đã khóa; các vị thế spot cũ vẫn được theo dõi.'],
+ SPOT_ENTRIES_DISABLED_FOR_PERPS:[409,'Không nhận BUY meme mới trong chế độ chuyển sang perps.'],
  LIVE_SIGNER_LOCKED:[409,'Bộ ký server chưa sẵn sàng; kết nối ví chủ và kiểm tra cấu hình bộ ký tự động.','connect-wallet'],
  LIVE_SIGNER_NOT_CONFIGURED:[503,'Container đang chạy chưa nhận được giá trị LIVE_SIGNER_SECRET_KEY. Nếu đã thêm trong Railway Variables, bấm Apply changes / Deploy để áp dụng vào bản chạy rồi kết nối lại. Không gửi giá trị khóa trong chat.'],
  LIVE_SIGNER_INVALID:[503,'Server đã nhận LIVE_SIGNER_SECRET_KEY nhưng chưa đọc được định dạng khóa Solana. Hỗ trợ Base58, JSON keypair, Base64 và hex; không gửi giá trị khóa trong chat.'],
