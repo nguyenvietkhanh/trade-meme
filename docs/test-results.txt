@@ -1,0 +1,27 @@
+test_dotenv_is_data_and_does_not_load_key (test_local.LocalTests.test_dotenv_is_data_and_does_not_load_key) ... ok
+test_environment_overrides_file (test_local.LocalTests.test_environment_overrides_file) ... ok
+test_verifier_rejects_external_urls_before_request (test_local.LocalTests.test_verifier_rejects_external_urls_before_request) ... ok
+test_best_ask_is_not_entire_depth (test_scanner.PricingTests.test_best_ask_is_not_entire_depth) ... ok
+test_budget_and_slippage (test_scanner.PricingTests.test_budget_and_slippage) ... ok
+test_depth_vwap_and_asymmetric_quantities (test_scanner.PricingTests.test_depth_vwap_and_asymmetric_quantities) ... ok
+test_fee_erases_false_edge (test_scanner.PricingTests.test_fee_erases_false_edge) ... ok
+test_fee_matches_pinned_official_sdk (test_scanner.PricingTests.test_fee_matches_pinned_official_sdk) ... ok
+test_fee_rounding_does_not_invent_profit (test_scanner.PricingTests.test_fee_rounding_does_not_invent_profit) ... ok
+test_invalid_or_nonfinite_books (test_scanner.PricingTests.test_invalid_or_nonfinite_books) ... ok
+test_unsorted_and_duplicate_prices (test_scanner.PricingTests.test_unsorted_and_duplicate_prices) ... ok
+test_book_age_id_and_future (test_scanner.SafetyTests.test_book_age_id_and_future) ... ok
+test_fee_requires_explicit_parameters_and_token_binding (test_scanner.SafetyTests.test_fee_requires_explicit_parameters_and_token_binding) ... ok
+test_gamma_outcome_order_and_filters (test_scanner.SafetyTests.test_gamma_outcome_order_and_filters) ... ok
+test_invalid_config (test_scanner.SafetyTests.test_invalid_config) ... ok
+test_no_live_even_when_env_enabled (test_scanner.SafetyTests.test_no_live_even_when_env_enabled) ... ok
+test_nonretryable_403 (test_scanner.SafetyTests.test_nonretryable_403) ... ok
+test_official_endpoints_only_and_stop (test_scanner.SafetyTests.test_official_endpoints_only_and_stop) ... ok
+test_read_only_scan_and_durable_log (test_scanner.SafetyTests.test_read_only_scan_and_durable_log) ... ok
+test_retry_is_bounded (test_scanner.SafetyTests.test_retry_is_bounded) ... ok
+test_risk_boundaries (test_scanner.SafetyTests.test_risk_boundaries) ... ok
+test_unprofitable_diagnostic (test_scanner.SafetyTests.test_unprofitable_diagnostic) ... ok
+
+----------------------------------------------------------------------
+Ran 22 tests in 0.369s
+
+OK
