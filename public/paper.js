@@ -1,9 +1,9 @@
-import {authenticate} from '/paper-wallet.js';
+import {authenticate,signWalletOrder} from '/paper-wallet.js';
 import {runActivity,syncActivity,showFillActivity} from '/activity.js';
 const $=id=>document.getElementById(id),num=n=>Number.isFinite(n)?n.toFixed(6):'chưa xác định',short=m=>'…'+String(m).slice(-6),time=at=>new Date(at).toLocaleTimeString('vi-VN',{timeZone:'Asia/Ho_Chi_Minh',hour12:false});
 let renderedTrades=null,expandedPanel=null;
 const CLIENT_UI_REVISION='__PAPER_UI_REVISION__';
-let latestState=null,selectedAgent=null;
+let latestState=null,selectedAgent=null,walletOrders=[],walletSigning=false;
 const phaseLabels={'entry-pending':'BUY đang chờ','exit-pending':'SELL đang chờ',monitoring:'Theo dõi SELL',paused:'Đã dừng BUY','waiting-data':'Chờ dữ liệu','proposal-queued':'Đề xuất riêng','portfolio-wait':'Chờ vốn / quote','signal-ready':'Có tín hiệu',scanning:'Đang lọc'};
 const signNum=n=>Number.isFinite(n)?(n>0?'+':'')+num(n):'—';
 function textNode(tag,text,className){const el=document.createElement(tag);el.textContent=text;if(className)el.className=className;return el;}
@@ -21,7 +21,7 @@ function renderTrades(trades){
  const when=textNode('span',time(t.at),'trade-time');when.append(textNode('b',t.agentId?.toUpperCase()??'LEGACY','trade-agent'));
  const token=textNode('span','','trade-token');token.append(textNode('span','['+t.side+']','trade-side'+(t.side==='SELL'?' sell':'')),document.createTextNode(t.symbol+' '+short(t.mint)));
  const value=textNode('span',(t.side==='SELL'||t.side==='FEE')?signNum(t.pnlSol):num(t.sol),'trade-value'+((t.side==='SELL'||t.side==='FEE')?(t.pnlSol>0?' positive':t.pnlSol<0?' negative':''):''));if(t.mode==='live'&&/^[1-9A-HJ-NP-Za-km-z]{64,90}$/.test(t.signature??'')){const link=textNode('a',' ↗');link.href='https://solscan.io/tx/'+encodeURIComponent(t.signature);link.target='_blank';link.rel='noopener noreferrer';link.title=t.signature;token.append(link);}row.append(when,token,value);return row;});
- if(!nodes.length)nodes.push(textNode('p',latestState?.mode==='live'?'Chưa có giao dịch xác nhận on-chain. Xem trạng thái AI và két ký.':'Chưa có lượt khớp mô phỏng. Bot vẫn có thể đang quét / xác minh.','empty-state'));$('trades').replaceChildren(...nodes);$('activity-total').textContent=trades.length+' FILLS';
+ if(!nodes.length)nodes.push(textNode('p',latestState?.mode==='live'?'Chưa có giao dịch xác nhận on-chain. Xem trạng thái AI, kết nối ví và lệnh chờ ký.':'Chưa có lượt khớp mô phỏng. Bot vẫn có thể đang quét / xác minh.','empty-state'));$('trades').replaceChildren(...nodes);$('activity-total').textContent=trades.length+' FILLS';
 }
 function riskText(p){if(p?.realMoney)return 'AI tự quyết BUY/SELL/HOLD và cỡ lệnh từ số dư ví SOL thật dùng chung; giữ 0,1 SOL gas và đệm phí/rent. Không có tỷ lệ phân bổ cố định. Quote/slippage và bảo vệ vị thế vẫn kiểm tra. API lỗi sẽ WAIT.';if(p?.decisionEngine==='model')return 'AI tự quyết định BUY/SELL/HOLD với ngữ cảnh riêng; lệnh tối đa 2,5% vốn ví riêng, giữ dự phòng 0,1 SOL + đệm phí. API lỗi sẽ chờ; không tự chuyển sang mua bằng bộ luật cũ.';if(p?.strategyRulesRequired)return 'Ví mô phỏng riêng khởi tạo 2 SOL; cỡ lệnh 2,5% vốn của bot. Các khóa lỗ vẫn tắt. Thiếu dữ liệu bắt buộc sẽ WAIT; điểm là công thức thử nghiệm, chưa chứng minh lợi nhuận.';if(p?.certificationsRequired===false)return 'PAPER LAB v3: ngưỡng thị trường chỉ dùng xếp hạng, không chặn BUY; không khóa mua lại 24 giờ và không yêu cầu chứng nhận an toàn. Giá, quote, decimals thật và đủ vốn vẫn bắt buộc.';return p?`Rủi ro riêng / ${p.label}: dự trữ ≥${p.minReserveSol} SOL; top 10 ≤${p.maxTop10Pct}%, mỗi holder ≤${p.maxHolderPct}%; LP ≥${p.minLpSecuredPct}%; dev ≤${p.maxDevPct}%; impact mỗi chiều ≤${p.maxImpactPct}%; cỡ lệnh / dự trữ ≤${p.maxOrderReservePct}%. Đây là ngưỡng thử nghiệm, chưa phải xác suất an toàn đã đo.`:'Hồ sơ cũ; chưa có dữ liệu ngưỡng riêng.';}
 function renderAgentComparison(agents){
@@ -65,9 +65,9 @@ for(const button of document.querySelectorAll('[data-expand]'))button.addEventLi
 $('reload-ui').addEventListener('click',()=>location.replace('/?ui='+encodeURIComponent(latestState?.uiRevision??CLIENT_UI_REVISION)+'&refresh='+Date.now()));
 $('agent-dialog').addEventListener('close',()=>{selectedAgent=null;for(const card of $('agent-cards').children)card.classList.remove('selected');});
 $('detail-dialog').addEventListener('close',()=>{expandedPanel=null;$('detail-content').replaceChildren();});
-$('wallet-dialog').addEventListener('close',()=>{$('live-password').value='';});
-$('telegram-dialog').addEventListener('close',()=>{$('token').value='';$('password').value='';});
-async function post(url,value={}){const r=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json','X-Requested-With':'meme-desk'},body:JSON.stringify(value)}),v=await r.json();if(!r.ok)throw Error(v.error??'Request failed');return v;}
+
+$('telegram-dialog').addEventListener('close',()=>{$('token').value='';});
+async function post(url,value={}){const r=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json','X-Requested-With':'meme-desk'},body:JSON.stringify(value)}),v=await r.json();if(!r.ok)throw Object.assign(Error(v.error??'Request failed'),{code:v.code,nextAction:v.nextAction,status:r.status});return v;}
 function rows(id,values){const nodes=values.map(text=>{const p=document.createElement('p');p.textContent=typeof text==='string'?text:text.text;p.title=p.textContent;if(typeof text==='object'){p.dataset.tokenMint=text.mint;p.dataset.activityRole=text.role;}return p;});$(id).replaceChildren(...nodes);}
 function renderGainers(rankings){
  const nodes=rankings.filter(m=>m.dexId==='pumpswap'&&Number.isFinite(m.change5mPct)&&m.change5mPct>0).slice(0,25).map((m,i)=>{const row=document.createElement('tr');row.dataset.tokenMint=m.mint;row.dataset.activityRole='candidate';row.title=`${m.symbol}: ${(m.primaryReasons??[]).join('; ')||'Qua bộ lọc; còn kiểm tra khớp'}`;for(const value of [i+1,`${m.symbol} ${short(m.mint)}`,`+${m.change5mPct.toFixed(2)}%`,Number.isFinite(m.volume5mUsd)?'$'+m.volume5mUsd.toFixed(0):'—',`${m.buys5m??'—'}/${m.sells5m??'—'}`,m.score,m.eligible?'Qua bộ lọc; còn kiểm tra khớp':`${m.blockingStage}: ${(m.primaryReasons??[]).join('; ')}`]){const cell=document.createElement('td');const content=document.createElement('span');content.className='cell-detail';content.textContent=String(value);cell.appendChild(content);cell.title=String(value);row.appendChild(cell);}return row;});$('gainers').replaceChildren(...nodes);$('gainers-count').textContent=String(nodes.length);$('gainers-empty').hidden=nodes.length>0;
@@ -80,12 +80,11 @@ async function refresh(){try{const r=await fetch('/api/state',{cache:'no-store'}
  if(s.mode==='live'){
   $('metric-size').textContent='AI tự quyết';$('metric-size').title='AI chọn số SOL mỗi lệnh trong số dư khả dụng sau dự phòng và lệnh đang chờ';
   $('pnl-caption').textContent='PnL ví thật · đã trừ dòng vốn nạp/rút';$('equity-caption').textContent=s.equitySol===null?'Chờ số dư/giá mới hoặc xác nhận giao dịch':'Định giá spot ước tính · chưa trừ phí thoát';
-  $('status').textContent=`LIVE · KADE / NYX / SAGE · ${s.live?.signer?.unlocked?(s.live?.running?'AI được tự mua/bán SOL thật':'Dừng BUY; còn theo dõi SELL'):'Két ký đang khóa · mở trong Chi tiết ví để chạy'}. SOL có thể dùng: ${num(s.live?.availableSol)}. ${s.live?.error??''} ${s.feed.error??''}`;
-  $('live-signer-status').textContent=`Két ký: ${s.live?.signer?.exists?(s.live.signer.unlocked?'đã mở':'đang khóa'):'không tìm thấy trên server'} · ví chung: ${num(s.live?.balanceSol)} SOL · có thể dùng: ${num(s.live?.availableSol)} SOL · dự phòng 0,1 SOL. ${s.live?.error??''}`;
-  $('live-unlock').disabled=!s.ownerAuthenticated||s.live?.signer?.unlocked||s.storageMode==='ephemeral';$('live-lock').disabled=!s.ownerAuthenticated||!s.live?.signer?.unlocked;
-  $('storage').title=s.storageMode==='ephemeral'?'Chưa có Railway Volume; không mở két giao dịch thật để tránh mất sổ lệnh qua restart.':'Sổ lệnh và két ký: '+s.storageMode;
+  $('status').textContent=`LIVE · KADE / NYX / SAGE · ${s.live?.walletConnected?(s.live?.running?'AI đang xét lệnh; ví chủ ký từng giao dịch':'Dừng BUY; còn theo dõi SELL'):'Kết nối và ký thông điệp xác thực ví chủ để chạy'}. SOL có thể dùng: ${num(s.live?.availableSol)}. ${s.live?.error??''} ${s.feed.error??''}`;
+  $('live-signer-status').textContent=`${s.live?.walletConnected?'Ví chủ đã kết nối giao dịch':'Chưa kết nối giao dịch'} · số dư ${num(s.live?.balanceSol)} SOL · có thể dùng ${num(s.live?.availableSol)} SOL · giữ 0,1 SOL gas. Không cần mật khẩu.`;
+  $('storage').title=s.storageMode==='ephemeral'?'Cần Railway Volume để giữ sổ lệnh SOL thật qua restart.':'Sổ lệnh và cấu hình Telegram: '+s.storageMode;
  }
- $('live-wallet-controls').hidden=s.mode!=='live';
+ $('live-wallet-controls').hidden=s.mode!=='live';syncWalletControls(s);if(s.mode==='live')await loadWalletOrders(s);
  $('status').title=$('status').textContent;$('feed-detail').textContent=$('status').textContent;$('storage-detail').textContent=$('storage').title;
  $('telegram').textContent=`${s.telegram.unlocked?'Sẵn sàng gửi':s.telegram.configured?'Đã lưu, cần mở khóa':'Chưa cấu hình'} · ${s.telegram.pending} tin chờ · ${s.telegram.failed} lỗi. ${s.telegram.error??''} ${s.reporting.error??''}`;
  $('telegram-detail').textContent=$('telegram').textContent;
@@ -99,8 +98,24 @@ async function refresh(){try{const r=await fetch('/api/state',{cache:'no-store'}
  rows('blockers',[...(s.portfolio&&!s.portfolio.allowed?[`Danh mục · ${s.portfolio.code}: ${s.portfolio.message}`]:[]),...(s.diagnostics.topBlockers??[]).map(b=>`${b.count} token: ${b.reason}`)]);
  if(renderedTrades)for(const trade of s.trades.slice(0,30))if(trade.id&&!renderedTrades.has(trade.id))showFillActivity(trade);renderedTrades=new Set(s.trades.slice(0,30).map(t=>t.id));syncActivity();refreshDetail();
  }catch{$('message').textContent='Chưa đọc được trạng thái; thử lại sau.';$('market-status').textContent='● MẤT KẾT NỐI UI';$('market-status').classList.remove('is-live');for(const card of $('agent-cards').children){card.dataset.phase='waiting-data';card.querySelector('.bot-phase').textContent='Mất kết nối UI';}$('agent-comms').textContent='Chưa đọc được trạng thái máy chủ; số liệu trên màn hình là lần nhận gần nhất.';}}
-function action(id,fn){$(id).addEventListener('click',async()=>{try{$(id).disabled=true;await runActivity(['configure','migrate','unlock','test'].includes(id)?'telegram-panel':'account-panel','Đang xử lý thao tác',fn);$('message').textContent='Đã thực hiện.';$('dialog-message').textContent='Đã thực hiện.';await refresh();}catch(e){$('message').textContent=e.message;$('dialog-message').textContent=e.message;if(id==='logout')$('wallet-detail').textContent=e.message;}finally{$(id).disabled=false;$('password').value='';$('token').value='';$('live-password').value='';}});}
-action('live-unlock',()=>post('/api/live/unlock',{password:$('live-password').value}));action('live-lock',()=>post('/api/live/lock'));
-action('logout',()=>post('/api/auth/logout'));action('auth',()=>authenticate(post));action('pause',()=>post('/api/paper/pause',{paused:true}));action('resume',()=>post('/api/paper/pause',{paused:false}));
-action('configure',()=>post('/api/paper/telegram-config',{token:$('token').value,chatId:$('chat').value,password:$('password').value}));action('migrate',()=>post('/api/paper/telegram-migrate',{password:$('password').value}));action('unlock',()=>post('/api/paper/telegram-unlock',{password:$('password').value}));action('test',()=>post('/api/paper/telegram-test'));
+function syncWalletControls(s=latestState){
+ const live=s?.mode==='live';$('pause').disabled=!s?.ownerAuthenticated;$('resume').disabled=!s;
+ $('resume').textContent=live&&!s.live?.walletConnected?'Kết nối ví để chạy ↗':'▷ Tiếp tục';
+ $('wallet-sign-open').hidden=!live;$('wallet-sign-open').textContent=`Ký lệnh AI (${walletOrders.length}) ↗`;
+ $('wallet-sign').disabled=walletSigning||!s?.ownerAuthenticated||!s?.live?.walletConnected||!walletOrders.length;
+ $('wallet-disconnect').disabled=walletSigning||!s?.ownerAuthenticated||!s?.live?.walletConnected;
+}
+async function loadWalletOrders(s){
+ walletOrders=[];if(s.ownerAuthenticated){const r=await fetch('/api/live/wallet-orders',{cache:'no-store'});if(r.ok)walletOrders=(await r.json()).orders??[];}
+ const nodes=walletOrders.map(o=>{const row=document.createElement('p');row.textContent=`${o.agentId.toUpperCase()} · ${o.side} · ${o.symbol??'TOKEN'} ${short(o.mint)} · ${o.side==='BUY'?num(Number(o.amount)/1e9)+' SOL':o.amount+' đơn vị token'} · chờ ví ký `;const cancel=textNode('button','Bỏ lệnh');cancel.disabled=walletSigning;cancel.addEventListener('click',async()=>{cancel.disabled=true;try{await post('/api/live/wallet-cancel',{id:o.id});await refresh();}catch(e){$('wallet-control-message').textContent=e.message;}finally{cancel.disabled=false;}});row.append(cancel);return row;});
+ $('wallet-orders').replaceChildren(...(nodes.length?nodes:[textNode('p','Chưa có lệnh AI chờ ký. Bot có thể chọn HOLD hoặc đang lấy quote mới.')]));syncWalletControls(s);
+}
+function action(id,fn){$(id).addEventListener('click',async()=>{try{$(id).disabled=true;await runActivity(['configure','test'].includes(id)?'telegram-panel':'account-panel','Đang xử lý thao tác',fn);const message=id==='wallet-sign'?'Đã xử lý chữ ký ví; kết quả khớp chỉ ghi khi xác nhận on-chain.':id==='pause'?'Đã dừng BUY.':id==='resume'?'Đã tiếp tục xét lệnh; giao dịch thật cần ký trong ví.':'Đã thực hiện.';$('message').textContent=message;$('dialog-message').textContent=message;$('wallet-control-message').textContent=message;await refresh();}catch(e){$('message').textContent=e.message;$('dialog-message').textContent=e.message;$('wallet-control-message').textContent=e.message;if(e.nextAction==='connect-wallet'||e.nextAction==='open-wallet')if(!$('wallet-dialog').open)$('wallet-dialog').showModal();}finally{$(id).disabled=false;$('token').value='';syncWalletControls();}});}
+async function connectWallet(){await authenticate(post);if(latestState?.mode==='live')await post('/api/live/connect');}
+action('auth',connectWallet);action('logout',()=>post('/api/auth/logout'));
+action('pause',()=>post(latestState?.mode==='live'?'/api/live/pause':'/api/paper/pause',{paused:true}));
+action('resume',async()=>{if(latestState?.mode==='live'&&(!latestState.ownerAuthenticated||!latestState.live?.walletConnected))await connectWallet();return post(latestState?.mode==='live'?'/api/live/pause':'/api/paper/pause',{paused:false});});
+action('wallet-disconnect',()=>post('/api/live/disconnect'));
+action('wallet-sign',async()=>{if(walletSigning)return;walletSigning=true;syncWalletControls();try{const r=await fetch('/api/live/wallet-orders',{cache:'no-store'});if(!r.ok)throw Error('Xác thực lại ví chủ trước khi ký.');const data=await r.json(),order=data.orders?.[0];if(!order)throw Error('Lệnh AI đã hết hạn hoặc chưa có lệnh mới.');await signWalletOrder(post,order,data.owner);}finally{walletSigning=false;syncWalletControls();}});
+action('configure',()=>post('/api/paper/telegram-config',{token:$('token').value,chatId:$('chat').value}));action('test',()=>post('/api/paper/telegram-test'));
 refresh();setInterval(refresh,5000);

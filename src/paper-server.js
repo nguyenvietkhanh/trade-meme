@@ -10,7 +10,7 @@ import {ACTIVE_BOT_CONFIGS as BOT_CONFIGS,INDEPENDENT_VERSION as PAPER_AGENT_VER
 import {independentSignal} from './paper-score.js';
 import {StrategyDataFeed} from './paper-strategy-data.js';
 import {FleetReports as PaperReports} from './paper-fleet-reports.js';
-import {PaperTelegram} from './paper-telegram.js';
+import {WalletTelegram} from './wallet-telegram.js';
 import {createPaperMarket} from './paper-market.js';
 import {MarketData} from './paper-market-data.js';
 import {ResearchJournal} from './research-journal.js';
@@ -20,15 +20,16 @@ import {DiscoveryQueue} from './discovery.js';
 import {compare5m,SCALP_STRATEGY_VERSION} from './paper-scalp.js';
 import {startPaperLoop} from './paper-loop.js';
 import {PaperModelClient} from './paper-model-client.js';
-import {LiveFleet} from './live-fleet.js';
+import {WalletFleet} from './wallet-fleet.js';
 import {SolanaExecution} from './solana.js';
+import {controlError,pausedValue} from './control-errors.js';
 const liveMode=process.env.TRADING_MODE==='live',mode=liveMode?'live':'paper';
 const uiAssets=await createPaperAssets(new URL('../public/',import.meta.url),{mode});
 const root=fileURLToPath(new URL('../',import.meta.url)),dataDir=await initializeStorage(root),dir=path.join(dataDir,liveMode?'live':'paper20');await mkdir(dir,{recursive:true,mode:0o700});
 const onRailway=!!(process.env.RAILWAY_SERVICE_ID||process.env.RAILWAY_ENVIRONMENT_ID),storageMode=process.env.RAILWAY_VOLUME_MOUNT_PATH?'persistent-volume':onRailway?'ephemeral':'local-disk';
 const auth=new OwnerAuth({origin:process.env.PUBLIC_ORIGIN??(onRailway?'https://'+(process.env.RAILWAY_PUBLIC_DOMAIN??'trade-meme-production.up.railway.app'):null)});
-const execution=new SolanaExecution(),market=createPaperMarket(()=>({cashSol:0,positions:[]}),execution),data=new MarketData(market),modelClient=new PaperModelClient({env:liveMode?{...process.env,MODEL_TRADING_ENABLED:'true'}:process.env}),desk=liveMode?new LiveFleet(dir,data,{modelClient,execution,legacyDir:dataDir,storageMode}):new PaperDesk(dir,data,{modelClient});await desk.load();
-const research=new ResearchJournal(dir),reports=new PaperReports(dir,research),telegram=new PaperTelegram(path.join(dataDir,'paper20'),dataDir);await telegram.load();
+const execution=new SolanaExecution(),market=createPaperMarket(()=>({cashSol:0,positions:[]}),execution),data=new MarketData(market),modelClient=new PaperModelClient({env:liveMode?{...process.env,MODEL_TRADING_ENABLED:'true'}:process.env}),desk=liveMode?new WalletFleet(dir,data,{modelClient,execution,legacyDir:dataDir,storageMode}):new PaperDesk(dir,data,{modelClient});await desk.load();
+const research=new ResearchJournal(dir),reports=new PaperReports(dir,research),telegram=new WalletTelegram(path.join(dataDir,'paper20'),dataDir);await telegram.load();
 data.onExecution=row=>research.enqueue({type:'paper_replay_execution',at:Date.now(),...row});
 const transport={get state(){return desk.meta;},vault:{keypair:null},serial:fn=>desk.reportSerial(fn),save:()=>desk.save(),training:reports};
 const discovery=new DiscoveryQueue(desk.meta.discovery);
@@ -49,26 +50,41 @@ function activityState(){const s=desk.state;return {observedAt:Date.now(),scanni
 function snapshot(req){
  const s=desk.state,v=desk.valuation(),portfolio=desk.admission(),agents=desk.snapshot(),rankings=data.snapshot().markets.map(m=>({...m,...rankMarket(m)})).sort(compare5m),counts={},reasons=new Map();
  for(const a of agents.agents)for(const d of a.signal?.decisions??[]){counts[d.stage]=(counts[d.stage]??0)+1;if(d.stage!=='ready')reasons.set(d.reason,(reasons.get(d.reason)??0)+1);}
- return {...s,telegramOutbox:undefined,legacyHistory:undefined,mode,readOnly:!liveMode||!desk.treasury.status().signer.unlocked,realTradingEnabled:liveMode&&desk.treasury.status().signer.unlocked,model:modelClient.status(),agents,ownerAddress:auth.owner,ownerAuthenticated:auth.authenticated(req),feed:{...feed,markets:data.snapshot().markets},rankings,...v,currentOrderSol:desk.orderSize(),allocationCapitalSol:desk.capital(),monitoring:desk.monitoring(),portfolio,storageMode,telegram:telegram.status(desk.meta),reporting:{sendAt:'23:59',timezone:'Asia/Ho_Chi_Minh',lastQueuedEnd:desk.meta.reportLastEnd,error:reports.error},research:research.status(),strategyData:strategyData.status(),marketData:data.status(),uiRevision:uiAssets.revision,buildRevision:process.env.RAILWAY_GIT_COMMIT_SHA??'local',diagnostics:{counts,tokenEligibleCount:rankings.filter(m=>m.eligible).length,lastEvaluationAt:s.lastEvaluationAt,message:desk.migrationError??(liveMode?'3 AI KADE / NYX / SAGE · vốn ví thật đọc động · AI tự chọn số tiền và BUY/SELL/HOLD.':'3 ví paper riêng; thiếu dữ liệu hiển thị WAIT.'),topBlockers:[...reasons].sort((a,b)=>b[1]-a[1]).slice(0,5).map(([reason,count])=>({reason,count}))}};
+ return {...s,telegramOutbox:undefined,legacyHistory:undefined,mode,readOnly:!liveMode||!desk.treasury.status().walletConnected,realTradingEnabled:liveMode&&desk.treasury.status().walletConnected,model:modelClient.status(),agents,ownerAddress:auth.owner,ownerAuthenticated:auth.authenticated(req),feed:{...feed,markets:data.snapshot().markets},rankings,...v,currentOrderSol:desk.orderSize(),allocationCapitalSol:desk.capital(),monitoring:desk.monitoring(),portfolio,storageMode,telegram:telegram.status(desk.meta),reporting:{sendAt:'23:59',timezone:'Asia/Ho_Chi_Minh',lastQueuedEnd:desk.meta.reportLastEnd,error:reports.error},research:research.status(),strategyData:strategyData.status(),marketData:data.status(),uiRevision:uiAssets.revision,buildRevision:process.env.RAILWAY_GIT_COMMIT_SHA??'local',diagnostics:{counts,tokenEligibleCount:rankings.filter(m=>m.eligible).length,lastEvaluationAt:s.lastEvaluationAt,message:desk.migrationError??(liveMode?'3 AI KADE / NYX / SAGE · vốn ví thật đọc động · AI tự chọn số tiền và BUY/SELL/HOLD.':'3 ví paper riêng; thiếu dữ liệu hiển thị WAIT.'),topBlockers:[...reasons].sort((a,b)=>b[1]-a[1]).slice(0,5).map(([reason,count])=>({reason,count}))}};
 }
 function json(res,status,value){res.writeHead(status,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'});res.end(JSON.stringify(value));}
 async function body(req){let bytes=0;const parts=[];for await(const p of req){bytes+=p.length;if(bytes>4096)throw Error('Request too large');parts.push(p);}return JSON.parse(Buffer.concat(parts).toString()||'{}');}
 
 const server=http.createServer(async(req,res)=>{try{const url=new URL(req.url,'http://localhost'),p=url.pathname;
  // No arbitrary signing or broadcasting endpoint; only the internal swap broker can sign.
- if(/^\/api\/(direct|live|signer)(\/|$)/.test(p)&&!(liveMode&&['/api/live/unlock','/api/live/lock'].includes(p)))return json(res,410,{mode,realTradingEnabled:false,error:'Không có endpoint ký hoặc gửi giao dịch tùy ý.'});
- if(req.method==='GET'&&p==='/api/health')return json(res,200,{status:'ok',model:modelClient.status(),experiment:desk.state.experiment,workflowVersion:PAPER_WORKFLOW_VERSION,mode,activeBots:BOT_CONFIGS.map(c=>c.id),initialVirtualSol:liveMode?null:6,realTradingEnabled:liveMode&&desk.treasury.status().signer.unlocked,unattendedSigningAvailable:liveMode&&desk.treasury.status().signer.exists,signingMode:liveMode?'owner-encrypted-vault':null,readOnly:!liveMode||!desk.treasury.status().signer.unlocked,running:desk.state.running,storageMode,heliusConfigured:market.heliusConfigured,rpcMode:market.rpcMode,signalTeamVersion:desk.agentVersion,strategyVersion:SCALP_STRATEGY_VERSION,entryPolicy:desk.state.entryPolicy,exitPolicy:desk.state.exitPolicy,sizingPolicy:desk.state.sizingPolicy,portfolioPolicy:desk.state.portfolioPolicy,marketReady:!!feed.updatedAt,uiRevision:uiAssets.revision,buildRevision:process.env.RAILWAY_GIT_COMMIT_SHA??'local'});
+ if(/^\/api\/(direct|live|signer)(\/|$)/.test(p)&&!(liveMode&&['/api/live/connect','/api/live/disconnect','/api/live/pause','/api/live/wallet-orders','/api/live/wallet-submit','/api/live/wallet-cancel'].includes(p)))return json(res,410,{mode,realTradingEnabled:false,error:'Không có endpoint ký hoặc gửi giao dịch tùy ý.'});
+ if(req.method==='GET'&&p==='/api/health')return json(res,200,{status:'ok',model:modelClient.status(),experiment:desk.state.experiment,workflowVersion:PAPER_WORKFLOW_VERSION,mode,activeBots:BOT_CONFIGS.map(c=>c.id),initialVirtualSol:liveMode?null:6,realTradingEnabled:liveMode&&desk.treasury.status().walletConnected,unattendedSigningAvailable:false,signingMode:liveMode?'connected-owner-wallet':null,requiresWalletSignature:liveMode,readOnly:!liveMode||!desk.treasury.status().walletConnected,running:desk.state.running,storageMode,heliusConfigured:market.heliusConfigured,rpcMode:market.rpcMode,signalTeamVersion:desk.agentVersion,strategyVersion:SCALP_STRATEGY_VERSION,entryPolicy:desk.state.entryPolicy,exitPolicy:desk.state.exitPolicy,sizingPolicy:desk.state.sizingPolicy,portfolioPolicy:desk.state.portfolioPolicy,marketReady:!!feed.updatedAt,uiRevision:uiAssets.revision,buildRevision:process.env.RAILWAY_GIT_COMMIT_SHA??'local'});
  if(req.method==='GET'&&p==='/api/activity')return json(res,200,activityState());
  if(req.method==='GET'&&p==='/api/state')return json(res,200,snapshot(req));
- if(req.method==='GET'&&p==='/api/auth/status')return json(res,200,{owner:auth.owner,authenticated:auth.authenticated(req),walletMode:liveMode?'live-owner-vault':'paper-admin',signerAvailable:liveMode&&desk.treasury.status().signer.exists});
- if(req.method==='POST'&&p.startsWith('/api/auth/')){if(!auth.sameOrigin(req))return json(res,403,{error:'Origin không hợp lệ.'});auth.limit(req.socket.remoteAddress??'unknown');const i=await body(req);if(p==='/api/auth/challenge')return json(res,200,auth.challenge(i.address));if(p==='/api/auth/login'){const t=auth.login(i.nonce,i.signature);res.setHeader('Set-Cookie',auth.cookie(t));return json(res,200,{authenticated:true});}if(p==='/api/auth/logout'){auth.logout(req);res.setHeader('Set-Cookie',auth.cookie(''));return json(res,200,{authenticated:false});}}
- if(liveMode&&['/api/live/unlock','/api/live/lock'].includes(p)){
-  if(!auth.authenticated(req))return json(res,401,{error:'Xác thực ví chủ trước khi mở két.'});
-  if(req.method!=='POST'||!auth.sameOrigin(req))return json(res,403,{error:'Origin hoặc phương thức không hợp lệ.'});
-  auth.limit(req.socket.remoteAddress??'unknown');const i=await body(req);
-  try{if(p==='/api/live/unlock')await desk.unlock(i.password);else await desk.lock();return json(res,200,{ok:true,live:desk.treasury.status()});}
-  catch(e){const messages={LIVE_PERSISTENT_VOLUME_REQUIRED:'Cần gắn Railway Volume chứa két ký và sổ lệnh trước khi mở két.',MODEL_NOT_CONFIGURED:'Chưa có MODEL_API_KEY hợp lệ trên server.',LIVE_LEGACY_PENDING_REQUIRES_RECONCILIATION:'Có lệnh cũ chưa đối soát; chưa mở két mới.'};return json(res,400,{error:messages[e.code]??'Không mở được két; kiểm tra mật khẩu, két ký hiện có và kết nối RPC.'});}
-  finally{i.password='';}
+ if(req.method==='GET'&&p==='/api/auth/status')return json(res,200,{owner:auth.owner,authenticated:auth.authenticated(req),walletMode:liveMode?'connected-owner-wallet':'paper-admin',signerAvailable:false,requiresWalletSignature:liveMode});
+ if(req.method==='POST'&&p.startsWith('/api/auth/')){if(!auth.sameOrigin(req))return json(res,403,{error:'Origin không hợp lệ.'});auth.limit(req.socket.remoteAddress??'unknown');const i=await body(req);if(p==='/api/auth/challenge')return json(res,200,auth.challenge(i.address));if(p==='/api/auth/login'){const t=auth.login(i.nonce,i.signature);res.setHeader('Set-Cookie',auth.cookie(t));return json(res,200,{authenticated:true});}if(p==='/api/auth/logout'){if(liveMode)await desk.disconnectWallet();auth.logout(req);res.setHeader('Set-Cookie',auth.cookie(''));return json(res,200,{authenticated:false});}}
+ // Keep the old paper URL working for cached UIs, but use the same typed control
+ // handler in both modes. Missing input must never be treated as a resume.
+ if(p==='/api/paper/pause'||liveMode&&p==='/api/live/pause'){
+  if(!auth.authenticated(req))return json(res,401,{code:'OWNER_AUTH_REQUIRED',error:'Kết nối và xác thực ví chủ trước khi điều khiển bot.'});
+  if(req.method!=='POST'||!auth.sameOrigin(req))return json(res,403,{code:'INVALID_ORIGIN_OR_METHOD',error:'Origin hoặc phương thức không hợp lệ.'});
+  auth.limit('control:pause:'+(req.socket.remoteAddress??'unknown'));const i=await body(req);
+  try{const paused=pausedValue(i);await desk.pause(paused);return json(res,200,{ok:true,mode,running:desk.state.running,paused:!desk.state.running});}
+  catch(error){const result=controlError(error);return json(res,result.status,result.body);}
+ }
+ if(liveMode&&['/api/live/connect','/api/live/disconnect','/api/live/wallet-orders','/api/live/wallet-submit','/api/live/wallet-cancel'].includes(p)){
+  if(!auth.authenticated(req))return json(res,401,{code:'OWNER_AUTH_REQUIRED',error:'Kết nối và ký thông điệp xác thực ví chủ trước khi giao dịch.'});
+  if(req.method==='GET'&&p==='/api/live/wallet-orders')return json(res,200,{orders:desk.treasury.orders(),owner:auth.owner,requiresWalletSignature:true});
+  if(req.method!=='POST'||!auth.sameOrigin(req))return json(res,403,{code:'INVALID_ORIGIN_OR_METHOD',error:'Origin hoặc phương thức không hợp lệ.'});
+  auth.limit(p+':'+(req.socket.remoteAddress??'unknown'));const i=await body(req);
+  try{
+   if(p==='/api/live/connect')await desk.connectWallet();
+   else if(p==='/api/live/disconnect')await desk.disconnectWallet();
+   else if(p==='/api/live/wallet-submit')return json(res,200,await desk.treasury.submit(i.id,i.transaction));
+   else if(p==='/api/live/wallet-cancel')return json(res,200,await desk.treasury.cancel(i.id));
+   else return json(res,404,{error:'Không có thao tác này.'});
+   return json(res,200,{ok:true,live:desk.treasury.status(),requiresWalletSignature:true});
+  }catch(error){const result=controlError(error);return json(res,result.status,result.body);}
  }
  if(p==='/api/command')return json(res,403,{error:'Chỉ dùng điều khiển đã xác thực.'});
  if(p.startsWith('/api/paper/')||p.startsWith('/api/research')||p==='/api/export'){
@@ -82,20 +98,18 @@ const server=http.createServer(async(req,res)=>{try{const url=new URL(req.url,'h
   if(req.method!=='POST'||!auth.sameOrigin(req))return json(res,403,{error:'Origin hoặc phương thức không hợp lệ.'});
   auth.limit(req.socket.remoteAddress??'unknown');const i=await body(req);
   try{
-   if(p==='/api/paper/telegram-config')await telegram.configurePaper(i.token,i.chatId,i.password);
-   else if(p==='/api/paper/telegram-unlock')await telegram.open(i.password);
-   else if(p==='/api/paper/telegram-migrate')await telegram.migrate(i.password);
+   if(p==='/api/paper/telegram-config')await telegram.configure(i.token,i.chatId);
+   else if(p==='/api/paper/telegram-unlock'||p==='/api/paper/telegram-migrate')return json(res,410,{code:'PASSWORD_REMOVED',error:'Không còn dùng mật khẩu. Lưu lại Bot token + Chat ID hoặc cấu hình bằng Railway Variables.'});
    else if(p==='/api/paper/telegram-test')await telegram.send(liveMode?'Meme Pilot · LIVE · KADE / NYX / SAGE. Báo cáo SOL thật; AI tự chọn BUY/SELL/HOLD và cỡ lệnh từ ví chung.':'Meme Pilot · PAPER · KADE / NYX / SAGE. Kết nối báo cáo thành công.');
-   else if(p==='/api/paper/pause')await desk.pause(i.paused===true);
    else return json(res,404,{error:'Không có thao tác này.'});
    return json(res,200,{ok:true,telegram:telegram.status(desk.state)});
   }finally{i.token='';i.password='';}
  }
  if(req.method==='GET'&&uiAssets.get(p)){const asset=uiAssets.get(p);res.writeHead(200,{'Content-Type':asset.type+'; charset=utf-8','Cache-Control':uiAssets.isVersioned(p)&&asset.type!=='text/html'?'public, max-age=31536000, immutable':'no-store','X-UI-Revision':uiAssets.revision,'X-Content-Type-Options':'nosniff','Content-Security-Policy':"default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"});return res.end(asset.content);}
  return json(res,404,{error:'Không tìm thấy.'});
- }catch{json(res,400,{error:'Không thực hiện được yêu cầu; kiểm tra xác thực, mật khẩu hoặc dữ liệu đầu vào.'});}});
+ }catch(error){if(error.code==='RATE_LIMITED'){const result=controlError(error);res.setHeader('Retry-After',String(result.body.retryAfterSeconds??60));return json(res,result.status,result.body);}json(res,400,{error:'Không thực hiện được yêu cầu; kiểm tra xác thực, mật khẩu hoặc dữ liệu đầu vào.'});}});
 const host=process.env.HOST??(onRailway?'0.0.0.0':'127.0.0.1');
-server.listen(Number(process.env.PORT??3000),host,()=>{if(!auth.origin)auth.origin=`http://127.0.0.1:${server.address().port}`;desk.start();console.log(`Meme Desk listening on ${host}:${server.address().port} — ${mode.toUpperCase()} / KADE NYX SAGE / signer starts locked`);});
+server.listen(Number(process.env.PORT??3000),host,()=>{if(!auth.origin)auth.origin=`http://127.0.0.1:${server.address().port}`;desk.start();console.log(`Meme Desk listening on ${host}:${server.address().port} — ${mode.toUpperCase()} / KADE NYX SAGE / owner wallet signs each transaction`);});
 server.on('error',async error=>{console.error('paper HTTP',error.message);loops.forEach(l=>l.stop());await desk.stop();process.exit(1);});
 let lastArchivedSnapshot=null;
 const loops=[...(liveMode?[startPaperLoop(()=>desk.pulse(),2000,{onError:error=>desk.error(error)})]:[]),startPaperLoop(refresh,5000,{onError:error=>desk.error(error)}),startPaperLoop(enrichStrategyData,1000,{onError:error=>desk.error(error)}),startPaperLoop(updatePrices,1000,{onError:error=>desk.error(error)}),startPaperLoop(()=>{const snap=desk.publish();if(snap.snapshotId!==lastArchivedSnapshot){research.enqueue({type:'paper_replay_snapshot',at:Date.now(),snapshot:snap});lastArchivedSnapshot=snap.snapshotId;}},1000,{onError:error=>desk.error(error)}),startPaperLoop(async()=>{await reports.tick(desk);await telegram.tick(transport);},2000,{onError:error=>desk.error(error)}),startPaperLoop(()=>research.flush(),3100,{onError:error=>desk.error(error)})];

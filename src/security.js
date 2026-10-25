@@ -3,7 +3,7 @@ import bs58 from 'bs58';
 export const DEFAULT_OWNER='7JePGU7MFtRo9z5jMh2486UniD4EB4PpRd8tv2Jhqpsy';
 export class OwnerAuth{
  constructor({owner=DEFAULT_OWNER,origin,clock=Date.now}={}){this.owner=owner;this.origin=origin;this.clock=clock;this.nonces=new Map();this.sessions=new Map();this.attempts=new Map();}
- limit(key){const now=this.clock();const v=this.attempts.get(key);if(v&&now-v.at<60000&&v.count>=10)throw Error('Quá nhiều yêu cầu xác thực. Thử lại sau một phút.');this.attempts.set(key,{at:v&&now-v.at<60000?v.at:now,count:v&&now-v.at<60000?v.count+1:1});if(this.attempts.size>1000)this.attempts.delete(this.attempts.keys().next().value);}
+ limit(key){const now=this.clock();const v=this.attempts.get(key);if(v&&now-v.at<60000&&v.count>=10)throw Object.assign(Error('Quá nhiều yêu cầu xác thực. Thử lại sau một phút.'),{code:'RATE_LIMITED',retryAfterSeconds:Math.ceil((60000-(now-v.at))/1000)});this.attempts.set(key,{at:v&&now-v.at<60000?v.at:now,count:v&&now-v.at<60000?v.count+1:1});if(this.attempts.size>1000)this.attempts.delete(this.attempts.keys().next().value);}
  challenge(address){
   if(address!==this.owner)throw Error('Ví này không phải chủ hệ thống.');
   const nonce=randomBytes(32).toString('hex'),at=this.clock(),expires=at+180000;

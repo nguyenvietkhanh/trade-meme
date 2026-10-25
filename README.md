@@ -1,21 +1,27 @@
 # Meme Pilot · KADE / NYX / SAGE
 
-Current release: **three independent AI decision workers with a shared real SOL
-wallet**. Docker defaults to `TRADING_MODE=live`; local runs without this flag
-remain paper. Every restart starts with the existing encrypted signer locked.
-Connect the owner wallet and unlock the vault in **Chi tiết ví** to allow real
-orders. Persistent Railway storage is required to unlock.
+Three independent AI decision workers share the current real SOL wallet balance.
+**Connect Phantom/Solflare and sign the owner-authentication message. There is no
+application password or server wallet vault in the production flow.** AI chooses
+BUY/SELL/HOLD and amounts; each actual transaction still requires the owner wallet
+to sign. Connection or message authentication alone does not grant spending rights.
+Use **Chi tiết ví → Ký lệnh AI** to review and sign a pending proposal. No owner
+private key is imported or sent to the server.
 
-AI chooses BUY/SELL/HOLD and order amounts from the actual current spendable
-wallet balance. Live trading has no 20 SOL virtual bankroll, 2 SOL allocations,
-2.5% sizing, or fixed 0.6 SOL order. Pending orders reserve funds centrally;
-0.1 SOL gas and execution protections remain. Existing Telegram reports remain
-scheduled at 23:59 Vietnam time.
+Docker defaults to `TRADING_MODE=live`; local runs without that flag remain paper.
+The shared treasury reserves pending funds, keeps 0.1 SOL gas and records only
+confirmed receipts. Real mode uses no fixed 20 SOL bankroll, 2 SOL allocation,
+2.5% sizing or fixed 0.6 SOL order. Persistent storage preserves the journal.
 
-See [live setup, autonomy boundaries, accounting and tests](docs/live-three-ai.md).
-`MODEL_API_KEY` and `HELIUS_API_KEY` stay server-side in Railway Variables.
-Provider/model availability and the actual Railway deployment have to be
-verified independently; a successful build is not proof of a live fill.
+Telegram at 23:59 Vietnam time uses Bot token + Chat ID without an application
+password. Existing environment credentials continue to work; new dashboard
+credentials use a server-managed storage key. An old password-encrypted config
+without its original unlock secret requires re-entering token/Chat ID or setting
+the Telegram environment variables; it cannot be decrypted by wallet connection.
+
+See [wallet signing, accounting and validation](docs/live-three-ai.md).
+Provider availability and the deployed revision must be verified separately;
+a successful build does not imply any live trade or profitable strategy.
 
 The sections below are historical paper documentation and do not override the
 current live-mode setup above. Old paper ledgers are retained separately.
