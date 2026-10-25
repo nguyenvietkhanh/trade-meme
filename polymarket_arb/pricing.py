@@ -3,7 +3,8 @@ from decimal import Decimal, ROUND_CEILING, ROUND_FLOOR
 from .config import number
 
 D = Decimal
-QUANTUM = D("0.000001")  # conservative estimator precision, not a venue lot-size claim
+QUANTUM = D("0.000001")  # six-decimal position base units; venue lot limits still checked
+FEE_QUANTUM = D("0.00001")  # docs fee precision; ceiling used as conservative estimate
 
 
 @dataclass(frozen=True)
@@ -77,7 +78,7 @@ def evaluate(yes, no, fee_yes, fee_no, *, budget, min_edge_pct, slippage_bps, pr
         if profitable_only and (1 - unit_cost < target or unit_cost >= 1):
             break
         # Reserve up to one fee quantum per leg, then round quantity down.
-        available = budget - cy - cn - fy - fn - slip - 2 * QUANTUM
+        available = budget - cy - cn - fy - fn - slip - 2 * FEE_QUANTUM
         q = min(yr, nr, max(D(0), available / unit_cost)).quantize(QUANTUM, rounding=ROUND_FLOOR)
         if q <= 0:
             break
@@ -92,7 +93,7 @@ def evaluate(yes, no, fee_yes, fee_no, *, budget, min_edge_pct, slippage_bps, pr
             if j < len(n): nr = n[j][1]
     if not size:
         return None
-    fees = fy.quantize(QUANTUM, rounding=ROUND_CEILING) + fn.quantize(QUANTUM, rounding=ROUND_CEILING)
+    fees = fy.quantize(FEE_QUANTUM, rounding=ROUND_CEILING) + fn.quantize(FEE_QUANTUM, rounding=ROUND_CEILING)
     cost = cy + cn + fees + slip
     profit = size - cost
     edge = profit / size * 100

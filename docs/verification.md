@@ -1,3 +1,27 @@
+# Updated local evidence — 26 October 2026
+
+User-provided ZIP: 20261025T182138Z.zip. All saved page bodies matched their
+recorded SHA256 hashes; this checks archive consistency, not independent
+provenance or current on-chain deployment. Read the API, contract and SDK
+migration, contracts and trading-fees snapshots under local-evidence-20261026.
+The report records 200 for index + 14 docs pages, but URLError for BOTH Gamma
+and CLOB. No live market/book/fee/balance/allowance/fill has been verified.
+
+Corrections implemented: require supported Gamma version; V2 selects positionIds
+array even when clobTokenIds exists; V1 decodes clobTokenIds; no unknown-version
+fallback. V2 condition IDs accept bytes31 or a bytes32 padded with a final zero.
+Fee estimator uses a conservative 5-decimal ceiling per leg (documented precision),
+not a claim to reproduce rounding over unknown maker fills.
+
+Remaining gates: diagnose local connection failures, read pUSD/wallet/order/WS
+pages not included in the first collected set, validate production response
+schemas and SDK path, read wallet funds/allowances dynamically, implement/test
+journaled two-leg order recovery and settlement. Live executor remains absent.
+The documented contract addresses are references, not deposit addresses.
+
+---
+Historical research before local evidence arrived follows:
+
 # Evidence and open gates
 
 Research date: 2026-10-26 (Vietnam).

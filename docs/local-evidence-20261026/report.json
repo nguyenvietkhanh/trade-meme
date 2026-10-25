@@ -1,0 +1,108 @@
+{
+  "mode": "PUBLIC_READ_ONLY",
+  "keys_read": false,
+  "orders_sent": false,
+  "production_verified": false,
+  "results": [
+    {
+      "url": "https://docs.polymarket.com/llms.txt",
+      "status": 200,
+      "file": "public-0.txt",
+      "sha256": "94e5a6d2babe8349b9f4e074b591808642db508ec1734625ac58a61f5808ef37"
+    },
+    {
+      "url": "https://clob.polymarket.com/time",
+      "status": "FAILED",
+      "error_type": "URLError"
+    },
+    {
+      "url": "https://gamma-api.polymarket.com/markets?active=true&closed=false&limit=1",
+      "status": "FAILED",
+      "error_type": "URLError"
+    },
+    {
+      "url": "https://docs.polymarket.com/concepts/prices-orderbook.md",
+      "status": 200,
+      "file": "evidence-0.txt",
+      "sha256": "228e30f8e94d8c972307af59b7d779386f671770cd27f179cf06fbc5eb21b7e4"
+    },
+    {
+      "url": "https://docs.polymarket.com/market-data/prices-order-books.md",
+      "status": 200,
+      "file": "evidence-1.txt",
+      "sha256": "28def09c4add9682ee9b3d92cdf4470589675de1f3aa8aa0cf3865546f75f692"
+    },
+    {
+      "url": "https://docs.polymarket.com/migrate/clob-sdk-to-unified-sdk.md",
+      "status": 200,
+      "file": "evidence-2.txt",
+      "sha256": "777e1a340703407e1c09e0b5472ff26f3b3ed54ea29fff9c728fc01295f18caf"
+    },
+    {
+      "url": "https://docs.polymarket.com/migrate/data-api-v1-to-v2.md",
+      "status": 200,
+      "file": "evidence-3.txt",
+      "sha256": "ef0367bbe4ebb81cc9dca2d9012381744444d9e6c6fd4a19e0695dd073c08b4b"
+    },
+    {
+      "url": "https://docs.polymarket.com/migrate/polymarket-v2/api-integrations.md",
+      "status": 200,
+      "file": "evidence-4.txt",
+      "sha256": "9ce9f17caf4ec112d16b5604b7ec0e334a447d2e5c6f29b955323354b60362b2"
+    },
+    {
+      "url": "https://docs.polymarket.com/migrate/polymarket-v2/contract-integrations.md",
+      "status": 200,
+      "file": "evidence-5.txt",
+      "sha256": "3d777498188e5db693d3aa95e456ede1d1b30eb1bc9d3bf77d12ec3e09be8348"
+    },
+    {
+      "url": "https://docs.polymarket.com/migrate/polymarket-v2/overview.md",
+      "status": 200,
+      "file": "evidence-6.txt",
+      "sha256": "033cb33e33a6e37a12abcd3b1fcf219d3bbd994cd327c83de1e87a8ff2bbf6c8"
+    },
+    {
+      "url": "https://docs.polymarket.com/migrate/polymarket-v2/sdk-integrations.md",
+      "status": 200,
+      "file": "evidence-7.txt",
+      "sha256": "20fde760323afe41d437078fc9136da0eb1f18e170304c0854145a0007f37dd1"
+    },
+    {
+      "url": "https://docs.polymarket.com/migrate/rtds-to-polybolt.md",
+      "status": 200,
+      "file": "evidence-8.txt",
+      "sha256": "084910e5797d40dd5993f4bdf896bdb9ed3ab1eb9262dca450fcca9c87362f05"
+    },
+    {
+      "url": "https://docs.polymarket.com/perps/learn-about-trading/fees.md",
+      "status": 200,
+      "file": "evidence-9.txt",
+      "sha256": "d76abd1457d8dbd501404d17b7cabb3f005068ddd4c6cc3bcfc18c46b1d56f56"
+    },
+    {
+      "url": "https://docs.polymarket.com/programs/builders/fees.md",
+      "status": 200,
+      "file": "evidence-10.txt",
+      "sha256": "0b69d6339e91a67817811d3639be4fe0c988d74ef55b718464faa11c979ce37b"
+    },
+    {
+      "url": "https://docs.polymarket.com/resources/contracts.md",
+      "status": 200,
+      "file": "evidence-11.txt",
+      "sha256": "3a6b66d06c8e6f64f9ab0e8b427e6fb6c41370b5b017ef9aa93b89e394aa6750"
+    },
+    {
+      "url": "https://docs.polymarket.com/trading/combos/collateral-return.md",
+      "status": 200,
+      "file": "evidence-12.txt",
+      "sha256": "2927b3eab3b2230c62fac762bbf288c6c0f21bfeee94d8cafd0b71104c5d4963"
+    },
+    {
+      "url": "https://docs.polymarket.com/trading/fees.md",
+      "status": 200,
+      "file": "evidence-13.txt",
+      "sha256": "304132bd37aa59875f2374fcd82bcfe052ee4713a111d255e9b25ca2a08e08f6"
+    }
+  ]
+}

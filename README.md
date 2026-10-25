@@ -1,3 +1,9 @@
+> Cập nhật 26/10/2026: đã đọc tài liệu migration từ báo cáo local; sửa chọn ID theo
+> `version` (v2 dùng positionIds, v1 dùng clobTokenIds). Gamma/CLOB local vẫn lỗi.
+> Để chẩn đoán nhanh chạy `verify.bat --api-only` (Windows) hoặc
+> `python3 local_verify.py --api-only`; báo cáo mới phân loại DNS/TLS/timeout/HTTP.
+> Không tắt TLS hoặc dùng proxy/VPN để vượt hạn chế truy cập.
+
 # Polymarket arbitrage — giai đoạn 1, chỉ đọc
 
 Python 3.11+. Dự án độc lập với bot Solana cũ; không sửa hoặc deploy service cũ.
@@ -12,8 +18,9 @@ Python 3.11+. Dự án độc lập với bot Solana cũ; không sửa hoặc de
   mã phí trong wheel. Không dùng package legacy `py-clob-client`.
 - PyPI hiện đánh dấu package V2 deprecated, đề nghị SDK hợp nhất. Vẫn giữ package
   bạn yêu cầu; cần đánh giá lại trước bất kỳ bước live nào, không tự đổi SDK.
-- Proxy môi trường trả CONNECT 403 cho `docs.polymarket.com`; chưa đọc được mục
-  `v2-migration`/API và chưa chạy kiểm chứng dữ liệu Gamma/CLOB thật.
+- Đã đọc snapshot tài liệu API/contract/SDK migration và fees do người dùng lấy
+  từ máy local (HTTP 200 trong báo cáo). Gamma/CLOB ở local vẫn lỗi URLError;
+  môi trường phát triển vẫn bị proxy 403. Chưa có live book/market fixture.
 - **Mọi kết quả hiện là `ESTIMATE_UNVERIFIED_DOCS`**, không phải cơ hội production
   được xác nhận. Schema bất đồng hoặc phí thiếu => SKIP, không mặc định phí 0.
 - WebSocket chưa triển khai vì chưa xác minh được protocol. REST có pacing,
@@ -90,13 +97,14 @@ fee_leg = tổng(q_mức × fee_per_share(p_mức))
 Lấy `r` và `e` bắt buộc từ `fd` của `/clob-markets/{condition_id}`;
 không suy ra từ tên category, không dùng `base_fee` V1 thay thế. Rate 0 chỉ hợp lệ
 khi API trả số 0 rõ ràng. Không gắn builder nên chưa tính builder attribution fee.
-Chưa xác minh docs về đơn vị thu phí thực tế/cách làm tròn trên sàn: kết quả vẫn
-là **ước tính**, chưa chứng minh có thể mua gross shares rồi nhận net shares bằng nhau.
+Docs migration ghi BUY fee cộng vào collateral spend; SELL fee trừ khỏi proceeds.
+Docs fees ghi precision 5 chữ số; estimator dùng ceiling bảo thủ, chưa mô phỏng
+rounding từng maker fill. Chưa xác minh bằng receipt thật; kết quả vẫn là ước tính.
 
 1. Sắp xếp asks tăng dần, gộp mức trùng; quét đồng thời hai depth theo cùng số shares.
 2. Chỉ lấy tranche mà `1 − giá YES − giá NO − phí − buffer` đạt ngưỡng.
 3. Giới hạn bằng depth từng chân, ngân sách cả cặp, min size order book.
-4. Phí từng chân làm tròn lên 0.000001; số shares ước tính làm tròn xuống cùng
+4. Phí từng chân ước tính bảo thủ làm tròn lên 0.00001 (docs: precision 5 chữ số); số shares ước tính làm tròn xuống cùng
    độ chính xác. Đây là lựa chọn bảo thủ của estimator, **chưa phải lot rule đã xác minh**.
 5. `expected_payout = số cặp`, giả định redeem mỗi bộ đầy đủ được 1 collateral;
    `profit = payout − cost`; `edge_pct = profit / payout × 100`.

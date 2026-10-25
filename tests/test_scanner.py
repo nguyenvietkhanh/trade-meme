@@ -104,11 +104,22 @@ class SafetyTests(unittest.TestCase):
         with self.assertRaises(ValueError): fee_parameters(dict(info, t=[{"t": "333", "o": "Yes"}]), self.market)
 
     def test_gamma_outcome_order_and_filters(self):
-        raw = dict(active=True, closed=False, acceptingOrders=True, enableOrderBook=True, negRisk=False,
+        raw = dict(version="v1", active=True, closed=False, acceptingOrders=True, enableOrderBook=True, negRisk=False,
                    outcomes='["No", "Yes"]', clobTokenIds='["222", "111"]',
                    conditionId=self.market.condition, id="1", question="test", liquidityNum=20000, volumeNum=20000)
         self.assertEqual(market_from_gamma(raw, self.config).yes, "111")
         for changes in ({"closed": True}, {"negRisk": True}, {"outcomes": '["Up", "Down"]'}, {"liquidityNum": 1}):
+            self.assertIsNone(market_from_gamma(dict(raw, **changes), self.config))
+
+    def test_v2_position_ids_and_unknown_version(self):
+        raw = dict(version="v2", active=True, closed=False, acceptingOrders=True,
+                   enableOrderBook=True, negRisk=False, outcomes='["No", "Yes"]',
+                   positionIds=["444", "333"], clobTokenIds='["222", "111"]',
+                   conditionId="0x" + "aa" * 31 + "00", id="v2", liquidityNum=20000, volumeNum=20000)
+        market = market_from_gamma(raw, self.config)
+        self.assertEqual((market.yes, market.no, market.version), ("333", "444", "v2"))
+        for changes in ({"version": None}, {"version": "v3"}, {"positionIds": None},
+                        {"positionIds": '["444", "333"]'}, {"conditionId": "0x" + "aa" * 32}):
             self.assertIsNone(market_from_gamma(dict(raw, **changes), self.config))
 
     def test_book_age_id_and_future(self):

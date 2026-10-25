@@ -77,6 +77,7 @@ class Market:
     title: str
     yes: str
     no: str
+    version: str = "v1"
 
 
 def array(value):
@@ -89,7 +90,12 @@ def market_from_gamma(raw, config):
         return None
     if raw.get("negRisk") is not False:
         return None
-    outcomes, tokens = array(raw.get("outcomes")), array(raw.get("clobTokenIds"))
+    version = raw.get("version")
+    if version not in ("v1", "v2"):
+        return None
+    outcomes = array(raw.get("outcomes"))
+    # Official API migration: version wins even if both ID fields are present.
+    tokens = raw.get("positionIds") if version == "v2" else array(raw.get("clobTokenIds"))
     if not isinstance(outcomes, list) or not isinstance(tokens, list) or len(outcomes) != 2 or len(tokens) != 2:
         return None
     names = [str(x).lower() for x in outcomes]
@@ -98,11 +104,13 @@ def market_from_gamma(raw, config):
     if number(raw.get("liquidityNum")) < config.min_liquidity or number(raw.get("volumeNum")) < config.min_volume:
         return None
     condition = raw.get("conditionId")
-    if not isinstance(condition, str) or len(condition) != 66 or not condition.startswith("0x"):
+    if not isinstance(condition, str) or not condition.startswith("0x") or len(condition) not in ((64, 66) if version == "v2" else (66,)):
+        return None
+    if version == "v2" and len(condition) == 66 and not condition.endswith("00"):
         return None
     try: int(condition[2:], 16)
     except ValueError: return None
-    return Market(str(raw["id"]), condition, str(raw.get("question", ""))[:200], tokens[names.index("yes")], tokens[names.index("no")])
+    return Market(str(raw["id"]), condition, str(raw.get("question", ""))[:200], tokens[names.index("yes")], tokens[names.index("no")], version)
 
 
 def fee_parameters(info, market):

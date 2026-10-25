@@ -1,3 +1,4 @@
+test_errors_classified_without_proxy_credentials (test_local.DiagnosticTests.test_errors_classified_without_proxy_credentials) ... ok
 test_dotenv_is_data_and_does_not_load_key (test_local.LocalTests.test_dotenv_is_data_and_does_not_load_key) ... ok
 test_environment_overrides_file (test_local.LocalTests.test_environment_overrides_file) ... ok
 test_verifier_rejects_external_urls_before_request (test_local.LocalTests.test_verifier_rejects_external_urls_before_request) ... ok
@@ -20,8 +21,9 @@ test_read_only_scan_and_durable_log (test_scanner.SafetyTests.test_read_only_sca
 test_retry_is_bounded (test_scanner.SafetyTests.test_retry_is_bounded) ... ok
 test_risk_boundaries (test_scanner.SafetyTests.test_risk_boundaries) ... ok
 test_unprofitable_diagnostic (test_scanner.SafetyTests.test_unprofitable_diagnostic) ... ok
+test_v2_position_ids_and_unknown_version (test_scanner.SafetyTests.test_v2_position_ids_and_unknown_version) ... ok
 
 ----------------------------------------------------------------------
-Ran 22 tests in 0.369s
+Ran 24 tests in 0.469s
 
 OK

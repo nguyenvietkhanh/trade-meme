@@ -38,3 +38,9 @@ recovery của lệnh timeout/khớp một chân, persistent journal và kill sw
 Khóa chỉ được đọc từ environment trên máy bạn, không gửi chat hoặc log.
 
 Không có auto-deploy, transfer, approve, wrap hoặc order trong các script local.
+
+## Báo cáo local lần đầu
+
+Đã đọc docs trong ZIP của bạn. Cả Gamma và CLOB lỗi URLError, chưa biết nguyên
+nhân. Tải lại nhánh mới rồi chạy `verify.bat --api-only` để lấy mã lỗi phân loại;
+không cần setup lại nếu dependency đã cài. Không tắt kiểm tra chứng chỉ TLS.

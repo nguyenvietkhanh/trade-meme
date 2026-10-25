@@ -30,3 +30,16 @@ class LocalTests(unittest.TestCase):
         for url in ('http://docs.polymarket.com', 'https://example.com',
                     'https://user@docs.polymarket.com', 'https://docs.polymarket.com:123/'):
             with self.assertRaises(ValueError): fetch(url)
+
+class DiagnosticTests(unittest.TestCase):
+    def test_errors_classified_without_proxy_credentials(self):
+        import socket
+        import ssl
+        import urllib.error
+        from local_verify import safe_error
+        self.assertEqual(safe_error(urllib.error.URLError(socket.gaierror(-2, 'fixture')))['error_code'], 'DNS_FAILED')
+        self.assertEqual(safe_error(urllib.error.URLError(TimeoutError()))['error_code'], 'CONNECTION_TIMEOUT')
+        self.assertEqual(safe_error(urllib.error.HTTPError('fixture', 403, 'fixture', {}, None))['http_status'], 403)
+        self.assertEqual(safe_error(urllib.error.URLError('Tunnel connection failed: 403 Forbidden'))['error_code'], 'PROXY_CONNECT_403')
+        output = safe_error(urllib.error.URLError('https://user:fixture-secret@proxy.invalid'))
+        self.assertNotIn('fixture-secret', str(output))
