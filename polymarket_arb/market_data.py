@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from decimal import Decimal
 from .config import number
 from .pricing import Fees, levels
-from .network import build_opener
+from .network import build_opener, curl_public_get, CurlReadError
 
 GAMMA = "https://gamma-api.polymarket.com"
 CLOB = "https://clob.polymarket.com"
@@ -44,7 +44,7 @@ class Requests:
                 return fn()
             except Exception as exc:
                 status = getattr(exc, "code", None) or getattr(exc, "status_code", None)
-                retryable = status in (429, 500, 502, 503, 504) or (isinstance(exc, (TimeoutError, urllib.error.URLError)) and not isinstance(exc, urllib.error.HTTPError))
+                retryable = status in (429, 500, 502, 503, 504) or (isinstance(exc, (TimeoutError, urllib.error.URLError, CurlReadError)) and not isinstance(exc, urllib.error.HTTPError))
                 if not retryable or attempt == self.config.retries:
                     # No exception body/URL/query dump (future auth must never leak).
                     raise APIError("API read failed" + (f" HTTP_{status}" if status else "")) from None
@@ -68,8 +68,11 @@ class Requests:
             raise ValueError("Non-official endpoint blocked")
         url = origin + path + ("?" + urllib.parse.urlencode(params) if params else "")
         request = urllib.request.Request(url, headers={"Accept": "application/json", "User-Agent": "polymarket-readonly-scanner/0.1"})
-        with self.opener.open(request, timeout=10) as response:
-            data = response.read(8_000_001)
+        if self.config.public_http_backend == "curl":
+            _, data = curl_public_get(url, force_ipv4=self.config.force_ipv4)
+        else:
+            with self.opener.open(request, timeout=10) as response:
+                data = response.read(8_000_001)
         if len(data) > 8_000_000: raise APIError("Response too large")
         return json.loads(data, parse_float=Decimal)
 

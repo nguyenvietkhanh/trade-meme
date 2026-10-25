@@ -52,3 +52,55 @@ class NetworkTests(unittest.TestCase):
             self.assertFalse(Config.from_env().force_ipv4)
         with patch.dict('os.environ', {'FORCE_IPV4':'maybe'}):
             with self.assertRaises(ValueError): Config.from_env()
+
+class CurlTransportTests(unittest.TestCase):
+    def test_public_read_preserves_tls_and_uses_no_shell_or_auth(self):
+        from types import SimpleNamespace
+        from polymarket_arb.network import curl_public_get
+        with patch('polymarket_arb.network.shutil.which', return_value='curl.exe'), patch(
+            'polymarket_arb.network.subprocess.run', return_value=SimpleNamespace(returncode=0, stdout=b'1792953205\n200', stderr=b'')) as run:
+            status, body = curl_public_get('https://clob.polymarket.com/time')
+        self.assertEqual((status, body), (200, b'1792953205'))
+        args = run.call_args.args[0]
+        self.assertIn('--ipv4', args)
+        self.assertEqual(args[1], '--disable')
+        self.assertNotIn('--insecure', args)
+        self.assertNotIn('--location', args)
+        self.assertNotIn('--noproxy', args)
+        self.assertNotIn('--header', args)
+        self.assertFalse(run.call_args.kwargs['shell'])
+        self.assertNotIn('env', run.call_args.kwargs)
+
+    def test_public_curl_blocks_external_host(self):
+        from polymarket_arb.network import curl_public_get
+        with patch('polymarket_arb.network.subprocess.run') as run:
+            with self.assertRaises(ValueError): curl_public_get('https://example.com/')
+            run.assert_not_called()
+
+    def test_curl_error_never_exports_stderr(self):
+        from types import SimpleNamespace
+        from polymarket_arb.network import curl_public_get, CurlReadError
+        from local_verify import safe_error
+        with patch('polymarket_arb.network.shutil.which', return_value='curl.exe'), patch(
+            'polymarket_arb.network.subprocess.run', return_value=SimpleNamespace(returncode=35, stdout=b'', stderr=b'fixture-proxy-secret')):
+            with self.assertRaises(CurlReadError) as caught: curl_public_get('https://clob.polymarket.com/time')
+        report = safe_error(caught.exception)
+        self.assertEqual(report['curl_exit_code'], 35)
+        self.assertNotIn('fixture-proxy-secret', str(report))
+
+    def test_curl_does_not_follow_redirects(self):
+        from types import SimpleNamespace
+        from polymarket_arb.network import curl_public_get
+        from urllib.error import HTTPError
+        with patch('polymarket_arb.network.shutil.which', return_value='curl.exe'), patch(
+            'polymarket_arb.network.subprocess.run', return_value=SimpleNamespace(returncode=0, stdout=b'moved\n302', stderr=b'')):
+            with self.assertRaises(HTTPError): curl_public_get('https://clob.polymarket.com/time')
+
+    def test_python_socket_resolves_only_ipv4(self):
+        import socket
+        from polymarket_arb.network import ipv4_create_connection
+        with patch('polymarket_arb.network.socket.getaddrinfo', return_value=[(socket.AF_INET,socket.SOCK_STREAM,6,'',('192.0.2.1',443))]) as resolve, patch('polymarket_arb.network.socket.socket') as make:
+            conn = ipv4_create_connection(('clob.polymarket.com',443), 10, ('0.0.0.0',0))
+        resolve.assert_called_once_with('clob.polymarket.com',443,socket.AF_INET,socket.SOCK_STREAM)
+        self.assertIs(conn,make.return_value)
+        conn.connect.assert_called_once_with(('192.0.2.1',443))

@@ -2,6 +2,11 @@ test_errors_classified_without_proxy_credentials (test_local.DiagnosticTests.tes
 test_dotenv_is_data_and_does_not_load_key (test_local.LocalTests.test_dotenv_is_data_and_does_not_load_key) ... ok
 test_environment_overrides_file (test_local.LocalTests.test_environment_overrides_file) ... ok
 test_verifier_rejects_external_urls_before_request (test_local.LocalTests.test_verifier_rejects_external_urls_before_request) ... ok
+test_curl_does_not_follow_redirects (test_network.CurlTransportTests.test_curl_does_not_follow_redirects) ... ok
+test_curl_error_never_exports_stderr (test_network.CurlTransportTests.test_curl_error_never_exports_stderr) ... ok
+test_public_curl_blocks_external_host (test_network.CurlTransportTests.test_public_curl_blocks_external_host) ... ok
+test_public_read_preserves_tls_and_uses_no_shell_or_auth (test_network.CurlTransportTests.test_public_read_preserves_tls_and_uses_no_shell_or_auth) ... ok
+test_python_socket_resolves_only_ipv4 (test_network.CurlTransportTests.test_python_socket_resolves_only_ipv4) ... ok
 test_ipv4_env_flag_validation (test_network.NetworkTests.test_ipv4_env_flag_validation) ... ok
 test_ipv4_source_binding_and_tls_verification (test_network.NetworkTests.test_ipv4_source_binding_and_tls_verification) ... ok
 test_sdk_books_share_adapter_and_cannot_post (test_network.NetworkTests.test_sdk_books_share_adapter_and_cannot_post) ... ok
@@ -28,6 +33,6 @@ test_unprofitable_diagnostic (test_scanner.SafetyTests.test_unprofitable_diagnos
 test_v2_position_ids_and_unknown_version (test_scanner.SafetyTests.test_v2_position_ids_and_unknown_version) ... ok
 
 ----------------------------------------------------------------------
-Ran 28 tests in 1.031s
+Ran 33 tests in 0.393s
 
 OK

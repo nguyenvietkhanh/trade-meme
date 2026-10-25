@@ -2,6 +2,7 @@ import os
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
+from .network import default_public_backend
 
 
 def number(value):
@@ -34,6 +35,7 @@ class Config:
     stop_file: Path = Path("STOP")
     dry_run: bool = True
     force_ipv4: bool = True
+    public_http_backend: str = default_public_backend()
 
     def __post_init__(self):
         for name in ("min_liquidity", "min_volume", "min_edge_pct", "slippage_bps",
@@ -52,6 +54,8 @@ class Config:
                 raise ValueError(name + " must be positive")
         if self.retries < 0 or self.retries > 8:
             raise ValueError("retries must be 0..8")
+        if self.public_http_backend not in ("python", "curl"):
+            raise ValueError("PUBLIC_HTTP_BACKEND must be python or curl")
         if not self.dry_run:
             raise ValueError("Stage 1 is read-only: DRY_RUN=false is forbidden")
         if self.max_usd_per_trade <= 0:
@@ -59,7 +63,7 @@ class Config:
 
     @classmethod
     def from_env(cls):
-        values = {}
+        values = {"public_http_backend": os.getenv("PUBLIC_HTTP_BACKEND", default_public_backend())}
         decimals = ("min_liquidity", "min_volume", "min_edge_pct", "slippage_bps",
                     "max_usd_per_trade", "max_open_exposure", "daily_loss_limit")
         for name in decimals:

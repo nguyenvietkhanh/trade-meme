@@ -1,3 +1,10 @@
+> Cập nhật transport: Windows mặc định dùng curl.exe --ipv4 để đọc public APIs,
+> theo lệnh người dùng đã kiểm tra thành công. Backend này chỉ GET, không nhận khóa,
+> không nhận auth headers và không dùng cho giao dịch thật. SSL verification bật;
+> không theo redirect; không thay proxy/network policy. SDK public books cùng backend.
+> IPv4 Python fallback giờ cũng buộc socket.AF_INET, thay vì chỉ bind địa chỉ nguồn.
+> Chạy `verify.bat --api-only --backend curl` để kiểm tra trên máy của bạn.
+
 > Sửa kết nối IPv4: curl -4 đã thành công trên máy người dùng. Scanner và verifier
 > giờ dùng HTTPS bind IPv4, giữ nguyên hostname/SNI, kiểm chứng TLS và proxy hệ thống.
 > Không tắt IPv6 Windows. FORCE_IPV4=true mặc định; đặt false dùng transport hệ thống.

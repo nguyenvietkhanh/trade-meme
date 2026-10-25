@@ -51,3 +51,11 @@ Bản mới bind IPv4 trong HTTPS của ứng dụng, không sửa Windows, DNS,
 chứng chỉ. Áp dụng cùng transport cho Gamma, fee metadata, SDK public book reads
 và công cụ verify. Chạy `verify.bat --api-only` trước; nếu thành công hãy chạy
 `setup.bat` trong thư mục mới và `run.bat` để quét. Scanner vẫn chỉ đọc.
+
+## Backend đã chạy được qua curl -4
+
+Windows mặc định dùng curl.exe của hệ thống cho public GET, không đi qua TLS
+của Python. Không tải curl hoặc binary bên thứ ba. Có thể kiểm tra bằng
+`verify.bat --api-only --backend curl`. Sau setup, run.bat tự chọn backend này;
+muốn dùng Python thì đặt PUBLIC_HTTP_BACKEND=python. Mọi thứ vẫn chỉ đọc.
+Transport curl không nhận khóa/auth headers và không hỗ trợ đặt lệnh.
