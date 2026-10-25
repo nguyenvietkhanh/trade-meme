@@ -31,6 +31,7 @@ test('score has only 60/25/15; quote failure does not alter signal score; confir
  const weak=structuredClone(m);weak.change5mPct=5;weak.buys5m=11;weak.sells5m=10;weak.strategyData.flow.lastTen=weak.strategyData.flow.lastTen.map((t,i)=>({...t,side:i<5?'BUY':'SELL'}));const low=independentSignal(c,weak,TEN_AT,context);assert.equal(low.structural,true);assert.equal(low.stage,'score');assert.ok(low.score<a.score);
  assert.equal(independentSignal(c,m,TEN_AT,{...context,snapshotId:'a'}).eligible,false);
  assert.equal(independentSignal(c,{...m,updatedAt:TEN_AT-6000},TEN_AT,context).eligible,false);
+ const cooled=independentSignal(c,m,TEN_AT,{...context,cooldownUntil:TEN_AT+10000});assert.equal(cooled.eligible,false);assert.equal(cooled.stage,'market');assert.ok(cooled.checks.some(c=>c.key==='REENTRY_30M'&&c.status==='fail'));
 });
 test('lane boundaries: age30m, liquidity30k, sharp red and SAGE2h',()=>{
  const m=market();m.pairCreatedAt=TEN_AT-1800000;assert.equal(laneChecks(config('nova'),m,TEN_AT).find(c=>c.key==='LANE_AGE').status,'fail');
@@ -39,6 +40,14 @@ test('lane boundaries: age30m, liquidity30k, sharp red and SAGE2h',()=>{
  m.strategyData.bars.at(-1)[4]=96;m.strategyData.bars.at(-1)[3]=95;
  assert.equal(laneChecks(config('nova'),m,TEN_AT).find(c=>c.key==='LANE_SHARP_RED').status,'fail');assert.equal(laneChecks(config('nyx'),m,TEN_AT).some(c=>c.key==='LANE_SHARP_RED'),false);
  assert.doesNotThrow(()=>laneChecks(config('orin'),{...m,strategyData:{}},TEN_AT));
+});
+test('every one of the ten complete lane+score configurations has a reachable independent entry',()=>{
+ for(const c of BOT_CONFIGS){const m=market(c.id);
+  if(c.id==='orin'){m.change5mPct=3;m.strategyData.bars[25][2]=105;}
+  if(c.id==='kade'){m.change5mPct=3;m.strategyData.bars[25][2]=110;}
+  const context={snapshotId:'second',liquidityCutoff:90000,prior:{structural:true,at:TEN_AT-6000,sourceAt:TEN_AT-6000,snapshotId:'first',priceUsd:m.priceUsd,liquidityUsd:m.liquidityUsd}};
+  const d=independentSignal(c,m,TEN_AT,context);assert.equal(d.eligible,true,c.id+': '+d.reason+'; score='+d.score+'; checks='+JSON.stringify(d.checks.filter(c=>c.status!=='pass')));
+ }
 });
 async function replay({reverse=false,skip=null,changeBalance=null,fail=null}={}){
  let now=TEN_AT;const configs=reverse?[...BOT_CONFIGS].reverse():BOT_CONFIGS,engines=configs.filter(c=>c.id!==skip).map(c=>{const s=initialBotState(c,now);s.nextAt=0;if(c.id===changeBalance)s.cashSol=.01;

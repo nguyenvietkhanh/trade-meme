@@ -19,6 +19,7 @@ function mainComponents(c,m,now){
 }
 export function independentSignal(config,m,now,context={}){
  const raw=tenSignal(config.id,m,now,{...context,signalOnly:true}),base=raw.rank.strategyChecks?.checks??[];
+ for(const c of raw.rank.strategyChecks?.blocked??[])if(!base.some(b=>b.key===c.key))base.push({...c,status:'fail'});
  const lanes=laneChecks(config,m,now),main=base.filter(c=>c.key!=='LIQUIDITY'),w=config.scoreWeights;
  const all=[...base,...lanes],known=all.filter(c=>c.status!=='unknown').length;
  const structural=raw.eligible&&lanes.every(c=>c.status==='pass');
