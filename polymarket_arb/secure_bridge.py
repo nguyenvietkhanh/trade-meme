@@ -14,6 +14,34 @@ READ_RPC={'eth_chainId','eth_call','eth_getCode','eth_getBalance','eth_getTransa
 _FACTORY_LOCK=threading.Lock()
 
 
+def failure_code(error):
+    """Return a fixed label, never raw browser errors containing request data."""
+    text=str(error).upper()
+    for marker,code in (
+        ('ERR_CONNECTION_RESET','CONNECTION_RESET'),('ERR_NAME_NOT_RESOLVED','DNS_FAILED'),
+        ('ERR_CONNECTION_REFUSED','CONNECTION_REFUSED'),('ERR_CERT_','TLS_CERTIFICATE_ERROR'),
+        ('ERR_PROXY_CONNECTION_FAILED','PROXY_FAILED'),('ERR_TUNNEL_CONNECTION_FAILED','PROXY_FAILED'),
+        ('EXECUTABLE DOESN\'T EXIST','CHROME_NOT_INSTALLED'),('ERR_TIMED_OUT','TIMEOUT'),
+        ('ABORTERROR','TIMEOUT'),('TIMEOUT','TIMEOUT'),('TARGETCLOSED','BROWSER_CLOSED'),
+        ('HAS BEEN CLOSED','BROWSER_CLOSED'),('RESPONSE_LIMIT','RESPONSE_TOO_LARGE')):
+        if marker in text:return code
+    return 'FETCH_FAILED'
+
+
+def request_stage(request):
+    host,path=request.url.host,request.url.path
+    if host==RPC:
+        try:method=json.loads(request.content).get('method')
+        except (ValueError,AttributeError):method=None
+        return 'POLYGON_CHAIN_ID' if method=='eth_chainId' else 'POLYGON_READ'
+    if host=='relayer-v2.polymarket.com':return 'WALLET_DEPLOYMENT_READ'
+    if host=='gamma-api.polymarket.com':return 'MARKET_DISCOVERY'
+    return {'/auth/api-key':'AUTH_CREATE','/auth/derive-api-key':'AUTH_DERIVE',
+            '/balance-allowance':'ACCOUNT_BALANCE','/balance-allowance/update':'BALANCE_REFRESH',
+            '/data/orders':'OPEN_ORDERS','/data/trades':'SETTLEMENT_READ',
+            '/order':'ORDER_SUBMIT','/time':'SERVER_TIME','/book':'ORDER_BOOK'}.get(path,'CLOB_READ')
+
+
 class GuardError(RuntimeError):
     pass
 
@@ -26,6 +54,8 @@ class SDKBridge(httpx.BaseTransport):
         self.clients=[]
         self.permit=None
         self.routing_permit=None
+        self.last_error=None
+        self.network_failures={}
 
     def authorize_order(self, payload):
         # Called only AFTER durable journal commit; grants one exact request.
@@ -84,6 +114,10 @@ class SDKBridge(httpx.BaseTransport):
             except Exception:r.abort('blockedbyclient')
         context.route('**/*',route)
         page=context.new_page()
+        def failed(request):
+            if urlsplit(request.url).hostname==host:
+                self.network_failures[host]=failure_code(request.failure or '')
+        page.on('requestfailed',failed)
         self.contexts.append(context)
         seed='/__local_polymarket_sdk__'
         try:page.goto('https://'+host+seed,wait_until='domcontentloaded',timeout=25000)
@@ -100,7 +134,12 @@ class SDKBridge(httpx.BaseTransport):
         host=request.url.host
         headers={k:v for k,v in request.headers.items() if k.lower().startswith('poly_') or k.lower()=='content-type'}
         if host!=CLOB and any(k.lower().startswith('poly_') for k in headers):raise GuardError('AUTH_ORIGIN_BLOCKED')
-        try:
+        stage=request_stage(request)
+        # Only idempotent reads may retry. Neither auth creation nor orders replay.
+        attempts=3 if request.method=='GET' or (request.method=='POST' and host==RPC) else 1
+        for attempt in range(1,attempts+1):
+          self.network_failures.pop(host,None)
+          try:
             page=self._page(host)
             result=page.evaluate('''async ({url,method,headers,body}) => {
               const controller=new AbortController(); const timer=setTimeout(()=>controller.abort(),20000);
@@ -112,11 +151,22 @@ class SDKBridge(httpx.BaseTransport):
                 return {status:r.status,text,retry:r.headers.get('retry-after')||''};
               } finally {clearTimeout(timer);}
             }''',{'url':str(request.url),'method':request.method,'headers':headers,'body':body.decode() if body else None})
+            self.last_error=None
+            if result['status']>=400:
+                # No body, query, wallet, auth header or credential is logged.
+                self.last_error=f'SDK_{stage}_HTTP_{int(result["status"])}'
+                print(f'SDK HTTP | host={host} | stage={stage} | status={int(result["status"])}',flush=True)
             return httpx.Response(result['status'],content=result['text'].encode(),
                                   headers={'content-type':'application/json','retry-after':result['retry']},request=request)
-        except Exception:
-            raise httpx.TransportError('SDK_BROWSER_REQUEST_UNCERTAIN') from None
-        finally:
+          except Exception as exc:
+            code=self.network_failures.get(host) or failure_code(exc)
+            self.last_error=f'SDK_{stage}_{code}'
+            print(f'SDK NETWORK | host={host} | stage={stage} | code={code} | attempt={attempt}/{attempts}',flush=True)
+            if attempt<attempts and code in {'CONNECTION_RESET','DNS_FAILED','CONNECTION_REFUSED','TIMEOUT','FETCH_FAILED'}:
+                time.sleep(.5*attempt)
+                continue
+            raise httpx.TransportError(self.last_error) from None
+          finally:
             self.routing_permit=None
 
     def close(self):pass  # SDK transports share this bridge; lifecycle belongs to application.

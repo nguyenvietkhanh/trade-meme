@@ -133,6 +133,9 @@ def app(argv=None):
             while time.monotonic()<deadline:
                 if Path('STOP').exists():return 0
                 time.sleep(1)
+    except Exception:
+        if bridge.last_error:raise GuardError(bridge.last_error) from None
+        raise
     finally:
         if data:data.close()
         if client:

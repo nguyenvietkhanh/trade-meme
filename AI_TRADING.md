@@ -113,3 +113,22 @@ không giải CAPTCHA hay vượt 403. Token/chữ ký trong RAM chỉ đến đ
 
 Còn cần kiểm chứng local: SDK auth bằng signer thật, RPC/relayer, balance/allowance,
 River model, và FOK BUY/SELL/settlement. **Đừng coi test pass là xác nhận đã chạy thật.**
+
+## Trang Chrome trắng và lỗi kết nối
+
+Dòng `Local SDK bridge: private data is not displayed.` là bình thường. Đây là
+trang local được trình duyệt dùng để fetch API; không phải trang đăng nhập hay
+thông báo lỗi. Giữ Chrome mở; đọc kết quả trong cửa sổ lệnh.
+
+Bản chẩn đoán in `SDK NETWORK | host=... | stage=... | code=... | attempt=...`
+hoặc `SDK HTTP | host=... | stage=... | status=...`. Không in query, wallet,
+headers, chữ ký, response body hay credentials. Chỉ GET và RPC đọc được thử
+lại tối đa 3 lần khi lỗi mạng tạm thời. Không retry HTTP 403, lỗi chứng chỉ,
+POST tạo API credential hoặc POST đặt order. Lỗi không chắc chắn của order
+vẫn giữ reservation và dừng, không phát lại giao dịch.
+
+Nếu đang dùng bản trước: tải ZIP bản mới, đóng bot/Chrome, chỉ chép đè
+`ai_bot.py` và `polymarket_arb/secure_bridge.py` vào đúng chỗ trong thư mục cũ.
+Giữ nguyên `.env.ai`, `.venv` và journal. Không cần cài lại dependency cho bản
+chẩn đoán này. Chạy lại `check_account.bat` và gửi các dòng `SDK NETWORK`,
+`SDK HTTP`, `STOPPED` để xác định API hỏng. Không gửi file cấu hình hay keys.
