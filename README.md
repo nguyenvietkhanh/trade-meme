@@ -1,3 +1,10 @@
+> Phân trang: `DISCOVERY_WINDOW_PAGES=10` đặt cửa sổ quét của client là 1000
+> dòng Gamma thô; cursor quay vòng trong cửa sổ này thay vì tăng vô hạn.
+> Đây không phải thông số giới hạn API được khẳng định từ tài liệu, và không phải
+> quét toàn bộ thị trường. MAX_PAGES vẫn giới hạn request từng vòng.
+> HTTP 422 chưa rõ nguyên nhân không tự retry/nuốt lỗi: mã lỗi, stage, offset/limit
+> và query validation an toàn được lưu trong `data/api_stop.json`.
+
 > Scanner error diagnostics: API ERROR lines/CSV now include safe error code,
 > stage (gamma/metadata/YES book/NO book) and attempts. Temporary Chrome connection
 > failures get bounded GET-only retries; 403/challenges do not. Three consecutive

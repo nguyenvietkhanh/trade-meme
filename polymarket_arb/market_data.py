@@ -28,6 +28,8 @@ class APIError(RuntimeError):
         self.http_status = http_status
         self.attempts = attempts
         self.stage = "unknown"
+        self.request_parameters = {}
+        self.validation = []
 
 
 def safe_failure(exc):
@@ -73,7 +75,10 @@ class Requests:
                 retryable = code in TRANSIENT_BROWSER or status in (429, 500, 502, 503, 504) or (isinstance(exc, (TimeoutError, urllib.error.URLError, CurlReadError)) and not isinstance(exc, urllib.error.HTTPError))
                 if not retryable or attempt == self.config.retries:
                     # No exception body/URL/query dump (future auth must never leak).
-                    raise APIError("API read failed: " + code, code=code, http_status=status, attempts=attempt+1) from None
+                    error = APIError("API read failed: " + code, code=code, http_status=status, attempts=attempt+1)
+                    error.validation = getattr(exc, "public_validation", [])
+                    if isinstance(exc, urllib.error.HTTPError): exc.close()
+                    raise error from None
                 headers = getattr(exc, "headers", {}) or {}
                 retry_after = headers.get("Retry-After", headers.get("retry-after", "0"))
                 try: delay = min(30, max(0, float(retry_after)))
@@ -91,6 +96,9 @@ class Requests:
             return self.call(lambda: self.read_json(origin, path, params))
         except APIError as exc:
             exc.stage = "gamma_markets" if origin == GAMMA else "fee_metadata" if path.startswith("/clob-markets/") else "clob_read"
+            if origin == GAMMA and path == "/markets":
+                exc.request_parameters = {k: v for k, v in (params or {}).items()
+                                          if k in ("offset", "limit") and type(v) is int}
             raise
 
     def read_json(self, origin, path, params=None):
@@ -221,8 +229,11 @@ class MarketData:
         # Resume after the last inspected raw Gamma row, not the same first N markets.
         # Offset pagination is best effort when Gamma ordering changes mid-scan.
         for _ in range(self.config.max_pages):
+            window_size = self.config.discovery_window_pages * 100
+            if self.discovery_offset >= window_size: self.discovery_offset = 0
             offset = self.discovery_offset
-            rows = self.requests.get(GAMMA, "/markets", {"active": "true", "closed": "false", "limit": 100, "offset": offset})
+            page_limit = min(100, window_size - offset)
+            rows = self.requests.get(GAMMA, "/markets", {"active": "true", "closed": "false", "limit": page_limit, "offset": offset})
             if not isinstance(rows, list): raise DataError("INVALID_GAMMA_RESPONSE")
             if not rows:
                 self.discovery_offset = 0
@@ -234,10 +245,10 @@ class MarketData:
                 if market and market.condition not in seen:
                     seen.add(market.condition); result.append(market)
                     if len(result) >= self.config.max_markets:
-                        if index == len(rows)-1 and len(rows) < 100:
+                        if self.discovery_offset >= window_size or index == len(rows)-1 and len(rows) < page_limit:
                             self.discovery_offset = 0
                         return result
-            if len(rows) < 100:
+            if len(rows) < page_limit or self.discovery_offset >= window_size:
                 self.discovery_offset = 0
                 break
         return result

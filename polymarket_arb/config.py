@@ -30,6 +30,7 @@ class Config:
     request_spacing: float = 0.25
     max_markets: int = 50
     max_pages: int = 10
+    discovery_window_pages: int = 10
     retries: int = 3
     output_dir: Path = Path("data")
     stop_file: Path = Path("STOP")
@@ -49,7 +50,7 @@ class Config:
         for name in ("interval", "max_book_age", "max_book_skew", "request_spacing"):
             if number(getattr(self, name)) <= 0:
                 raise ValueError(name + " must be positive")
-        for name in ("max_markets", "max_pages"):
+        for name in ("max_markets", "max_pages", "discovery_window_pages"):
             if getattr(self, name) <= 0:
                 raise ValueError(name + " must be positive")
         if self.retries < 0 or self.retries > 8:
@@ -72,7 +73,7 @@ class Config:
         for name in ("interval", "max_book_age", "max_book_skew", "request_spacing"):
             if name.upper() in os.environ:
                 values[name] = float(number(os.environ[name.upper()]))
-        for name in ("max_markets", "max_pages", "retries"):
+        for name in ("max_markets", "max_pages", "discovery_window_pages", "retries"):
             if name.upper() in os.environ:
                 values[name] = int(os.environ[name.upper()])
         for name in ("output_dir", "stop_file"):

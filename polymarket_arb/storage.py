@@ -47,5 +47,11 @@ class Storage:
         (self.sample_dir / filename).write_text(json.dumps(row, indent=2, default=str), encoding="utf-8")
         self.sampled.add(key)
 
+    def api_stop(self, exc):
+        row = {"time": datetime.now(timezone.utc).isoformat(), "code": exc.safe_code,
+               "stage": exc.stage, "attempts": exc.attempts,
+               "parameters": exc.request_parameters, "validation": exc.validation}
+        (self.csv_path.parent / "api_stop.json").write_text(json.dumps(row, indent=2), encoding="utf-8")
+
     def close(self):
         self.db.close()

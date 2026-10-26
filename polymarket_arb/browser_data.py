@@ -21,6 +21,31 @@ def allowed(url):
         return False
 
 
+def validation_fields(body):
+    # Retain query field names/numeric bounds only, never arbitrary server text.
+    if len(body) > 32768: return []
+    try:
+        payload = json.loads(body)
+        items = payload.get("detail", []) if isinstance(payload, dict) else []
+        result = []
+        for item in items[:8] if isinstance(items, list) else []:
+            if not isinstance(item, dict): continue
+            loc = item.get("loc", [])
+            if not isinstance(loc, list) or len(loc) < 2 or loc[0] != "query" or loc[-1] not in ("offset", "limit", "active", "closed"):
+                continue
+            row = {"field": loc[-1]}
+            kind = item.get("type", "")
+            if isinstance(kind, str) and re.fullmatch(r"[a-zA-Z0-9_]{1,64}", kind): row["kind"] = kind
+            ctx = item.get("ctx", {})
+            if isinstance(ctx, dict):
+                for key in ("le", "lt", "ge", "gt"):
+                    value = ctx.get(key)
+                    if type(value) is int and 0 <= value <= 1000000: row[key] = value
+            result.append(row)
+        return result
+    except (ValueError, TypeError, UnicodeError): return []
+
+
 class ChromeReader:
     def __init__(self):
         self.driver = self.browser = self.context = self.page = None
@@ -58,7 +83,11 @@ class ChromeReader:
             if response is None: raise BrowserReadError("BROWSER_EMPTY_RESPONSE")
             if not allowed(response.url): raise BrowserReadError("BROWSER_EXTERNAL_REDIRECT")
             if response.status != 200:
-                raise urllib.error.HTTPError(url, response.status, "Public browser read failed", response.headers, None)
+                error = urllib.error.HTTPError(url, response.status, "Public browser read failed", response.headers, None)
+                if response.status == 422:
+                    try: error.public_validation = validation_fields(response.body())
+                    except Exception: error.public_validation = []
+                raise error
             length = response.headers.get("content-length")
             if length and int(length) > max_bytes: raise BrowserReadError("BROWSER_RESPONSE_TOO_LARGE")
             body = response.body()

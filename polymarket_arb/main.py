@@ -83,7 +83,10 @@ def main(argv=None):
     except (KeyboardInterrupt, InterruptedError):
         print("Scanner stopped; no order sent."); return 0
     except APIError as exc:
-        print("Scanner stopped: " + str(exc) + "; check network policy and official API availability.", file=sys.stderr)
+        if storage: storage.api_stop(exc)
+        print("Scanner stopped: " + str(exc) + f" stage={exc.stage} attempts={exc.attempts} parameters={exc.request_parameters}", file=sys.stderr)
+        if exc.validation: print("API validation: " + str(exc.validation), file=sys.stderr)
+        print("Diagnostics saved to OUTPUT_DIR/api_stop.json when storage is initialized.", file=sys.stderr)
         return 1
     except (RuntimeError, ValueError):
         print("Scanner stopped: invalid configuration, unavailable SDK/API or output failure. See README.", file=sys.stderr)

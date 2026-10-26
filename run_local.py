@@ -7,7 +7,7 @@ def load_env(path=Path(".env")):
     if not path.exists(): return
     allowed = {"DRY_RUN", "FORCE_IPV4", "PUBLIC_HTTP_BACKEND", "MIN_LIQUIDITY", "MIN_VOLUME", "MIN_EDGE_PCT", "SLIPPAGE_BPS",
                "MAX_USD_PER_TRADE", "MAX_OPEN_EXPOSURE", "DAILY_LOSS_LIMIT", "INTERVAL",
-               "MAX_BOOK_AGE", "MAX_BOOK_SKEW", "REQUEST_SPACING", "MAX_MARKETS", "MAX_PAGES",
+               "MAX_BOOK_AGE", "MAX_BOOK_SKEW", "REQUEST_SPACING", "MAX_MARKETS", "MAX_PAGES", "DISCOVERY_WINDOW_PAGES",
                "RETRIES", "OUTPUT_DIR", "STOP_FILE"}
     for line in path.read_text(encoding="utf-8-sig").splitlines():
         line = line.strip()

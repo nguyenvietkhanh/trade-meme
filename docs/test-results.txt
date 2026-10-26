@@ -13,6 +13,9 @@ test_maximum_response_size (test_browser.BrowserTests.test_maximum_response_size
 test_origin_scheme_and_credentials_restrictions (test_browser.BrowserTests.test_origin_scheme_and_credentials_restrictions) ... ok
 test_public_json_navigation (test_browser.BrowserTests.test_public_json_navigation) ... ok
 test_route_denies_external_hosts_and_write_methods (test_browser.BrowserTests.test_route_denies_external_hosts_and_write_methods) ... ok
+test_422_preserves_stage_parameters_and_validation_without_retry (test_discovery_window.DiscoveryWindowTests.test_422_preserves_stage_parameters_and_validation_without_retry) ... ok
+test_offset_stays_in_configured_window (test_discovery_window.DiscoveryWindowTests.test_offset_stays_in_configured_window) ... ok
+test_only_safe_validation_fields_are_exposed (test_discovery_window.DiscoveryWindowTests.test_only_safe_validation_fields_are_exposed) ... ok
 test_errors_classified_without_proxy_credentials (test_local.DiagnosticTests.test_errors_classified_without_proxy_credentials) ... ok
 test_dotenv_is_data_and_does_not_load_key (test_local.LocalTests.test_dotenv_is_data_and_does_not_load_key) ... ok
 test_environment_overrides_file (test_local.LocalTests.test_environment_overrides_file) ... ok
@@ -56,6 +59,6 @@ test_unprofitable_diagnostic (test_scanner.SafetyTests.test_unprofitable_diagnos
 test_v2_position_ids_and_unknown_version (test_scanner.SafetyTests.test_v2_position_ids_and_unknown_version) ... ok
 
 ----------------------------------------------------------------------
-Ran 56 tests in 0.508s
+Ran 59 tests in 0.578s
 
 OK
