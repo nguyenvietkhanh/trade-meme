@@ -36,14 +36,21 @@ def scan(config, data, storage):
                          fee_rate=fees.rate, fee_exponent=fees.exponent)
             if estimate: best.append((market, estimate))
             errors = 0
-        except APIError:
+        except APIError as exc:
             errors += 1
-            record(market, "API_ERROR", "Public API read failed")
-            if errors >= 3: raise APIError("Three consecutive market API failures; scanner stopped")
+            reason = f"{exc.safe_code} stage={exc.stage} attempts={exc.attempts}"
+            record(market, "API_ERROR", reason)
+            storage.sample(market, "API_ERROR", {"code": exc.safe_code, "stage": exc.stage,
+                "http_status": exc.http_status, "attempts": exc.attempts})
+            print(f"API ERROR | market={market.id} | {reason} | consecutive={errors}/3", flush=True)
+            if errors >= 3:
+                raise APIError("Three consecutive market API failures; last=" + reason)
         except DataError as exc:
+            errors = 0
             record(market, "SKIP_DATA", str(exc))
             storage.sample(market, str(exc), exc.details)
         except (ValueError, TypeError, KeyError, ArithmeticError):
+            errors = 0
             record(market, "SKIP_DATA", "Missing, stale, inconsistent or unsupported data")
     print(f"READ ONLY | scanned {len(markets)} | estimates {len(best)} | fees/docs not production-verified")
     print("RESULTS | " + " | ".join(f"{key}={value}" for key, value in sorted(counts.items())))

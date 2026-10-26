@@ -22,7 +22,6 @@ pause
 exit /b 0
 :fail
 echo Stopped. No real order sent. Check output or latest verification ZIP.
-echo CHROME_START_FAILED: check Google Chrome is installed.
-echo CAPTCHA or access denied: stop; this program does not bypass access controls.
+echo Send the API ERROR lines or latest verification ZIP for diagnosis.
 pause
 exit /b 1

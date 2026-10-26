@@ -1,5 +1,6 @@
 import json
 import random
+import re
 import time
 import urllib.error
 import urllib.parse
@@ -21,7 +22,29 @@ class DataError(ValueError):
 
 
 class APIError(RuntimeError):
-    pass
+    def __init__(self, message, *, code="API_READ_FAILED", http_status=None, attempts=1):
+        super().__init__(message)
+        self.safe_code = code
+        self.http_status = http_status
+        self.attempts = attempts
+        self.stage = "unknown"
+
+
+def safe_failure(exc):
+    status = getattr(exc, "code", None) or getattr(exc, "status_code", None)
+    status = status if type(status) is int and 100 <= status <= 599 else None
+    if status: return "HTTP_" + str(status), status
+    browser = getattr(exc, "browser_error_code", None)
+    if isinstance(browser, str) and re.fullmatch(r"[A-Z_]{1,80}", browser):
+        return browser, None
+    if isinstance(exc, CurlReadError): return "CURL_EXIT_" + str(exc.curl_exit_code), None
+    if isinstance(exc, TimeoutError): return "CONNECTION_TIMEOUT", None
+    return "API_READ_FAILED", None
+
+
+TRANSIENT_BROWSER = {"BROWSER_ERR_CONNECTION_RESET", "BROWSER_ERR_CONNECTION_CLOSED",
+                     "BROWSER_ERR_CONNECTION_TIMED_OUT", "BROWSER_ERR_TIMED_OUT",
+                     "BROWSER_TIMEOUT", "BROWSER_CONNECTION_FAILED"}
 
 
 class NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -45,13 +68,14 @@ class Requests:
             try:
                 return fn()
             except Exception as exc:
-                status = getattr(exc, "code", None) or getattr(exc, "status_code", None)
-                retryable = status in (429, 500, 502, 503, 504) or (isinstance(exc, (TimeoutError, urllib.error.URLError, CurlReadError)) and not isinstance(exc, urllib.error.HTTPError))
+                if isinstance(exc, APIError): raise
+                code, status = safe_failure(exc)
+                retryable = code in TRANSIENT_BROWSER or status in (429, 500, 502, 503, 504) or (isinstance(exc, (TimeoutError, urllib.error.URLError, CurlReadError)) and not isinstance(exc, urllib.error.HTTPError))
                 if not retryable or attempt == self.config.retries:
                     # No exception body/URL/query dump (future auth must never leak).
-                    raise APIError("API read failed" + (f" HTTP_{status}" if status else "")) from None
+                    raise APIError("API read failed: " + code, code=code, http_status=status, attempts=attempt+1) from None
                 headers = getattr(exc, "headers", {}) or {}
-                retry_after = headers.get("Retry-After", "0")
+                retry_after = headers.get("Retry-After", headers.get("retry-after", "0"))
                 try: delay = min(30, max(0, float(retry_after)))
                 except ValueError: delay = 0
                 delay = max(delay, min(30, 2 ** attempt + random.random()))
@@ -63,7 +87,11 @@ class Requests:
     def get(self, origin, path, params=None):
         if origin not in (GAMMA, CLOB) or not path.startswith("/") or path.startswith("//") or "?" in path:
             raise ValueError("Non-official endpoint blocked")
-        return self.call(lambda: self.read_json(origin, path, params))
+        try:
+            return self.call(lambda: self.read_json(origin, path, params))
+        except APIError as exc:
+            exc.stage = "gamma_markets" if origin == GAMMA else "fee_metadata" if path.startswith("/clob-markets/") else "clob_read"
+            raise
 
     def read_json(self, origin, path, params=None):
         if origin not in (GAMMA, CLOB) or not path.startswith("/") or path.startswith("//") or "?" in path:
@@ -225,8 +253,16 @@ class MarketData:
                 "metadata_keys": sorted(info)} if isinstance(info, dict) else {"metadata_type": type(info).__name__}
             raise
         # Public SDK calls only. Sequential snapshots; freshness/skew checked after both reads.
-        yes = self.requests.call(lambda: self.client.get_order_book(market.yes))
-        no = self.requests.call(lambda: self.client.get_order_book(market.no))
+        try:
+            yes = self.requests.call(lambda: self.client.get_order_book(market.yes))
+        except APIError as exc:
+            exc.stage = "book_yes"
+            raise
+        try:
+            no = self.requests.call(lambda: self.client.get_order_book(market.no))
+        except APIError as exc:
+            exc.stage = "book_no"
+            raise
         now = time.time()
         yt, ym = check_book(yes, market, market.yes, now, self.config.max_book_age)
         nt, nm = check_book(no, market, market.no, now, self.config.max_book_age)

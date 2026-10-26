@@ -1,3 +1,9 @@
+test_challenge_and_start_failure_are_not_retried (test_api_failures.APIFailureTests.test_challenge_and_start_failure_are_not_retried) ... ok
+test_data_skip_breaks_consecutive_api_failure_sequence (test_api_failures.APIFailureTests.test_data_skip_breaks_consecutive_api_failure_sequence) ... ok
+test_launcher_does_not_label_every_failure_chrome_start (test_api_failures.APIFailureTests.test_launcher_does_not_label_every_failure_chrome_start) ... ok
+test_retry_exhaustion_keeps_safe_code_and_attempt_count (test_api_failures.APIFailureTests.test_retry_exhaustion_keeps_safe_code_and_attempt_count) ... ok
+test_three_actual_consecutive_errors_print_cause_then_stop (test_api_failures.APIFailureTests.test_three_actual_consecutive_errors_print_cause_then_stop) ... ok
+test_transient_chrome_reset_retries_and_recovers (test_api_failures.APIFailureTests.test_transient_chrome_reset_retries_and_recovers) ... ok
 test_browser_error_report_excludes_raw_exception (test_browser.BrowserTests.test_browser_error_report_excludes_raw_exception) ... ok
 test_challenge_and_denial_are_not_automated (test_browser.BrowserTests.test_challenge_and_denial_are_not_automated) ... ok
 test_close_releases_resources (test_browser.BrowserTests.test_close_releases_resources) ... ok
@@ -45,6 +51,6 @@ test_unprofitable_diagnostic (test_scanner.SafetyTests.test_unprofitable_diagnos
 test_v2_position_ids_and_unknown_version (test_scanner.SafetyTests.test_v2_position_ids_and_unknown_version) ... ok
 
 ----------------------------------------------------------------------
-Ran 45 tests in 0.476s
+Ran 51 tests in 0.635s
 
 OK

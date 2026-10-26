@@ -58,7 +58,7 @@ class ChromeReader:
             if response is None: raise BrowserReadError("BROWSER_EMPTY_RESPONSE")
             if not allowed(response.url): raise BrowserReadError("BROWSER_EXTERNAL_REDIRECT")
             if response.status != 200:
-                raise urllib.error.HTTPError(url, response.status, "Public browser read failed", {}, None)
+                raise urllib.error.HTTPError(url, response.status, "Public browser read failed", response.headers, None)
             length = response.headers.get("content-length")
             if length and int(length) > max_bytes: raise BrowserReadError("BROWSER_RESPONSE_TOO_LARGE")
             body = response.body()
@@ -73,7 +73,7 @@ class ChromeReader:
             raise
         except Exception as exc:
             match = re.search(r"net::(ERR_[A-Z_]+)", str(exc))
-            code = "BROWSER_" + match.group(1) if match else "BROWSER_CONNECTION_FAILED"
+            code = "BROWSER_" + match.group(1) if match else "BROWSER_TIMEOUT" if type(exc).__name__ == "TimeoutError" else "BROWSER_CONNECTION_FAILED"
             raise BrowserReadError(code) from None
 
     def close(self):

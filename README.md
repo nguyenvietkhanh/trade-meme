@@ -1,3 +1,9 @@
+> Scanner error diagnostics: API ERROR lines/CSV now include safe error code,
+> stage (gamma/metadata/YES book/NO book) and attempts. Temporary Chrome connection
+> failures get bounded GET-only retries; 403/challenges do not. Three consecutive
+> market API failures still stop. Data skips break that consecutive-failure count.
+> Launcher no longer labels every scanner failure CHROME_START_FAILED.
+
 > Cập nhật log: mỗi vòng in RESULTS/BLOCKS (NO_EDGE, SKIP_DATA và lý do riêng).
 > Discovery tiếp tục từ raw offset đã đọc thay vì luôn bắt đầu ở 50 market đầu;
 > offset vẫn best effort khi Gamma thay đổi thứ tự. Mẫu public bị chặn lưu ở
