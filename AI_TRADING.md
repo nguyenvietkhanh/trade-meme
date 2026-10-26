@@ -135,7 +135,7 @@ chẩn đoán này. Chạy lại `check_account.bat` và gửi các dòng `SDK N
 
 ## Cập nhật kiểm tra ví trực tiếp trên chain
 
-Account check hiện in `revision=polygon-wallet-read-v1`. SDK vẫn tạo/derive
+Account check hiện in `revision=balance-refresh-ack-v2`. SDK vẫn tạo/derive
 credentials chính thức; HTTP 400 lúc tạo key có thể dẫn sang derive thành công.
 Chương trình kiểm tra signer OWNER, chain 137 và `eth_getCode` của đúng ví
 contract thay cho `/deployed` của relayer. Không gọi relayer deployment-status
@@ -148,3 +148,19 @@ Phản hồi 2xx không phải JSON bị chặn mà không in body. Schema SDK k
 Polygon bị reset thì vẫn dừng sau số lần đọc thử lại đã cấu hình, không suy
 đoán ví đã triển khai hoặc mặc định số dư. 90 unit tests và fixture Chromium
 offline đã qua; cần kiểm tra lại trên mạng và tài khoản thật của người dùng.
+
+## Phản hồi refresh số dư
+
+`GET /balance-allowance/update` được đọc bằng `get_bytes`: chấp nhận HTTP 2xx
+với acknowledgement rỗng, plain `OK` hoặc JSON; JSON có trường error không rỗng
+vẫn bị chặn. Ngoại lệ rỗng/OK chỉ áp dụng đúng endpoint refresh, không áp dụng
+cho auth, số dư, order hay RPC. Phản hồi HTML không được chấp nhận.
+
+Sau refresh, chương trình luôn gọi `get_balance_allowance` và kiểm tra dữ liệu
+số dư/allowance của SDK. Không suy ra số dư từ acknowledgement, không dùng số
+dư giả khi đọc thất bại. Bản cập nhật có 95 unit tests và fixture Chromium
+offline đã qua; chưa được xác minh trên tài khoản thật của người dùng.
+
+Để cập nhật từ bản trước, thay ba file cùng phiên bản: `ai_bot.py`,
+`polymarket_arb/secure_bridge.py`, `polymarket_arb/ai_engine.py`. Không thay
+`.env.ai`, `.venv` hay journal; không cần cài thêm dependency.

@@ -155,11 +155,16 @@ class SDKBridge(httpx.BaseTransport):
             }''',{'url':str(request.url),'method':request.method,'headers':headers,'body':body.decode() if body else None})
             self.last_error=None
             if 200<=result['status']<300:
+                acknowledgement=(host==CLOB and request.method=='GET' and
+                                 request.url.path=='/balance-allowance/update' and
+                                 result['text'].strip() in ('','OK'))
                 try:json.loads(result['text'])
                 except (ValueError,TypeError):
                     # Never print the response: even a malformed auth response may contain secrets.
-                    self.last_error=f'SDK_{stage}_NON_JSON_RESPONSE'
-                    raise GuardError(self.last_error)
+                    if not acknowledgement:
+                        self.last_error=f'SDK_{stage}_NON_JSON_RESPONSE'
+                        raise GuardError(self.last_error)
+                    print(f'SDK ACK | stage={stage} | status={int(result["status"])} | balance must be read separately',flush=True)
             if result['status']>=400:
                 # No body, query, wallet, auth header or credential is logged.
                 self.last_error=f'SDK_{stage}_HTTP_{int(result["status"])}'

@@ -34,7 +34,7 @@ Bản này không chứa script wrap: cần kiểm tra đúng asset, spender, v�
 
 ## Kiểm chứng
 
-90 unit tests đã qua; fixture transport Chromium offline đã qua, dùng dữ liệu/khóa giả lập.
+95 unit tests đã qua; fixture transport Chromium offline đã qua, dùng dữ liệu/khóa giả lập.
 **Chưa xác thực signer thật, chưa gọi River bằng API của bạn và chưa kiểm chứng BUY/SELL/settlement production trên tài khoản của bạn.**
 Không coi test pass là xác nhận đã giao dịch thật. Không có công cụ tự sửa journal sau lệnh UNKNOWN; giữ nguyên trạng thái và kiểm tra tài khoản trước khi xử lý.
 

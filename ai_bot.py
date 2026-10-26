@@ -27,7 +27,7 @@ def app(argv=None):
     settings=AISettings.from_env()
     if args.live and settings.dry_run:raise GuardError('SET_DRY_RUN_FALSE_EXPLICITLY_TO_ARM_LIVE')
     if not settings.dry_run and not args.live and not args.check_account:raise GuardError('LIVE_REQUIRES_EXPLICIT_LIVE_FLAG')
-    if args.check_account:print('ACCOUNT CHECK | revision=polygon-wallet-read-v1 | no financial order',flush=True)
+    if args.check_account:print('ACCOUNT CHECK | revision=balance-refresh-ack-v2 | no financial order',flush=True)
     bridge=SDKBridge();client=data=journal=None
     try:
         if Path('STOP').exists():raise GuardError('STOP_FILE')

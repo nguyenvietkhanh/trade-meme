@@ -31,7 +31,14 @@ class Account:
         kind='COLLATERAL' if asset is None else 'CONDITIONAL-V2' if version=='v2' else 'CONDITIONAL'
         params={'asset_type':kind,'signature_type':SIGNATURE[self.client.wallet_type]}
         if asset:params['token_id']=asset
-        self.client._ctx.secure_clob.get_json('/balance-allowance/update',params=params)
+        # Refresh is an acknowledgement, not the authoritative balance payload.
+        # Some deployments return an empty 2xx body or plain OK here.
+        ack=self.client._ctx.secure_clob.get_bytes('/balance-allowance/update',params=params).strip()
+        if ack and ack!=b'OK':
+            try:payload=json.loads(ack)
+            except (ValueError,TypeError):raise GuardError('BALANCE_REFRESH_INVALID_ACKNOWLEDGEMENT') from None
+            if isinstance(payload,dict) and payload.get('error'):
+                raise GuardError('BALANCE_REFRESH_REPORTED_ERROR')
         value=self.client.get_balance_allowance(asset_type=kind,asset_id=asset)
         if value.balance<0 or any(x<0 for x in value.allowances.values()):raise GuardError('INVALID_ACCOUNT_BALANCE')
         return value
