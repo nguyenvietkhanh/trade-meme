@@ -23,14 +23,14 @@ class PricingTests(unittest.TestCase):
                         min_edge_pct=kw.get("edge", 0), slippage_bps=kw.get("slip", 0))
 
     def test_fee_matches_pinned_official_sdk(self):
-        from py_clob_client_v2.fees import adjust_buy_amount_for_fees
-        for p in (D("0.1"), D("0.5"), D("0.9")):
-            for exponent in (1, 2):
-                # Function's return at exact balance subtracts platform fee; no builder fee.
-                amount = 10
-                adjusted = adjust_buy_amount_for_fees(amount, float(p), amount, .25, exponent, 0)
-                ours = (D(amount) / p) * Fees(D(".25"), exponent).per_share(p)
-                self.assertAlmostEqual(float(ours), amount - adjusted, places=10)
+        from polymarket._internal.actions.orders.market import adjust_buy_amount_for_fees
+        from polymarket._internal.actions.orders.market_data import PlatformFeeInfo
+        for p in (D("0.1"),D("0.5"),D("0.9")):
+            for exponent in (1,2):
+                fee = Fees(D(".25"), exponent)
+                adjusted = adjust_buy_amount_for_fees(amount=D(10),price=p,max_spend=D(10),
+                    fee=PlatformFeeInfo(rate=D(".25"),exponent=D(exponent)))
+                self.assertEqual(adjusted * (1 + fee.per_share(p)/p), D(10))
 
     def test_best_ask_is_not_entire_depth(self):
         e = self.run_price(asks((.4, 2), (.7, 100)), asks((.5, 100)))

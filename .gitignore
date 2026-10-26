@@ -7,3 +7,5 @@ __pycache__/
 data/
 STOP
 verification/
+
+!.env.ai.example

@@ -38,14 +38,14 @@ class NetworkTests(unittest.TestCase):
                 self.assertEqual(path, '/book')
                 return {'asset_id':params['token_id'], 'market':market.condition,
                         'timestamp':str(int(time.time()*1000)), 'min_order_size':'1',
-                        'asks':[{'price':'.4','size':'10'}]}
+                        'asks':[{'price':'.4','size':'10'}], 'bids':[], 'tick_size':'.01', 'neg_risk':False, 'hash':'fixture'}
             with patch.object(data.requests, 'read_json', side_effect=read) as transport:
                 result = data.snapshot(market)
             self.assertEqual(transport.call_count, 3)
             self.assertEqual(result[0]['asset_id'], '111')
             self.assertEqual(result[1]['asset_id'], '222')
-            with self.assertRaises(RuntimeError): data.client._post('/order')
-            with self.assertRaises(ValueError): data.client._get('https://example.com/book')
+            self.assertFalse(hasattr(data.client, 'post_order'))
+            data.close()
 
     def test_ipv4_env_flag_validation(self):
         with patch.dict('os.environ', {'FORCE_IPV4':'false'}):

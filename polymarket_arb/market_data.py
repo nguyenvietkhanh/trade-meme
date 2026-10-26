@@ -126,6 +126,9 @@ class Market:
     yes: str
     no: str
     version: str = "v1"
+    description: str = ""
+    end_date: str = ""
+    resolution_source: str = ""
 
 
 def array(value):
@@ -158,7 +161,9 @@ def market_from_gamma(raw, config):
         return None
     try: int(condition[2:], 16)
     except ValueError: return None
-    return Market(str(raw["id"]), condition, str(raw.get("question", ""))[:200], tokens[names.index("yes")], tokens[names.index("no")], version)
+    return Market(str(raw["id"]), condition, str(raw.get("question", ""))[:200], tokens[names.index("yes")], tokens[names.index("no")], version,
+                  str(raw.get("description", ""))[:6000], str(raw.get("endDate", "")),
+                  str(raw.get("resolutionSource", ""))[:1000])
 
 
 def fee_parameters(info, market):
@@ -201,26 +206,31 @@ class MarketData:
         self.config, self.requests = config, Requests(config)
         if client is None:
             try:
-                from py_clob_client_v2 import ClobClient
+                from polymarket import PublicClient
+                from dataclasses import replace
             except ImportError:
-                raise RuntimeError("Install requirements.txt (py-clob-client-v2 required)") from None
-            # No key, credentials, funder, order builder or authentication.
+                raise RuntimeError("Install requirements.txt (polymarket-client required)") from None
             adapter = self.requests
-            class ReadOnlyV2Client(ClobClient):
-                # Pinned SDK 1.2.1 public reads delegate through _get. Keep SDK
-                # methods, but use the same IPv4/TLS/proxy/size-limited transport.
-                def _get(self, endpoint, headers=None, params=None):
-                    parsed = urllib.parse.urlsplit(endpoint)
-                    if parsed.scheme != "https" or parsed.netloc != "clob.polymarket.com" or parsed.query or parsed.fragment or headers:
-                        raise ValueError("Unexpected SDK read target")
-                    return adapter.read_json(CLOB, parsed.path, params)
-
-                def _post(self, *args, **kwargs):
-                    raise RuntimeError("STAGE_1_READ_ONLY")
-
-                _delete = _put = _post
-
-            client = ReadOnlyV2Client(host=CLOB, chain_id=137, retry_on_error=False)
+            class ReadTransport:
+                def get_json(self, path, *, params=None, headers=None):
+                    if headers: raise ValueError("Public reads cannot authenticate")
+                    return adapter.read_json(CLOB, path, params)
+                def close(self): pass
+            class PublicBooks:
+                def __init__(self):
+                    self.sdk = PublicClient()
+                    self.sdk._ctx.clob.close()
+                    self.sdk._ctx = replace(self.sdk._ctx, clob=ReadTransport())
+                def get_order_book(self, token):
+                    b = self.sdk.get_order_book(asset_id=token)
+                    return {"market": str(b.condition_id), "asset_id": str(b.asset_id),
+                            "timestamp": str(int(b.timestamp.timestamp()*1000)) if b.timestamp else None,
+                            "asks": [{"price":str(l.price),"size":str(l.size)} for l in b.asks],
+                            "bids": [{"price":str(l.price),"size":str(l.size)} for l in b.bids],
+                            "tick_size":str(b.tick_size),"min_order_size":str(b.min_order_size),
+                            "neg_risk":b.neg_risk,"hash":b.hash}
+                def close(self): self.sdk.close()
+            client = PublicBooks()
         self.client = client
         self.discovery_offset = 0
 
@@ -281,3 +291,7 @@ class MarketData:
             raise DataError("BOOK_SKEW", {"yes_timestamp": yt, "no_timestamp": nt,
                 "max_skew_seconds": self.config.max_book_skew})
         return yes, no, fees, max(ym, nm), yt, nt
+
+    def close(self):
+        close = getattr(self.client, "close", None)
+        if close: close()

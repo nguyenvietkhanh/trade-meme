@@ -1,5 +1,4 @@
 # Direct and transitive dependencies, pinned after clean venv install.
-# Official V2 only; never install legacy py-clob-client.
 annotated-types==0.8.0
 anyio==4.15.1
 bitarray==3.12.3
@@ -26,9 +25,6 @@ iniconfig==2.3.1
 packaging==26.3
 parsimonious==0.10.0
 pluggy==1.7.0
-poly_eip712_structs==0.0.1
-py_clob_client_v2==1.2.1
-py_order_utils==0.3.2
 pycryptodome==3.24.1
 pydantic==2.14.1
 pydantic_core==2.50.1
@@ -43,3 +39,6 @@ typing_extensions==4.16.0
 playwright==1.62.0
 pyee==13.0.1
 greenlet==3.5.5
+polymarket-client==0.14.0
+msgpack==1.2.3
+websockets==15.0.1

@@ -68,6 +68,7 @@ def main(argv=None):
     parser.add_argument("--loop", action="store_true", help="Repeat scans at INTERVAL seconds")
     args = parser.parse_args(argv)
     storage = None
+    data = None
     try:
         config = Config.from_env()
         if config.stop_file.exists(): raise InterruptedError("STOP_FILE")
@@ -95,6 +96,7 @@ def main(argv=None):
         print("Scanner stopped: storage/network unavailable; no order sent.", file=sys.stderr); return 1
     finally:
         if storage: storage.close()
+        if data: data.close()
         from .browser_data import close_browser
         close_browser()
 
