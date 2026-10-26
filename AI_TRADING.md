@@ -1,185 +1,118 @@
-# AI YES/NO local — SDK chính thức 0.14.0
+# AI Polymarket local — news-evidence-v4
 
-Đây là nhánh **directional**: AI chọn BUY_YES, BUY_NO, SELL vị thế của bot, hoặc
-HOLD. Không phải arbitrage mua hai phía; xác suất từ AI chưa được hiệu chuẩn và
-có thể sai. Bạn có thể mất toàn bộ phần vốn thử. Không có cam kết sinh lời.
+AI River chọn BUY YES / BUY NO / SELL / HOLD. Đây là giao dịch dự đoán theo
+xác suất, không phải arbitrage bảo đảm lợi nhuận. SDK chính thức được pin ở
+`polymarket-client==0.14.0`, Polygon 137. Mặc định `DRY_RUN=true`.
 
-## Trạng thái kiểm chứng
+## Cập nhật bản đang chạy trên Windows
 
-Đã đọc docs chính thức về ví/auth, pUSD, fee, đặt/quản lý lệnh, V2 migration.
-Đã cài SDK `polymarket-client==0.14.0` từ PyPI chính thức, kiểm tra wheel và API
-trong mã nguồn; package standalone cũ được bỏ khỏi dependencies.
-**Chưa xác thực ví, chưa gọi River, chưa gửi giao dịch tiền thật trên tài khoản
-của bạn.** Unit/fixture tests không chứng minh các bước đó hoạt động production.
+Đóng chương trình và Chrome do chương trình mở. Từ ZIP mới chép đè:
 
-Chỉ dùng ví hiện có, không tự deploy ví mới, approve token, wrap, split, merge,
-redeem hoặc chuyển tiền. Nếu thiếu approval thì dừng với mã rõ ràng; không tự
-cấp unlimited allowance. Dùng website Polymarket để quản lý approvals/redemption.
-Việc chọn loại ví dựa vào signer + địa chỉ tài khoản qua SDK; không suy từ email.
-Session key chưa được hỗ trợ trong bản này: signer phải là owner đúng tài khoản.
+- `ai_bot.py`
+- `news_check.py`
+- `check_news.bat`
+- Toàn bộ thư mục `polymarket_arb` (gộp vào đúng thư mục cũ, chọn Replace).
 
-## Windows: cài và kiểm tra
+Giữ nguyên `.env.ai`, `.venv` và journal ngoài thư mục tải về. Không có dependency
+mới; không cần cài lại để cập nhật từ derive-existing-v3.
 
-1. Giải nén vào thư mục riêng; chạy **setup_ai.bat**.
-2. Mở `.env.ai` bằng trình soạn thảo. Windows có thể ẩn phần mở rộng.
-3. Điền **trên máy bạn**:
-   - `POLYMARKET_WALLET_ADDRESS`: địa chỉ API wallet đã sao chép từ Polymarket.
-   - `SIGNER_PRIVATE_KEY`: khóa EVM của signer sở hữu đúng tài khoản Polymarket.
-     Không dùng seed phrase, không dùng khóa ví Solana, không dùng một khóa tạo mới.
-   - `MODEL_API_KEY`: API River của bạn. Đây không phải khóa Polymarket.
-4. Giữ `DRY_RUN=true`; chạy **check_account.bat**. Nó xác thực ví, kiểm tra chain
-   137, đọc cash/allowance và trạng thái journal. Lấy lại CLOB credentials đã có bằng GET derive
-   với chữ ký xác thực; không gửi lệnh, deploy, approve hay giao dịch on-chain.
-5. Chạy **start_ai.bat**: AI được gọi, quotes được kiểm tra, in đề xuất/dry-run;
-   không ký order giao dịch hay gửi order. L1 auth vẫn có chữ ký chứng minh signer.
+Cài lần đầu: Python 3.11+, Google Chrome, chạy `setup_ai.bat`, điền `.env.ai`
+trên máy bạn. Khóa signer phải là EVM owner của đúng API wallet; không dùng seed
+phrase hoặc khóa Solana. API River khác khóa signer. Không gửi file hoặc keys
+vào chat. Không nạp vào địa chỉ website ghi “for API use only”.
 
-Không gửi `.env.ai`, private key, seed phrase, OTP, API secret hoặc toàn bộ AppData
-vào chat. Chỉ điền khóa nếu đã có cách lấy khóa signer chính thức của tài khoản;
-không cần và không nên nạp thêm tiền để xử lý lỗi auth.
+## Tin tức thật được đưa vào model như thế nào
 
-## Bật thật một cách rõ ràng
+Theo yêu cầu bổ sung nghiên cứu, bản này mở thêm **news.google.com** ngoài
+Polymarket, RPC Polygon và River. Chỉ câu hỏi market công khai được gửi trong
+query RSS Google News. Không cần API key tin tức và không gửi wallet, chữ ký,
+credentials CLOB hoặc River tới Google.
 
-Sau khi đã xem account check và dry-run trên máy bạn:
+RSS được lấy qua Chrome profile riêng, GET đúng `/rss/search`, TLS bật, không
+đi theo redirect. Chặn credentials CLOB ở origin khác; không mở article link
+hoặc URL do token/model cung cấp. Không vượt CAPTCHA hay 403. RSS lỗi thì báo
+UNAVAILABLE/HTTP_..., không giả tạo tin.
 
-- Trong `.env.ai` đổi thành `DRY_RUN=false`.
-- Chạy **start_ai_live.bat** (có `--live`).
+Mỗi item có title, nhà xuất bản do RSS báo, URL Google News, published_at,
+retrieved_at và source ID. Chỉ giữ headline liên quan từ khóa market, đăng trong
+24h và không ở tương lai; tối đa 5 headline/market, 3 market mỗi lần gọi AI
+(cộng ưu tiên vị thế bot đang giữ). Cache 10 phút; lỗi cache 1 phút.
 
-Chỉ đổi file hoặc chỉ bấm launcher đều không đủ; cả hai phải bật. Đổi lại true
-để về mô phỏng, hoặc Ctrl+C/tạo file STOP trong thư mục app để dừng. STOP không
-đảo ngược order đã được chấp nhận và không tự bán vị thế. Không xóa journal.
-macOS/Linux dùng `.venv/bin/python ai_bot.py --check-account`, `--loop` hoặc
-`--loop --live` với cùng quy tắc môi trường.
+**Chỉ đọc tiêu đề RSS, không đọc toàn văn bài báo và không xác minh độc lập tính
+đúng của tin.** Hai publisher_host khác nhau là điều kiện trích dẫn tối thiểu,
+không chứng minh hai bên độc lập về sở hữu hay tin đúng. Headline có thể thiếu
+ngữ cảnh, giật tít hoặc mâu thuẫn; xác suất AI vẫn có thể sai.
 
-## Vốn động, trần thử 7 USD
+AI được nhận đúng nguồn đã thu thập, thời gian và luật resolution. Không được
+nhận khóa ký hoặc tự điều hướng web. Mọi headline/mô tả là dữ liệu không tin cậy,
+không phải lệnh. BUY mặc định cần dẫn source IDs đúng market, còn mới, từ ít nhất
+hai publisher_host. IDs giả, sai market, quá hạn bị từ chối. BUY không dẫn đủ
+nguồn chuyển thành HOLD. SELL vị thế bot có thể dựa trên rủi ro/giá khi không có
+tin mới. Luật confidence/edge/min-size/depth/fee vẫn áp dụng; không ép BUY.
 
-Không hardcode số dư 6.57 hay giả định ví có 7. Mỗi quyết định đọc lại balance
-pUSD và allowance CLOB, trừ hạn mức đã sử dụng; có order mở ngoài bot thì khóa
-lệnh mới để tránh chiếm dụng vốn. `MAX_USD_PER_TRADE` là giới hạn, không phải cỡ
-lệnh bắt buộc; AI chọn số tiền, depth/min-size/fee có thể khiến lệnh bị từ chối.
+NEWS_RESEARCH_ENABLED=true là mặc định dù file cấu hình cũ chưa có dòng này.
+Tắt rõ ràng bằng false sẽ quay về phân tích market-only và bỏ gate hai nguồn.
+Không coi chế độ market-only là có nghiên cứu tin tức.
 
-Bản test này dùng cách bảo thủ: **tổng BUY đã xác nhận cộng tiền tối đa đang chờ
-không vượt 7 USD trong toàn bộ đợt test**. Đây là tổng chi BUY, không chỉ exposure
-đang mở; tiền SELL/lãi không tự làm mới ngân sách. Khi xác nhận được debit thực,
-phần dự phòng phí chưa dùng được giải phóng. Không tự tăng ngân sách khi nạp tiền.
-Đổi MAX_TEST_BUDGET >7 bị từ chối. Phí AI River tính riêng trên tài khoản API,
-không thuộc 7 USD trading; có `MAX_MODEL_CALLS_PER_DAY` (mặc định 24, UTC).
+## Kiểm tra rồi bật tiền thật
 
-Hạn mức là guard phần mềm và `max_spend` của SDK, không phải quyền chi tiêu 7 USD
-bất biến trên chain. Khóa owner có quyền rộng hơn guard; thay đổi phí tại match,
-can thiệp thủ công đồng thời hoặc lỗi tài khoản có thể cần xem xét. Không dùng
-cùng tài khoản để thao tác thủ công trong lúc bot đang khớp và đối soát.
+1. Chạy `check_news.bat`: chỉ kiểm tra RSS, không đọc `.env.ai`, không gọi model,
+   không nạp signer hay account. Có thể đổi query qua `news_check.py --query`.
+2. Giữ DRY_RUN=true và chạy `check_account.bat` để đọc tài khoản. Tài khoản hiện
+   có dùng GET derive API key, chữ ký L1 do SDK tạo local; không POST tạo key lại.
+   Xác minh OWNER, chain 137 và contract code của đúng ví trực tiếp trên Polygon.
+   Ví EOA hợp lệ không yêu cầu code; ví contract chưa triển khai bị chặn.
+3. `start_ai.bat` chạy dry-run. Có gọi River và mất credit API, không ký order hay
+   gửi order. Chrome riêng cần giữ mở; không đăng nhập ví trong profile này.
+4. Để chạy thật sau khi đã chủ động chọn: trong `.env.ai` đặt **DRY_RUN=false**,
+   lưu file, chạy **start_ai_live.bat** (có `--live`). Cả env và cờ CLI đều phải bật.
 
-## Thực thi và đối soát
+Banner phải có `revision=news-evidence-v4` và `mode=LIVE` khi bật tiền thật.
+`NEWS` báo nguồn; `SOURCE` liệt kê nguồn AI dẫn. `ORDER ... CONFIRMED` chỉ xuất
+hiện khi SDK settlement và biến động cash/shares được đối soát. `ACCEPTED` không
+được hiểu là đã khớp. Dry-run in DRY_RUN_NO_ORDER_SIGNED_OR_SENT.
 
-- Chỉ FOK, không để order GTC chờ trên book. BUY dùng `max_spend` bao gồm phí và
-  `max_price` từ depth thực; SELL giới hạn số shares thuộc vị thế của bot và min price.
-- AI không được truy cập signer hoặc credentials; chỉ nhận market, số dư dùng được,
-  vị thế bot (tối đa MAX_OPEN_POSITIONS, mặc định 3), mô tả và luật resolution. **Không có web search/tin tức trực tiếp**;
-  AI được yêu cầu HOLD khi dữ liệu không đủ, không được giả nhận đã nghiên cứu web.
-- Quotes được lấy lại sau thời gian gọi model. Thiếu phí, book stale/skew, min-size,
-  confidence/forecast edge không đạt => không gửi. Đây có thể là HOLD dài, không ép mua.
-- SDK ký local; lưu signed order + cap trong SQLite `synchronous=FULL` trước gửi.
-  Transport cấp một lần cho đúng payload đã ghi. Không retry POST order khi timeout.
-- `accepted`/`matched` không được ghi là filled ngay. Chờ từng trade CONFIRMED,
-  kiểm tra order ID và biến động balance trước/sau. Unknown hoặc delayed thiếu fill
-  giữ reservation, dừng; không tạo chữ ký/lệnh mới để thử lại.
-- PnL chỉ ghi khi SELL đã xác nhận và đối soát cash/shares. Daily loss dùng realized
-  PnL UTC; unrealized loss có thể lớn hơn. Không có exchange-resident stop-loss.
-- Phiên này chưa có công cụ tự sửa journal sau unknown/manual trades. Nếu dừng vì
-  UNRESOLVED/EXTERNAL CHANGE: xem order trên Polymarket và giữ nguyên journal;
-  không xóa trạng thái để chạy tiếp. Vị thế resolve có thể redeem trên website.
+Mỗi vòng mặc định 180 giây; tối đa 24 lần gọi model/ngày UTC. Đạt giới hạn thì
+chương trình dừng, không tự đóng vị thế. Có thể sửa MAX_MODEL_CALLS_PER_DAY trong
+cấu hình (1–1000). Credit River tách khỏi vốn giao dịch; RSS không cần key riêng.
 
-## Journal tồn tại qua các bản tải mới
+## Vốn, order và journal
 
-Windows: `%LOCALAPPDATA%\PolymarketAITest\<địa chỉ ví>\ledger.sqlite3`.
-Linux: `~/.local/share/PolymarketAITest/<ví>/ledger.sqlite3`.
-Một process lock cho mỗi ví. Đổi thư mục Downloads không reset hạn mức. Nếu marker
-còn nhưng ledger mất, từ chối tạo lại. Sao lưu toàn thư mục khi bot đã dừng;
-không gửi signed orders/ledger riêng tư vào chat. Không tạo journal mới để bỏ qua lỗi.
+Cash được đọc động từ CLOB; không hardcode số dư. AI chọn số tiền trong giới hạn.
+Tổng BUY đã xác nhận cộng reservation đang chờ tối đa **7 USD cả đợt test**;
+SELL/lãi không làm mới ngân sách, nạp thêm không tự nâng trần. MAX_USD_PER_TRADE
+là trần lệnh, không phải cỡ lệnh cố định. Đây là guard phần mềm/SDK max_spend,
+không phải quyền chi tiêu bất biến trên chain; owner/allowances có quyền rộng hơn.
 
-## Transport và các giới hạn hiện tại
+Không tự approve/wrap/deploy/redeem/chuyển tiền. Thiếu allowance thì chặn. Không
+dùng tài khoản để trade thủ công đồng thời với bot. Vị thế ngoài bot không được
+tự nhận quản lý. Không có exchange-resident stop-loss; DAILY_LOSS_LIMIT mặc định
+1 USD dùng realized PnL UTC để khóa BUY mới, không bảo đảm chặn unrealized loss.
 
-SDK mới chưa cung cấp public constructor injection transport phù hợp trường hợp
-mạng này. Adapter được pin cho 0.14.0: injection transport và bootstrap derive-only chỉ trong factory lock,
-không thay URL hay crypto của SDK, không patch toàn bộ HTTPX. Public scanner vẫn
-có lựa chọn Python/curl/Chrome đã thử; account/order dùng Chrome transport riêng.
+Chỉ FOK. Quotes được lấy lại sau model. Lưu signed intent + cap và SENDING trong
+SQLite synchronous=FULL trước gửi. Payload được transport cấp một lần; không
+retry POST order khi timeout. UNKNOWN/delayed thiếu fill giữ reservation và dừng;
+chưa có công cụ tự sửa journal. Giữ nguyên trạng thái và kiểm tra tài khoản,
+không xóa sổ để thử lại. Tiny remaining shares có thể không đủ min-size để SELL.
 
-Chrome dùng profile trống; một trang client được fulfill local ở origin API để
-fetch cùng origin. Không có remote scripts hoặc nội dung key hiển thị trong trang.
-Chỉ Polymarket CLOB/Gamma/relayer và RPC Polygon mặc định được cho phép. RPC chỉ
-read methods; relayer chỉ GET; POST cấp credential cho phép; mọi financial write
-bị chặn trừ một payload /order có permit. Không dùng stealth, không bỏ TLS,
-không giải CAPTCHA hay vượt 403. Token/chữ ký trong RAM chỉ đến đúng CLOB.
+Windows journal: `%LOCALAPPDATA%\PolymarketAITest\<wallet>\ledger.sqlite3`.
+Linux: `~/.local/share/PolymarketAITest/<wallet>/ledger.sqlite3`.
+Khóa một tiến trình/ví. Đổi Downloads không reset vốn. Marker còn mà DB mất thì
+chặn tạo lại. NEWS_RESEARCH và AI_DECISION lưu bằng chứng/citation phục vụ đối
+chiếu. Ledger chứa signed orders: không gửi journal riêng tư vào chat.
 
-Còn cần kiểm chứng local: SDK auth bằng signer thật, RPC, balance/allowance,
-River model, và FOK BUY/SELL/settlement. **Đừng coi test pass là xác nhận đã chạy thật.**
+Ctrl+C hoặc file STOP trong thư mục app dừng vòng chạy, không hủy transaction đã
+gửi hoặc tự bán vị thế. Khi chương trình đóng, vị thế đang mở tiếp tục có rủi ro.
 
-## Trang Chrome trắng và lỗi kết nối
+## Kết quả kiểm thử và giới hạn xác minh
 
-Dòng `Local SDK bridge: private data is not displayed.` là bình thường. Đây là
-trang local được trình duyệt dùng để fetch API; không phải trang đăng nhập hay
-thông báo lỗi. Giữ Chrome mở; đọc kết quả trong cửa sổ lệnh.
+109 unit tests đã qua; Chromium offline fixture đã kiểm tra public RSS, auth
+headers không sang Google, nội dung private không hiển thị và chặn replay order.
+Tài khoản người dùng đã đọc thành công số dư và gọi River HOLD ở
+bản trước. **Chưa kiểm chứng RSS trên mạng người dùng hoặc BUY/SELL tiền thật.**
+Không gọi model/đặt order thật bằng keys của người dùng trong quá trình phát triển.
 
-Bản chẩn đoán in `SDK NETWORK | host=... | stage=... | code=... | attempt=...`
-hoặc `SDK HTTP | host=... | stage=... | status=...`. Không in query, wallet,
-headers, chữ ký, response body hay credentials. Chỉ GET và RPC đọc được thử
-lại tối đa 3 lần khi lỗi mạng tạm thời. Không retry HTTP 403, lỗi chứng chỉ,
-POST tạo API credential hoặc POST đặt order. Lỗi không chắc chắn của order
-vẫn giữ reservation và dừng, không phát lại giao dịch.
-
-Nếu đang dùng bản trước: tải ZIP bản mới, đóng bot/Chrome, chỉ chép đè
-`ai_bot.py` và `polymarket_arb/secure_bridge.py` vào đúng chỗ trong thư mục cũ.
-Giữ nguyên `.env.ai`, `.venv` và journal. Không cần cài lại dependency cho bản
-chẩn đoán này. Chạy lại `check_account.bat` và gửi các dòng `SDK NETWORK`,
-`SDK HTTP`, `STOPPED` để xác định API hỏng. Không gửi file cấu hình hay keys.
-
-## Cập nhật kiểm tra ví trực tiếp trên chain
-
-Bản trước in `revision=balance-refresh-ack-v2` và dùng create-or-derive.
-Bản hiện tại in `revision=derive-existing-v3`, dùng GET derive-only bằng SDK
-chính thức cho tài khoản đã có credentials; không POST tạo key lúc khởi động.
-Chương trình kiểm tra signer OWNER, chain 137 và `eth_getCode` của đúng ví
-contract thay cho `/deployed` của relayer. Không gọi relayer deployment-status
-trong bootstrap nữa. Không bỏ kiểm tra tồn tại ví, không deploy ví mới, không
-gửi transaction. Ví EOA hợp lệ không yêu cầu contract bytecode. Ví contract
-chưa có code, code response lỗi hoặc sai owner đều dừng.
-
-Phản hồi 2xx không phải JSON bị chặn mà không in body. Schema SDK không hợp lệ
-được gắn tên bước, ví dụ `SDK_POLYGON_READ_RESPONSE_SCHEMA_MISMATCH`. Nếu RPC
-Polygon bị reset thì vẫn dừng sau số lần đọc thử lại đã cấu hình, không suy
-đoán ví đã triển khai hoặc mặc định số dư. 90 unit tests và fixture Chromium
-offline đã qua; cần kiểm tra lại trên mạng và tài khoản thật của người dùng.
-
-## Phản hồi refresh số dư
-
-`GET /balance-allowance/update` được đọc bằng `get_bytes`: chấp nhận HTTP 2xx
-với acknowledgement rỗng, plain `OK` hoặc JSON; JSON có trường error không rỗng
-vẫn bị chặn. Ngoại lệ rỗng/OK chỉ áp dụng đúng endpoint refresh, không áp dụng
-cho auth, số dư, order hay RPC. Phản hồi HTML không được chấp nhận.
-
-Sau refresh, chương trình luôn gọi `get_balance_allowance` và kiểm tra dữ liệu
-số dư/allowance của SDK. Không suy ra số dư từ acknowledgement, không dùng số
-dư giả khi đọc thất bại. Bản cập nhật có 96 unit tests và fixture Chromium
-offline đã qua; chưa được xác minh trên tài khoản thật của người dùng.
-
-Để cập nhật từ bản trước, thay ba file cùng phiên bản: `ai_bot.py`,
-`polymarket_arb/secure_bridge.py`, `polymarket_arb/ai_engine.py`. Không thay
-`.env.ai`, `.venv` hay journal; không cần cài thêm dependency.
-
-## Auth derive-only cho tài khoản đã xác minh
-
-Mỗi lần mở `check_account.bat` hoặc `start_ai.bat`, chương trình lấy credentials
-đã có qua GET `/auth/derive-api-key`, dùng chữ ký L1 do SDK 0.14.0 tạo local.
-Không lưu API secret ra file, không đổi crypto của SDK và không gọi POST
-`/auth/api-key` trong bootstrap. GET được thử lại tối đa 3 lần với lỗi mạng
-tạm thời theo policy hiện tại. Không retry khi server từ chối quyền truy cập.
-
-Nếu chưa có credentials hoặc derive bị từ chối, chương trình dừng; không tự
-chuyển sang tạo key. Bản này dành cho tài khoản hiện có đã kiểm tra thành công,
-không thực hiện provisioning cho tài khoản mới. Constructor adapter chặn deploy
-ví mới và giữ xác minh owner/chain/code ví như trước.
-
-Cập nhật từ balance-refresh-ack-v2: chỉ thay `ai_bot.py` và
-`polymarket_arb/secure_bridge.py`; giữ bản `ai_engine.py` đã sửa refresh,
-`.env.ai`, `.venv` và journal. Thư mục mới giải nén cũng chứa đầy đủ bản engine
-hiện tại. Không cần cài thêm dependency cho thay đổi auth.
+SDK transport + derive bootstrap được inject có giới hạn trong factory lock,
+pin đúng 0.14.0; không thay URL/crypto SDK. Thay SDK version thì phải review lại.
+Trang “Local SDK bridge: private data is not displayed.” là bình thường. Gửi các
+dòng SDK NETWORK/HTTP/STOPPED khi gặp lỗi; không gửi response body hoặc secrets.

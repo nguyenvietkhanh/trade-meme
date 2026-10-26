@@ -26,6 +26,10 @@ def main():
                         def continue_(self):
                             request=real.request
                             records.append((request.method,request.url))
+                            if request.url.startswith('https://news.google.com/rss/search?'):
+                                assert not any(k.lower().startswith('poly_') for k in request.headers)
+                                real.fulfill(status=200,content_type='application/rss+xml',body='<rss><channel><title>OFFLINE_NEWS_FIXTURE</title></channel></rss>')
+                                return
                             if '/auth/' in request.url: data={'secret':'FIXTURE_ONLY_SECRET'}
                             else:data={'ok':True}
                             real.fulfill(status=200,content_type='application/json',body=json.dumps(data))
@@ -52,6 +56,9 @@ def main():
                 raise AssertionError('replay was not blocked')
             except GuardError:pass
             assert len([r for r in records if r[0]=='POST'])==1
+            r=bridge.handle_request(httpx.Request('GET','https://news.google.com/rss/search?q=fixture'))
+            assert r.status_code==200 and r.content.startswith(b'<rss>')
+            assert 'OFFLINE_NEWS_FIXTURE' not in bridge.pages['news.google.com'].content()
         finally:bridge.shutdown()
     print('OFFLINE CHROMIUM BRIDGE PASSED: local fixtures only; no real keys, API calls or orders.')
 

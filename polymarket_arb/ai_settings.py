@@ -7,7 +7,7 @@ from .config import number
 
 NAMES={'SIGNER_PRIVATE_KEY','POLYMARKET_WALLET_ADDRESS','MODEL_API_KEY','MODEL_BASE_URL','MODEL_NAME',
        'DRY_RUN','MAX_TEST_BUDGET','MAX_USD_PER_TRADE','MIN_FORECAST_EDGE_PCT','MIN_AI_CONFIDENCE',
-       'AI_INTERVAL_SECONDS','MAX_MODEL_CALLS_PER_DAY','DAILY_LOSS_LIMIT','MAX_OPEN_POSITIONS'}
+       'AI_INTERVAL_SECONDS','MAX_MODEL_CALLS_PER_DAY','DAILY_LOSS_LIMIT','MAX_OPEN_POSITIONS','NEWS_RESEARCH_ENABLED'}
 
 
 def load_local(path=Path('.env.ai')):
@@ -38,6 +38,7 @@ class AISettings:
     max_calls: int = 24
     daily_loss: Decimal = Decimal('1')
     max_positions: int = 3
+    news_enabled: bool = True
 
     @classmethod
     def from_env(cls):
@@ -61,7 +62,9 @@ class AISettings:
         if base!='https://api.river.ai/v1':raise ValueError('MODEL_ENDPOINT_NOT_APPROVED')
         model_key=os.getenv('MODEL_API_KEY','')
         if any(c in model_key for c in ('\r','\n')):raise ValueError('INVALID_MODEL_API_KEY')
-        return cls(wallet,key,model_key,base,os.getenv('MODEL_NAME',cls.model_name),dry=='true',budget,trade,edge,confidence,interval,calls,loss,max_positions)
+        news=os.getenv('NEWS_RESEARCH_ENABLED','true').lower()
+        if news not in ('true','false'):raise ValueError('INVALID_NEWS_RESEARCH_ENABLED')
+        return cls(wallet,key,model_key,base,os.getenv('MODEL_NAME',cls.model_name),dry=='true',budget,trade,edge,confidence,interval,calls,loss,max_positions,news=='true')
 
 
 def state_directory(wallet):

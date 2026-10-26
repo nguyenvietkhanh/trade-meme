@@ -4,6 +4,14 @@ Bản hiện tại dùng **SDK chính thức `polymarket-client==0.14.0`** trên
 AI River chọn **BUY YES / BUY NO / SELL / HOLD**. Scanner arbitrage chỉ đọc vẫn có riêng.
 Mặc định **DRY_RUN=true**; code đặt lệnh thật chỉ hoạt động khi bạn đổi cấu hình và dùng launcher live.
 
+## Tin tức mới và chạy thật
+
+Bản `news-evidence-v4` lấy RSS Google News, kiểm tra thời gian/nguồn và yêu cầu BUY dẫn ít nhất hai publisher_host đã cung cấp. Headline chưa phải bằng chứng đã xác minh; thiếu nguồn thì HOLD. SELL vị thế đang giữ không bị bắt buộc có tin mới.
+
+Nếu đã cài bản cũ: chép `ai_bot.py`, `news_check.py`, `check_news.bat` và toàn bộ thư mục `polymarket_arb` vào bản đang dùng. Giữ `.env.ai`, `.venv` và journal. Không có dependency mới.
+
+`check_news.bat` kiểm tra RSS công khai không cần keys. Để bật tiền thật theo lựa chọn của bạn: đặt `DRY_RUN=false`, `NEWS_RESEARCH_ENABLED=true` trong `.env.ai`, lưu, chạy **start_ai_live.bat**. Banner phải có **mode=LIVE**. Vốn vẫn được đọc từ tài khoản và giữ trần tổng BUY 7 USD.
+
 ## Bắt đầu
 
 1. Giải nén vào thư mục riêng. Cài Python 3.11+ và Google Chrome.
@@ -24,7 +32,7 @@ Chi tiết cấu hình, bật live và xử lý trạng thái chưa xác định
 - Journal đặt ngoài thư mục tải về, có khóa ngăn hai tiến trình chạy chung ví.
 - STOP hoặc Ctrl+C ngừng vòng chạy, không tự đóng vị thế đã mở.
 - Thiếu approval thì dừng; bản này không tự approve, wrap, deploy ví, redeem hoặc chuyển tiền.
-- AI không được nhận khóa ký. River chỉ nhận dữ liệu thị trường, vị thế bot và ngân sách. Không có web search hay tin tức trực tiếp.
+- AI không được nhận khóa ký. River nhận dữ liệu thị trường, vị thế bot, ngân sách và headline RSS mới có nguồn/thời gian. Bản này thêm news.google.com để tìm tin; không đọc toàn văn bài báo.
 
 ## pUSD và tài khoản
 
@@ -34,8 +42,8 @@ Bản này không chứa script wrap: cần kiểm tra đúng asset, spender, v�
 
 ## Kiểm chứng
 
-96 unit tests đã qua; fixture transport Chromium offline đã qua, dùng dữ liệu/khóa giả lập.
-**Chưa xác thực signer thật, chưa gọi River bằng API của bạn và chưa kiểm chứng BUY/SELL/settlement production trên tài khoản của bạn.**
+109 unit tests đã qua; fixture transport Chromium offline đã qua, dùng dữ liệu/khóa giả lập.
+**Người dùng đã xác minh tài khoản và gọi River nhận HOLD ở bản trước. RSS mới và BUY/SELL/settlement tiền thật vẫn chưa được kiểm chứng trên máy người dùng.**
 Không coi test pass là xác nhận đã giao dịch thật. Không có công cụ tự sửa journal sau lệnh UNKNOWN; giữ nguyên trạng thái và kiểm tra tài khoản trước khi xử lý.
 
 ## Dependencies và mã nguồn

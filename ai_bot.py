@@ -14,6 +14,7 @@ from polymarket_arb.market_data import MarketData,Market,APIError,DataError
 from polymarket_arb.config import Config
 from polymarket_arb.pricing import levels
 from polymarket_arb.secure_bridge import SDKBridge,connect_sdk,GuardError
+from polymarket_arb.news_research import NewsResearch
 
 
 def app(argv=None):
@@ -27,7 +28,7 @@ def app(argv=None):
     settings=AISettings.from_env()
     if args.live and settings.dry_run:raise GuardError('SET_DRY_RUN_FALSE_EXPLICITLY_TO_ARM_LIVE')
     if not settings.dry_run and not args.live and not args.check_account:raise GuardError('LIVE_REQUIRES_EXPLICIT_LIVE_FLAG')
-    print('AI LOCAL | revision=derive-existing-v3 | auth=GET existing credentials',flush=True)
+    print('AI LOCAL | revision=news-evidence-v4 | auth=GET existing credentials | mode='+('LIVE' if args.live else 'DRY_RUN'),flush=True)
     bridge=SDKBridge();client=data=journal=None
     try:
         if Path('STOP').exists():raise GuardError('STOP_FILE')
@@ -62,6 +63,7 @@ def app(argv=None):
             return transport.get_json(path,params=params)
         data.requests.read_json=public_read
         executor=Executor(settings,client,bridge,journal)
+        research=NewsResearch(bridge,enabled=settings.news_enabled)
         failures=0
         while True:
             if Path('STOP').exists():print('STOP file found. No new order.');return 0
@@ -87,9 +89,12 @@ def app(argv=None):
                         context={'market_id':market.id,'question':market.title,'description':market.description,
                                  'end_date':market.end_date,'resolution_source':market.resolution_source,
                                  'yes_ask':str(y[0][0]),'no_ask':str(n[0][0]),'minimum_shares':str(minimum),
-                                 'yes_asks':yes['asks'][-20:],'no_asks':no['asks'][-20:],
+                                 'yes_asks':[{'price':str(p),'size':str(q)} for p,q in y[:20]],
+                                 'no_asks':[{'price':str(p),'size':str(q)} for p,q in n[:20]],
                                  'fee_rate':str(fee.rate),'fee_exponent':fee.exponent,'observed_at':time.time(),
-                                 'research_status':'MARKET_DATA_ONLY_NO_CURRENT_NEWS_VERIFICATION'}
+                                 'research':research.collect(market.id,market.title)}
+                        print('NEWS | market='+market.id+' | '+context['research']['status']+' | sources='+str(len(context['research']['sources'])),flush=True)
+                        journal.event('NEWS_RESEARCH',{'market_id':market.id,**context['research']})
                         contexts.append(context);selected[market.id]=market
                         if len(contexts)>=max(3,len(positions)):break
                     except (APIError,DataError,ValueError,KeyError) as exc:
@@ -109,6 +114,8 @@ def app(argv=None):
                     decision=decide(settings,contexts,positions,available,remaining)
                     print('AI | '+decision['action']+' | '+''.join(c for c in decision['reason'] if c.isprintable())[:500],flush=True)
                     journal.event('AI_DECISION',decision)
+                    for source in decision.get('cited_sources',[]):
+                        print('SOURCE | '+source['id']+' | '+source['publisher_host']+' | '+source['url'],flush=True)
                 if decision['action']!='HOLD':
                     if decision['action']=='SELL':
                         pos=next(p for p in positions if p['asset']==decision['position_asset'])
@@ -135,7 +142,7 @@ def app(argv=None):
                 if Path('STOP').exists():return 0
                 time.sleep(1)
     except Exception as exc:
-        if bridge.last_error:raise GuardError(bridge.last_error) from None
+        if bridge.last_error and bridge.last_stage!='NEWS_RSS_READ':raise GuardError(bridge.last_error) from None
         if type(exc).__name__=='UnexpectedResponseError' and bridge.last_stage:
             raise GuardError(f'SDK_{bridge.last_stage}_RESPONSE_SCHEMA_MISMATCH') from None
         raise

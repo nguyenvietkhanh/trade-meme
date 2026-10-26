@@ -9,7 +9,8 @@ import httpx
 
 CLOB='clob.polymarket.com'
 RPC='polygon.drpc.org'
-HOSTS={CLOB,'gamma-api.polymarket.com','relayer-v2.polymarket.com',RPC}
+NEWS='news.google.com'
+HOSTS={CLOB,'gamma-api.polymarket.com','relayer-v2.polymarket.com',RPC,NEWS}
 READ_RPC={'eth_chainId','eth_call','eth_getCode','eth_getBalance','eth_getTransactionReceipt','eth_blockNumber'}
 _FACTORY_LOCK=threading.Lock()
 
@@ -36,6 +37,7 @@ def request_stage(request):
         return 'POLYGON_CHAIN_ID' if method=='eth_chainId' else 'POLYGON_READ'
     if host=='relayer-v2.polymarket.com':return 'WALLET_DEPLOYMENT_READ'
     if host=='gamma-api.polymarket.com':return 'MARKET_DISCOVERY'
+    if host==NEWS:return 'NEWS_RSS_READ'
     return {'/auth/api-key':'AUTH_CREATE','/auth/derive-api-key':'AUTH_DERIVE',
             '/balance-allowance':'ACCOUNT_BALANCE','/balance-allowance/update':'BALANCE_REFRESH',
             '/data/orders':'OPEN_ORDERS','/data/trades':'SETTLEMENT_READ',
@@ -68,6 +70,7 @@ class SDKBridge(httpx.BaseTransport):
             raise GuardError('SDK_HOST_BLOCKED')
         host,path=p.hostname,p.path
         if method=='GET':
+            if host==NEWS and path=='/rss/search':return
             if host==CLOB and (path in {'/','/time','/version','/auth/derive-api-key','/auth/api-keys','/balance-allowance','/balance-allowance/update','/closed-only','/data/orders','/data/trades','/book','/tick-size','/neg-risk'} or path.startswith(('/data/order/','/clob-markets/','/markets-by-token/'))):return
             if host=='gamma-api.polymarket.com' and (path=='/' or path.startswith('/markets')):return
             if host=='relayer-v2.polymarket.com' and path in {'/','/deployed'}:return
@@ -154,7 +157,7 @@ class SDKBridge(httpx.BaseTransport):
               } finally {clearTimeout(timer);}
             }''',{'url':str(request.url),'method':request.method,'headers':headers,'body':body.decode() if body else None})
             self.last_error=None
-            if 200<=result['status']<300:
+            if 200<=result['status']<300 and host!=NEWS:
                 acknowledgement=(host==CLOB and request.method=='GET' and
                                  request.url.path=='/balance-allowance/update' and
                                  result['text'].strip() in ('','OK'))

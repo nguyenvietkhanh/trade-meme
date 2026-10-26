@@ -50,3 +50,5 @@ Tất cả pin trong requirements.txt. Cài từ PyPI qua pip. Không gọi các
 | websockets | WebSocket transport phụ thuộc SDK; vòng AI hiện dùng snapshots HTTP. |
 
 Nguồn SDK: https://github.com/Polymarket/py-sdk và https://pypi.org/project/polymarket-client/0.14.0/. Wheel `polymarket_client-0.14.0-py3-none-any.whl` SHA-256: `e8ece00390315227c1a64ac103081be90befb9b6c14fac484ada2acbaea114ea`.
+
+Nghiên cứu tin tức dùng RSS công khai news.google.com qua Chrome/Playwright đã có. XML, hashing, thời gian và cache dùng Python stdlib; không có dependency mới. Không mở link bài báo hay dùng API key tin tức.
