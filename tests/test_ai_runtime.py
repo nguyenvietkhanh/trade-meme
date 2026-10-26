@@ -185,7 +185,7 @@ class AIBudgetTests(unittest.TestCase):
         for secret in (KEY,WALLET,self.settings.model_key):self.assertNotIn(secret,payload)
 
     def test_model_call_limit_persists(self):
-        self.j.take_model_call(1)
+        self.assertEqual(self.j.take_model_call(1),1)
         with self.assertRaises(RuntimeError):self.j.take_model_call(1)
 
     def test_config_enforces_explicit_default_dryrun_and_seven_cap(self):

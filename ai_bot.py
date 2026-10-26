@@ -15,6 +15,7 @@ from polymarket_arb.config import Config
 from polymarket_arb.pricing import levels
 from polymarket_arb.secure_bridge import SDKBridge,connect_sdk,GuardError
 from polymarket_arb.news_research import NewsResearch
+from polymarket_arb.runtime_status import display_time,wait_next_cycle
 
 
 def app(argv=None):
@@ -28,8 +29,11 @@ def app(argv=None):
     settings=AISettings.from_env()
     if args.live and settings.dry_run:raise GuardError('SET_DRY_RUN_FALSE_EXPLICITLY_TO_ARM_LIVE')
     if not settings.dry_run and not args.live and not args.check_account:raise GuardError('LIVE_REQUIRES_EXPLICIT_LIVE_FLAG')
-    print('AI LOCAL | revision=news-evidence-v4 | auth=GET existing credentials | mode='+('LIVE' if args.live else 'DRY_RUN'),flush=True)
-    bridge=SDKBridge();client=data=journal=None
+    headless=getattr(settings,'browser_headless',True)
+    print('AI LOCAL | revision=headless-status-v5 | browser='+('HIDDEN' if headless else 'VISIBLE')+' | mode='+('LIVE' if args.live else 'DRY_RUN'),flush=True)
+    if not args.check_account:
+        print(f'SCHEDULE | interval={settings.interval:g}s after each cycle | heartbeat=30s | model_limit={settings.max_calls}/day UTC',flush=True)
+    bridge=SDKBridge(headless=headless);client=data=journal=None
     try:
         if Path('STOP').exists():raise GuardError('STOP_FILE')
         journal=Journal(state_directory(settings.wallet),settings.wallet)
@@ -65,9 +69,12 @@ def app(argv=None):
         executor=Executor(settings,client,bridge,journal)
         research=NewsResearch(bridge,enabled=settings.news_enabled)
         failures=0
+        cycle=0
         while True:
             if Path('STOP').exists():print('STOP file found. No new order.');return 0
             if journal.pending():raise GuardError('UNRESOLVED_ORDER_REQUIRES_REVIEW')
+            cycle+=1;started=time.monotonic();outcome='NO_DECISION'
+            print(f'SCAN START | {display_time()} | cycle={cycle}',flush=True)
             try:
                 positions=journal.positions()
                 for position in positions:
@@ -75,7 +82,9 @@ def app(argv=None):
                     if raw.balance!=position['qty']:raise GuardError('POSITION_CHANGED_EXTERNALLY_REVIEW_REQUIRED')
                 cash=account.snapshot();remaining=journal.remaining(settings.test_budget)
                 available=min(Decimal(cash.balance)/1000000,remaining,settings.max_trade)
+                print(f'SCAN | cycle={cycle} | stage=DISCOVERY | usable={available} pUSD | positions={len(positions)}',flush=True)
                 markets=data.markets()
+                print(f'SCAN | cycle={cycle} | discovered={len(markets)}',flush=True)
                 known={}
                 for p in positions:
                     m=Market(**p['market']);known[m.id]=m
@@ -84,6 +93,7 @@ def app(argv=None):
                 for market in known.values():
                     if Path('STOP').exists():return 0
                     try:
+                        print(f'QUOTE | cycle={cycle} | market={market.id}',flush=True)
                         yes,no,fee,minimum,yt,nt=data.snapshot(market)
                         y=levels(yes['asks']);n=levels(no['asks'])
                         context={'market_id':market.id,'question':market.title,'description':market.description,
@@ -100,6 +110,7 @@ def app(argv=None):
                     except (APIError,DataError,ValueError,KeyError) as exc:
                         code=str(exc) if isinstance(exc,DataError) else type(exc).__name__
                         skips[code]=skips.get(code,0)+1
+                print(f'SCAN DATA | cycle={cycle} | usable_markets={len(contexts)} | skipped='+json.dumps(skips),flush=True)
                 # Ensure owned positions are not silently omitted by candidate count.
                 if positions and any(p['market']['id'] not in selected for p in positions):
                     print('HOLD | owned-position quote unavailable; no order sent',flush=True)
@@ -110,12 +121,14 @@ def app(argv=None):
                 elif available<=0 and not positions:
                     print('TEST_BUDGET_OR_CASH_EXHAUSTED; stopped.',flush=True);return 0
                 else:
-                    journal.take_model_call(settings.max_calls)
+                    used=journal.take_model_call(settings.max_calls)
+                    print(f'AI REQUEST | {display_time()} | cycle={cycle} | markets={len(contexts)} | calls={used}/{settings.max_calls} UTC today | waiting for River',flush=True)
                     decision=decide(settings,contexts,positions,available,remaining)
                     print('AI | '+decision['action']+' | '+''.join(c for c in decision['reason'] if c.isprintable())[:500],flush=True)
                     journal.event('AI_DECISION',decision)
                     for source in decision.get('cited_sources',[]):
                         print('SOURCE | '+source['id']+' | '+source['publisher_host']+' | '+source['url'],flush=True)
+                outcome=decision['action']
                 if decision['action']!='HOLD':
                     if decision['action']=='SELL':
                         pos=next(p for p in positions if p['asset']==decision['position_asset'])
@@ -133,14 +146,13 @@ def app(argv=None):
                         print('NO ORDER | '+str(exc),flush=True)
                 failures=0
             except (APIError,DataError) as exc:
+                outcome='DATA_ERROR'
                 failures+=1
                 print('DATA ERROR | '+type(exc).__name__+f' | consecutive={failures}/3',flush=True)
                 if failures>=3:raise GuardError('CONSECUTIVE_DATA_FAILURES')
+            print(f'SCAN END | {display_time()} | cycle={cycle} | decision={outcome} | elapsed={time.monotonic()-started:.1f}s',flush=True)
             if not args.loop:return 0
-            deadline=time.monotonic()+settings.interval
-            while time.monotonic()<deadline:
-                if Path('STOP').exists():return 0
-                time.sleep(1)
+            if not wait_next_cycle(settings.interval,cycle,outcome):return 0
     except Exception as exc:
         if bridge.last_error and bridge.last_stage!='NEWS_RSS_READ':raise GuardError(bridge.last_error) from None
         if type(exc).__name__=='UnexpectedResponseError' and bridge.last_stage:

@@ -97,6 +97,7 @@ class Journal:
             n=row[0] if row else 0
             if n>=maximum:raise RuntimeError('MODEL_DAILY_CALL_LIMIT')
             self.db.execute('INSERT OR REPLACE INTO calls VALUES (?,?)',(day,n+1))
+        return n+1
 
     def close(self):
         self.db.close();self.lock.close()

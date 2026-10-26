@@ -8,8 +8,9 @@ from polymarket_arb.secure_bridge import SDKBridge
 def main():
     parser=argparse.ArgumentParser(description='Read public RSS only; no wallet, model call or order')
     parser.add_argument('--query',default='Federal Reserve interest rates')
+    parser.add_argument('--show-browser',action='store_true',help='Show Chrome for public network diagnostics')
     args=parser.parse_args()
-    bridge=SDKBridge()
+    bridge=SDKBridge(headless=not args.show_browser)
     try:
         report=NewsResearch(bridge).collect('public-diagnostic',args.query)
         print('NEWS CHECK | '+report['status']+' | sources='+str(len(report['sources'])))

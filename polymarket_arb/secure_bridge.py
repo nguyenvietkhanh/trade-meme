@@ -49,9 +49,11 @@ class GuardError(RuntimeError):
 
 
 class SDKBridge(httpx.BaseTransport):
-    def __init__(self):
+    def __init__(self,headless=True):
+        self.headless=headless
         self.driver=self.browser=None
         self.pages={}
+        self.page_contexts={}
         self.contexts=[]
         self.clients=[]
         self.permit=None
@@ -90,13 +92,37 @@ class SDKBridge(httpx.BaseTransport):
         raise GuardError('SDK_WRITE_OR_UNAUTHORIZED_ORDER_BLOCKED')
 
     def _page(self,host):
-        if host in self.pages:return self.pages[host]
+        if self.browser is not None and not self.browser.is_connected():
+            for context in self.contexts:
+                try:context.close()
+                except Exception:pass
+            self.contexts.clear();self.pages.clear();self.page_contexts.clear()
+            if self.driver:
+                try:self.driver.stop()
+                except Exception:pass
+            self.driver=self.browser=None
+        if host in self.pages:
+            if not self.pages[host].is_closed():return self.pages[host]
+            self.pages.pop(host)
+            old=self.page_contexts.pop(host,None)
+            if old:
+                try:old.close()
+                except Exception:pass
+                if old in self.contexts:self.contexts.remove(old)
         if self.browser is None:
             from playwright.sync_api import sync_playwright
-            self.driver=sync_playwright().start()
-            self.browser=self.driver.chromium.launch(channel='chrome',headless=False,
-                args=['--disable-background-networking','--disable-component-update'])
+            try:
+                self.driver=sync_playwright().start()
+                self.browser=self.driver.chromium.launch(channel='chrome',headless=self.headless,
+                    args=['--disable-background-networking','--disable-component-update'])
+            except Exception:
+                if self.driver:
+                    try:self.driver.stop()
+                    except Exception:pass
+                self.driver=self.browser=None
+                raise
         context=self.browser.new_context(ignore_https_errors=False,service_workers='block',accept_downloads=False)
+        self.contexts.append(context)
         def route(r):
             req=r.request
             try:
@@ -116,20 +142,25 @@ class SDKBridge(httpx.BaseTransport):
                 else:self.policy(req.method,req.url,body)
                 r.continue_()
             except Exception:r.abort('blockedbyclient')
-        context.route('**/*',route)
-        page=context.new_page()
         def failed(request):
             if urlsplit(request.url).hostname==host:
                 self.network_failures[host]=failure_code(request.failure or '')
-        page.on('requestfailed',failed)
-        self.contexts.append(context)
         seed='/__local_polymarket_sdk__'
-        try:page.goto('https://'+host+seed,wait_until='domcontentloaded',timeout=25000)
-        except Exception:
+        try:
+            context.route('**/*',route)
+            page=context.new_page()
+            page.on('requestfailed',failed)
+            page.goto('https://'+host+seed,wait_until='domcontentloaded',timeout=25000)
+            if urlsplit(page.url).hostname!=host:raise GuardError('SDK_BROWSER_ORIGIN_MISMATCH')
+        except Exception as exc:
+            try:context.close()
+            except Exception:pass
+            if context in self.contexts:self.contexts.remove(context)
             # Never retry a write. Caller may retry this READ-ONLY initialization.
+            if isinstance(exc,GuardError):raise
             raise GuardError('SDK_BROWSER_ORIGIN_CONNECTION_FAILED') from None
-        if urlsplit(page.url).hostname!=host:raise GuardError('SDK_BROWSER_ORIGIN_MISMATCH')
         self.pages[host]=page
+        self.page_contexts[host]=context
         return page
 
     def handle_request(self,request):
@@ -204,7 +235,7 @@ class SDKBridge(httpx.BaseTransport):
             try:self.driver.stop()
             except Exception:pass
         self.driver=self.browser=None
-        self.pages.clear();self.contexts.clear();self.clients.clear();self.permit=None
+        self.pages.clear();self.page_contexts.clear();self.contexts.clear();self.clients.clear();self.permit=None
 
 
 def connect_sdk(private_key, wallet, bridge):

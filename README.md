@@ -4,6 +4,18 @@ Bản hiện tại dùng **SDK chính thức `polymarket-client==0.14.0`** trên
 AI River chọn **BUY YES / BUY NO / SELL / HOLD**. Scanner arbitrage chỉ đọc vẫn có riêng.
 Mặc định **DRY_RUN=true**; code đặt lệnh thật chỉ hoạt động khi bạn đổi cấu hình và dùng launcher live.
 
+## Chạy ẩn và biết bot đang làm gì
+
+Bản `headless-status-v5` mặc định `BROWSER_HEADLESS=true`: Chrome không hiện cửa sổ.
+Có log SCAN START/END, QUOTE, AI REQUEST, WAIT và ALIVE mỗi 30 giây lúc chờ.
+Mặc định vòng kế tiếp bắt đầu sau 180 giây kể từ khi vòng trước kết thúc; sau HOLD
+không có lệnh không đồng nghĩa process đứng. Banner in rõ browser HIDDEN/VISIBLE và LIVE/DRY_RUN.
+
+Cập nhật từ v4: Ctrl+C, chờ Stopped rồi đóng cửa sổ bridge cũ. Chép `ai_bot.py`,
+`news_check.py` và toàn bộ `polymarket_arb` vào bản đang dùng. Giữ `.env.ai`, `.venv`,
+journal và các launcher. Không cần cài thêm dependency. Thêm `BROWSER_HEADLESS=true`
+nếu muốn ghi rõ trong cấu hình; false bật UI để chẩn đoán. Giữ CMD mở hoặc thu nhỏ.
+
 ## Tin tức mới và chạy thật
 
 Bản `news-evidence-v4` lấy RSS Google News, kiểm tra thời gian/nguồn và yêu cầu BUY dẫn ít nhất hai publisher_host đã cung cấp. Headline chưa phải bằng chứng đã xác minh; thiếu nguồn thì HOLD. SELL vị thế đang giữ không bị bắt buộc có tin mới.
@@ -18,7 +30,7 @@ Nếu đã cài bản cũ: chép `ai_bot.py`, `news_check.py`, `check_news.bat` 
 2. Bấm **setup_ai.bat**; chương trình cài dependencies, chạy kiểm thử và tạo `.env.ai`.
 3. Mở `.env.ai` bằng Notepad; điền địa chỉ API wallet, khóa EVM owner đúng tài khoản và API River **trên máy bạn**. Không gửi file hoặc khóa vào chat.
 4. Giữ `DRY_RUN=true`; bấm **check_account.bat** để xác minh signer, chain, cash và allowance. Không gửi lệnh giao dịch hay approval.
-5. Bấm **start_ai.bat** để chạy AI thử. Chrome riêng phải được giữ mở.
+5. Bấm **start_ai.bat** để chạy AI thử. Chrome chạy ẩn mặc định; giữ CMD mở hoặc thu nhỏ.
 
 Chi tiết cấu hình, bật live và xử lý trạng thái chưa xác định: **[AI_TRADING.md](AI_TRADING.md)**.
 `start_browser.bat` là scanner arbitrage cũ, không phải launcher AI.
@@ -42,8 +54,8 @@ Bản này không chứa script wrap: cần kiểm tra đúng asset, spender, v�
 
 ## Kiểm chứng
 
-109 unit tests đã qua; fixture transport Chromium offline đã qua, dùng dữ liệu/khóa giả lập.
-**Người dùng đã xác minh tài khoản và gọi River nhận HOLD ở bản trước. RSS mới và BUY/SELL/settlement tiền thật vẫn chưa được kiểm chứng trên máy người dùng.**
+116 unit tests đã qua; fixture transport Chromium offline đã qua, dùng dữ liệu/khóa giả lập.
+**Người dùng đã xác minh tài khoản, đọc RSS và gọi River nhận HOLD ở bản trước. Chế độ ẩn mới trên Windows và BUY/SELL/settlement tiền thật vẫn chưa được kiểm chứng trên máy người dùng.**
 Không coi test pass là xác nhận đã giao dịch thật. Không có công cụ tự sửa journal sau lệnh UNKNOWN; giữ nguyên trạng thái và kiểm tra tài khoản trước khi xử lý.
 
 ## Dependencies và mã nguồn

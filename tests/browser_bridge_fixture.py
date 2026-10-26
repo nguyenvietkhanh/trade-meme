@@ -38,6 +38,7 @@ def main():
             def new_page(self):return self.context.new_page()
             def close(self):return self.context.close()
         class BrowserFacade:
+            def is_connected(self):return browser.is_connected()
             def new_context(self,**kwargs):return ContextFacade(browser.new_context(**kwargs))
             def close(self):return browser.close()
         bridge=SDKBridge();bridge.browser=BrowserFacade()

@@ -1,4 +1,4 @@
-# AI Polymarket local — news-evidence-v4
+# AI Polymarket local — headless-status-v5
 
 AI River chọn BUY YES / BUY NO / SELL / HOLD. Đây là giao dịch dự đoán theo
 xác suất, không phải arbitrage bảo đảm lợi nhuận. SDK chính thức được pin ở
@@ -63,11 +63,11 @@ Không coi chế độ market-only là có nghiên cứu tin tức.
    Xác minh OWNER, chain 137 và contract code của đúng ví trực tiếp trên Polygon.
    Ví EOA hợp lệ không yêu cầu code; ví contract chưa triển khai bị chặn.
 3. `start_ai.bat` chạy dry-run. Có gọi River và mất credit API, không ký order hay
-   gửi order. Chrome riêng cần giữ mở; không đăng nhập ví trong profile này.
+   gửi order. Chrome chạy ẩn mặc định; giữ CMD mở hoặc thu nhỏ, không đóng CMD.
 4. Để chạy thật sau khi đã chủ động chọn: trong `.env.ai` đặt **DRY_RUN=false**,
    lưu file, chạy **start_ai_live.bat** (có `--live`). Cả env và cờ CLI đều phải bật.
 
-Banner phải có `revision=news-evidence-v4` và `mode=LIVE` khi bật tiền thật.
+Banner phải có `revision=headless-status-v5`, `browser=HIDDEN` và `mode=LIVE` khi bật tiền thật (browser=VISIBLE nếu chủ động bật giao diện chẩn đoán).
 `NEWS` báo nguồn; `SOURCE` liệt kê nguồn AI dẫn. `ORDER ... CONFIRMED` chỉ xuất
 hiện khi SDK settlement và biến động cash/shares được đối soát. `ACCEPTED` không
 được hiểu là đã khớp. Dry-run in DRY_RUN_NO_ORDER_SIGNED_OR_SENT.
@@ -106,13 +106,41 @@ gửi hoặc tự bán vị thế. Khi chương trình đóng, vị thế đang 
 
 ## Kết quả kiểm thử và giới hạn xác minh
 
-109 unit tests đã qua; Chromium offline fixture đã kiểm tra public RSS, auth
+116 unit tests đã qua; Chromium offline fixture đã kiểm tra public RSS, auth
 headers không sang Google, nội dung private không hiển thị và chặn replay order.
 Tài khoản người dùng đã đọc thành công số dư và gọi River HOLD ở
-bản trước. **Chưa kiểm chứng RSS trên mạng người dùng hoặc BUY/SELL tiền thật.**
+bản trước. RSS cũng đã đọc được trên máy người dùng ở bản v4. **Chưa kiểm chứng chế độ ẩn trên Windows của người dùng hoặc BUY/SELL tiền thật.**
 Không gọi model/đặt order thật bằng keys của người dùng trong quá trình phát triển.
 
 SDK transport + derive bootstrap được inject có giới hạn trong factory lock,
 pin đúng 0.14.0; không thay URL/crypto SDK. Thay SDK version thì phải review lại.
 Trang “Local SDK bridge: private data is not displayed.” là bình thường. Gửi các
 dòng SDK NETWORK/HTTP/STOPPED khi gặp lỗi; không gửi response body hoặc secrets.
+
+## Chrome ẩn và tiến độ vòng quét
+
+`BROWSER_HEADLESS=true` là mặc định kể cả `.env.ai` cũ chưa có dòng này. Vẫn dùng
+Chrome đã cài, TLS và chính sách API như trước; không bật stealth hoặc vượt
+CAPTCHA/403. Đặt false nếu cần mở cửa sổ để chẩn đoán kết nối. `news_check.py`
+không đọc `.env.ai`, mặc định chạy ẩn; dùng `--show-browser` để hiện cửa sổ riêng.
+
+Khi cập nhật, Ctrl+C ở CMD và chờ Stopped trước, rồi đóng các cửa sổ Local SDK
+bridge còn lại. Không tắt toàn bộ Chrome cá nhân bằng taskkill. Chép `ai_bot.py`,
+`news_check.py` và toàn bộ thư mục `polymarket_arb` vào bản cũ, giữ nguyên keys,
+`.venv` và journal. Thay đổi này không sửa chế độ LIVE hay giới hạn vốn.
+
+Runtime tái sử dụng một context/page cho mỗi API host. Context khởi tạo thất bại
+được đóng ngay; page đã đóng được thay và giải phóng context cũ. Browser mất
+kết nối được khởi tạo lại trước request; không làm phát lại POST order hoặc
+giải phóng reservation UNKNOWN. Nhiều subprocess Chrome trong Task Manager
+không đồng nghĩa nhiều phiên bot; không cần cửa sổ UI để bot gọi API.
+
+CMD in SCAN START/END theo giờ Việt Nam (UTC+7), số market, bước QUOTE/NEWS,
+lúc đang chờ River và số lần gọi model đã dùng/ngày UTC. Sau mỗi vòng chờ đúng
+AI_INTERVAL_SECONDS (mặc định 180s), in giờ chạy kế tiếp và ALIVE mỗi 30s với
+next_in. ALIVE là trạng thái tiến trình trong lúc chờ, không phải xác nhận API
+đang thông hoặc một order đã khớp. Trong request đang chạy có log bước trước
+request và lỗi/retry; heartbeat chỉ chạy trong khoảng chờ giữa các vòng.
+
+Giữ CMD mở hoặc thu nhỏ. Đóng CMD sẽ dừng tiến trình; Ctrl+C dừng có cleanup.
+Như trước, dừng bot không tự đóng vị thế hay hủy giao dịch đã gửi.

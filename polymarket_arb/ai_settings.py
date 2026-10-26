@@ -7,7 +7,7 @@ from .config import number
 
 NAMES={'SIGNER_PRIVATE_KEY','POLYMARKET_WALLET_ADDRESS','MODEL_API_KEY','MODEL_BASE_URL','MODEL_NAME',
        'DRY_RUN','MAX_TEST_BUDGET','MAX_USD_PER_TRADE','MIN_FORECAST_EDGE_PCT','MIN_AI_CONFIDENCE',
-       'AI_INTERVAL_SECONDS','MAX_MODEL_CALLS_PER_DAY','DAILY_LOSS_LIMIT','MAX_OPEN_POSITIONS','NEWS_RESEARCH_ENABLED'}
+       'AI_INTERVAL_SECONDS','MAX_MODEL_CALLS_PER_DAY','DAILY_LOSS_LIMIT','MAX_OPEN_POSITIONS','NEWS_RESEARCH_ENABLED','BROWSER_HEADLESS'}
 
 
 def load_local(path=Path('.env.ai')):
@@ -39,6 +39,7 @@ class AISettings:
     daily_loss: Decimal = Decimal('1')
     max_positions: int = 3
     news_enabled: bool = True
+    browser_headless: bool = True
 
     @classmethod
     def from_env(cls):
@@ -64,7 +65,9 @@ class AISettings:
         if any(c in model_key for c in ('\r','\n')):raise ValueError('INVALID_MODEL_API_KEY')
         news=os.getenv('NEWS_RESEARCH_ENABLED','true').lower()
         if news not in ('true','false'):raise ValueError('INVALID_NEWS_RESEARCH_ENABLED')
-        return cls(wallet,key,model_key,base,os.getenv('MODEL_NAME',cls.model_name),dry=='true',budget,trade,edge,confidence,interval,calls,loss,max_positions,news=='true')
+        headless=os.getenv('BROWSER_HEADLESS','true').lower()
+        if headless not in ('true','false'):raise ValueError('INVALID_BROWSER_HEADLESS')
+        return cls(wallet,key,model_key,base,os.getenv('MODEL_NAME',cls.model_name),dry=='true',budget,trade,edge,confidence,interval,calls,loss,max_positions,news=='true',headless=='true')
 
 
 def state_directory(wallet):
