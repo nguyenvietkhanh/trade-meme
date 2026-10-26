@@ -27,6 +27,9 @@ def fetch(url, backend=None):
     parts = urllib.parse.urlsplit(url)
     if parts.scheme != "https" or parts.hostname not in HOSTS or parts.username or parts.port not in (None, 443):
         raise ValueError("Non-official URL blocked")
+    if backend == "browser":
+        from polymarket_arb.browser_data import browser_public_get
+        return browser_public_get(url, max_bytes=4_000_000)
     if (backend or default_public_backend()) == "curl":
         return curl_public_get(url, max_bytes=4_000_000)
     opener = build_opener(Redirects(), force_ipv4=True)
@@ -40,7 +43,9 @@ def fetch(url, backend=None):
 def safe_error(exc):
     result = {"status": "FAILED", "error_type": type(exc).__name__}
     reason = getattr(exc, "reason", exc)
-    if isinstance(exc, CurlReadError):
+    if hasattr(exc, "browser_error_code"):
+        result.update(error_code=exc.browser_error_code)
+    elif isinstance(exc, CurlReadError):
         result.update(error_code="CURL_READ_FAILED", curl_exit_code=exc.curl_exit_code)
     elif isinstance(exc, urllib.error.HTTPError):
         result.update(error_code="HTTP_ERROR", http_status=exc.code)
@@ -68,12 +73,12 @@ def safe_error(exc):
 def main():
     parser = argparse.ArgumentParser(description="Public API/docs diagnostics; never signs trades")
     parser.add_argument("--api-only", action="store_true", help="Skip docs; test Gamma/CLOB only")
-    parser.add_argument("--backend", choices=("python", "curl"), default=default_public_backend())
+    parser.add_argument("--backend", choices=("python", "curl", "browser"), default=default_public_backend())
     args = parser.parse_args()
     directory = Path("verification") / datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     directory.mkdir(parents=True, exist_ok=False)
     report = {"mode": "PUBLIC_READ_ONLY", "keys_read": False, "orders_sent": False,
-              "production_verified": False, "report_version": 4, "force_ipv4": True, "public_http_backend": args.backend, "results": []}
+              "production_verified": False, "report_version": 5, "force_ipv4": args.backend != "browser", "public_http_backend": args.backend, "results": []}
     sources = ["https://docs.polymarket.com/llms.txt",
                "https://clob.polymarket.com/time",
                "https://gamma-api.polymarket.com/markets?active=true&closed=false&limit=1"]
@@ -136,7 +141,8 @@ def main():
     print("Public evidence:", archive_path)
     print("No .env/private key/wallet files were read. No order sent.")
     print("HTTP success is not approval of production contracts/fees or live execution.")
-    return 0 if all(row["status"] == 200 for row in report["results"][:len(sources)]) else 1
+    checks = report["results"] if args.api_only else report["results"][:len(sources)]
+    return 0 if checks and all(row["status"] == 200 for row in checks) else 1
 
 
 if __name__ == "__main__":

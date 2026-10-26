@@ -54,8 +54,8 @@ class Config:
                 raise ValueError(name + " must be positive")
         if self.retries < 0 or self.retries > 8:
             raise ValueError("retries must be 0..8")
-        if self.public_http_backend not in ("python", "curl"):
-            raise ValueError("PUBLIC_HTTP_BACKEND must be python or curl")
+        if self.public_http_backend not in ("python", "curl", "browser"):
+            raise ValueError("PUBLIC_HTTP_BACKEND must be python, curl or browser")
         if not self.dry_run:
             raise ValueError("Stage 1 is read-only: DRY_RUN=false is forbidden")
         if self.max_usd_per_trade <= 0:

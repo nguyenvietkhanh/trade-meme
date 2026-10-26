@@ -1,3 +1,7 @@
+> Cách chạy mới cho Windows: xem [BROWSER.md](BROWSER.md), bấm `start_browser.bat`.
+> Dùng Chrome cài sẵn để đọc market/book; vẫn chỉ đọc, không giữ khóa hoặc gửi lệnh.
+> Chưa xác nhận kết nối trên máy người dùng; không tự vượt CAPTCHA/HTTP 403.
+
 > Cập nhật transport: Windows mặc định dùng curl.exe --ipv4 để đọc public APIs,
 > theo lệnh người dùng đã kiểm tra thành công. Backend này chỉ GET, không nhận khóa,
 > không nhận auth headers và không dùng cho giao dịch thật. SSL verification bật;

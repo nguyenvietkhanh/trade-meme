@@ -43,3 +43,7 @@ Tất cả pin trong requirements.txt. Cài từ PyPI qua pip. Không gọi các
 | toolz | Hàm tiện ích Ethereum. |
 | typing-inspection | Kiểm tra type Pydantic. |
 | typing-extensions | Typing compatibility. |
+
+| playwright | Microsoft Playwright điều khiển Chrome riêng để đọc public API. |
+| pyee | Event emitter của Playwright. |
+| greenlet | Sync API coroutine bridge của Playwright. |

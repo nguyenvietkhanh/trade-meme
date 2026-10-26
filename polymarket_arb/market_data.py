@@ -68,7 +68,10 @@ class Requests:
             raise ValueError("Non-official endpoint blocked")
         url = origin + path + ("?" + urllib.parse.urlencode(params) if params else "")
         request = urllib.request.Request(url, headers={"Accept": "application/json", "User-Agent": "polymarket-readonly-scanner/0.1"})
-        if self.config.public_http_backend == "curl":
+        if self.config.public_http_backend == "browser":
+            from .browser_data import browser_public_get
+            _, data = browser_public_get(url)
+        elif self.config.public_http_backend == "curl":
             _, data = curl_public_get(url, force_ipv4=self.config.force_ipv4)
         else:
             with self.opener.open(request, timeout=10) as response:

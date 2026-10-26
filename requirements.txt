@@ -39,3 +39,7 @@ rlp==5.0.0
 toolz==1.2.0
 typing-inspection==0.4.4
 typing_extensions==4.16.0
+# Browser public-data backend, Microsoft-maintained Playwright (uses installed Chrome).
+playwright==1.62.0
+pyee==13.0.1
+greenlet==3.5.5

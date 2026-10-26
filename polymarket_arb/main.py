@@ -75,6 +75,8 @@ def main():
         print("Scanner stopped: storage/network unavailable; no order sent.", file=sys.stderr); return 1
     finally:
         if storage: storage.close()
+        from .browser_data import close_browser
+        close_browser()
 
 
 if __name__ == "__main__":
