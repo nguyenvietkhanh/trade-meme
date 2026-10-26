@@ -35,15 +35,18 @@ DECISION={'action':'BUY_YES','market_id':M.id,'all_in_usd':D(3),'probability_yes
 
 
 class FakeSDKWire(SDKBridge):
-    def __init__(self):super().__init__();self.calls=[]
+    def __init__(self):super().__init__();self.calls=[];self.rpc_methods=[];self.wallet_code='0x6001600055';self.auth_exists=False
     def handle_request(self,request):
         self.policy(request.method,str(request.url),request.content,consume=True)
         self.calls.append((request.method,request.url.path))
+        if request.url.path=='/auth/api-key' and self.auth_exists:
+            return httpx.Response(400,json={'error':'fixture existing credentials'},request=request)
         if request.url.path in ('/auth/derive-api-key','/auth/api-key'):
             payload={'apiKey':'00000000-0000-4000-8000-000000000001','secret':base64.urlsafe_b64encode(b'fixture').decode(),'passphrase':'fixture'}
         elif request.url.path=='/deployed':payload={'deployed':True}
         elif request.url.host=='polygon.drpc.org':
-            raw=json.loads(request.content);payload={'id':raw['id'],'jsonrpc':'2.0','result':'0x89'}
+            raw=json.loads(request.content);self.rpc_methods.append(raw['method'])
+            payload={'id':raw['id'],'jsonrpc':'2.0','result':self.wallet_code if raw['method']=='eth_getCode' else '0x89'}
         else:raise AssertionError('Unexpected SDK bootstrap request: '+request.url.path)
         return httpx.Response(200,json=payload,request=request)
 
@@ -56,7 +59,8 @@ class SDKIntegrationTests(unittest.TestCase):
             self.assertEqual(client.wallet.lower(),WALLET.lower())
             self.assertEqual(client.wallet_type,'POLY_PROXY')
             self.assertFalse(any(method=='POST' and path not in ('/','/auth/api-key') for method,path in bridge.calls))
-            self.assertTrue(any(path=='/deployed' for _,path in bridge.calls))
+            self.assertFalse(any(path=='/deployed' for _,path in bridge.calls))
+            self.assertEqual(bridge.rpc_methods,['eth_chainId','eth_getCode'])
         finally:client.close();bridge.shutdown()
 
     def test_sdk_detects_deposit_wallet_owner(self):
@@ -65,10 +69,35 @@ class SDKIntegrationTests(unittest.TestCase):
         try:self.assertEqual(client.wallet_type,'DEPOSIT_WALLET')
         finally:client.close();bridge.shutdown()
 
+    def test_auth_create_400_falls_back_to_derive_before_onchain_check(self):
+        bridge=FakeSDKWire();bridge.auth_exists=True
+        client=connect_sdk(KEY,WALLET,bridge)
+        try:
+            self.assertEqual(bridge.calls[:2],[('POST','/auth/api-key'),('GET','/auth/derive-api-key')])
+            self.assertEqual(bridge.rpc_methods,['eth_chainId','eth_getCode'])
+            self.assertFalse(any(path=='/deployed' for _,path in bridge.calls))
+        finally:client.close();bridge.shutdown()
+
     def test_sdk_session_fallback_is_not_silently_trusted(self):
         bridge=FakeSDKWire()
         try:
             with self.assertRaises(GuardError):connect_sdk(KEY,'0x'+'12'*20,bridge)
+        finally:bridge.shutdown()
+
+    def test_undeployed_wallet_stays_blocked_without_relayer_or_deployment(self):
+        bridge=FakeSDKWire();bridge.wallet_code='0x'
+        try:
+            with self.assertRaisesRegex(GuardError,'EXISTING_WALLET_REQUIRED_NO_AUTO_DEPLOY'):
+                connect_sdk(KEY,WALLET,bridge)
+            self.assertFalse(any(path=='/deployed' for _,path in bridge.calls))
+            self.assertEqual(bridge.rpc_methods,['eth_chainId','eth_getCode'])
+        finally:bridge.shutdown()
+
+    def test_invalid_wallet_code_fails_closed(self):
+        bridge=FakeSDKWire();bridge.wallet_code='0xnot-hex'
+        try:
+            with self.assertRaisesRegex(GuardError,'WALLET_CODE_RESPONSE_INVALID'):
+                connect_sdk(KEY,WALLET,bridge)
         finally:bridge.shutdown()
 
     def test_bridge_blocks_financial_rpc_and_relayer(self):

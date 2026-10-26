@@ -27,6 +27,7 @@ def app(argv=None):
     settings=AISettings.from_env()
     if args.live and settings.dry_run:raise GuardError('SET_DRY_RUN_FALSE_EXPLICITLY_TO_ARM_LIVE')
     if not settings.dry_run and not args.live and not args.check_account:raise GuardError('LIVE_REQUIRES_EXPLICIT_LIVE_FLAG')
+    if args.check_account:print('ACCOUNT CHECK | revision=polygon-wallet-read-v1 | no financial order',flush=True)
     bridge=SDKBridge();client=data=journal=None
     try:
         if Path('STOP').exists():raise GuardError('STOP_FILE')
@@ -133,8 +134,10 @@ def app(argv=None):
             while time.monotonic()<deadline:
                 if Path('STOP').exists():return 0
                 time.sleep(1)
-    except Exception:
+    except Exception as exc:
         if bridge.last_error:raise GuardError(bridge.last_error) from None
+        if type(exc).__name__=='UnexpectedResponseError' and bridge.last_stage:
+            raise GuardError(f'SDK_{bridge.last_stage}_RESPONSE_SCHEMA_MISMATCH') from None
         raise
     finally:
         if data:data.close()

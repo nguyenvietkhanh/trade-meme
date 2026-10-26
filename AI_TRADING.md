@@ -111,7 +111,7 @@ read methods; relayer chỉ GET; POST cấp credential cho phép; mọi financia
 bị chặn trừ một payload /order có permit. Không dùng stealth, không bỏ TLS,
 không giải CAPTCHA hay vượt 403. Token/chữ ký trong RAM chỉ đến đúng CLOB.
 
-Còn cần kiểm chứng local: SDK auth bằng signer thật, RPC/relayer, balance/allowance,
+Còn cần kiểm chứng local: SDK auth bằng signer thật, RPC, balance/allowance,
 River model, và FOK BUY/SELL/settlement. **Đừng coi test pass là xác nhận đã chạy thật.**
 
 ## Trang Chrome trắng và lỗi kết nối
@@ -132,3 +132,19 @@ Nếu đang dùng bản trước: tải ZIP bản mới, đóng bot/Chrome, ch�
 Giữ nguyên `.env.ai`, `.venv` và journal. Không cần cài lại dependency cho bản
 chẩn đoán này. Chạy lại `check_account.bat` và gửi các dòng `SDK NETWORK`,
 `SDK HTTP`, `STOPPED` để xác định API hỏng. Không gửi file cấu hình hay keys.
+
+## Cập nhật kiểm tra ví trực tiếp trên chain
+
+Account check hiện in `revision=polygon-wallet-read-v1`. SDK vẫn tạo/derive
+credentials chính thức; HTTP 400 lúc tạo key có thể dẫn sang derive thành công.
+Chương trình kiểm tra signer OWNER, chain 137 và `eth_getCode` của đúng ví
+contract thay cho `/deployed` của relayer. Không gọi relayer deployment-status
+trong bootstrap nữa. Không bỏ kiểm tra tồn tại ví, không deploy ví mới, không
+gửi transaction. Ví EOA hợp lệ không yêu cầu contract bytecode. Ví contract
+chưa có code, code response lỗi hoặc sai owner đều dừng.
+
+Phản hồi 2xx không phải JSON bị chặn mà không in body. Schema SDK không hợp lệ
+được gắn tên bước, ví dụ `SDK_POLYGON_READ_RESPONSE_SCHEMA_MISMATCH`. Nếu RPC
+Polygon bị reset thì vẫn dừng sau số lần đọc thử lại đã cấu hình, không suy
+đoán ví đã triển khai hoặc mặc định số dư. 90 unit tests và fixture Chromium
+offline đã qua; cần kiểm tra lại trên mạng và tài khoản thật của người dùng.

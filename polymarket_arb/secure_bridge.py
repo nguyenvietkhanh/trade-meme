@@ -55,6 +55,7 @@ class SDKBridge(httpx.BaseTransport):
         self.permit=None
         self.routing_permit=None
         self.last_error=None
+        self.last_stage=None
         self.network_failures={}
 
     def authorize_order(self, payload):
@@ -135,6 +136,7 @@ class SDKBridge(httpx.BaseTransport):
         headers={k:v for k,v in request.headers.items() if k.lower().startswith('poly_') or k.lower()=='content-type'}
         if host!=CLOB and any(k.lower().startswith('poly_') for k in headers):raise GuardError('AUTH_ORIGIN_BLOCKED')
         stage=request_stage(request)
+        self.last_stage=stage
         # Only idempotent reads may retry. Neither auth creation nor orders replay.
         attempts=3 if request.method=='GET' or (request.method=='POST' and host==RPC) else 1
         for attempt in range(1,attempts+1):
@@ -148,16 +150,25 @@ class SDKBridge(httpx.BaseTransport):
                   redirect:'error',cache:'no-store',signal:controller.signal});
                 const text=await r.text();
                 if(text.length>8000000)throw new Error('response_limit');
-                return {status:r.status,text,retry:r.headers.get('retry-after')||''};
+                return {status:r.status,text,retry:r.headers.get('retry-after')||'',content_type:r.headers.get('content-type')||''};
               } finally {clearTimeout(timer);}
             }''',{'url':str(request.url),'method':request.method,'headers':headers,'body':body.decode() if body else None})
             self.last_error=None
+            if 200<=result['status']<300:
+                try:json.loads(result['text'])
+                except (ValueError,TypeError):
+                    # Never print the response: even a malformed auth response may contain secrets.
+                    self.last_error=f'SDK_{stage}_NON_JSON_RESPONSE'
+                    raise GuardError(self.last_error)
             if result['status']>=400:
                 # No body, query, wallet, auth header or credential is logged.
                 self.last_error=f'SDK_{stage}_HTTP_{int(result["status"])}'
                 print(f'SDK HTTP | host={host} | stage={stage} | status={int(result["status"])}',flush=True)
             return httpx.Response(result['status'],content=result['text'].encode(),
-                                  headers={'content-type':'application/json','retry-after':result['retry']},request=request)
+                                  headers={'content-type':result.get('content_type','application/json'),'retry-after':result['retry']},request=request)
+          except GuardError as exc:
+            self.last_error=str(exc)
+            raise
           except Exception as exc:
             code=self.network_failures.get(host) or failure_code(exc)
             self.last_error=f'SDK_{stage}_{code}'
@@ -201,6 +212,21 @@ def connect_sdk(private_key, wallet, bridge):
             kwargs.pop('client',None)
             super().__init__(base_url=base_url,client=client,**kwargs)
     class ExistingAccountClient(SecureClient):
+        def _ensure_wallet_ready(self):
+            # Existing wallets are verified on chain rather than via the relayer
+            # deployment-status service. No wallet creation or transaction is submitted.
+            ctx=self._ctx
+            if ctx.signer_type!='OWNER':raise GuardError('WALLET_OWNER_NOT_VERIFIED')
+            ctx.rpc.verify_chain_id(137)
+            if ctx.wallet_type=='EOA':return self
+            code=ctx.rpc._call('eth_getCode',[str(ctx.wallet),'latest'])
+            if not isinstance(code,str) or not code.startswith('0x') or len(code)%2:
+                raise GuardError('WALLET_CODE_RESPONSE_INVALID')
+            try:raw=bytes.fromhex(code[2:])
+            except ValueError:raise GuardError('WALLET_CODE_RESPONSE_INVALID') from None
+            if not raw or not any(raw):raise GuardError('EXISTING_WALLET_REQUIRED_NO_AUTO_DEPLOY')
+            return self
+
         def _deploy_default_deposit_wallet(self):
             raise GuardError('EXISTING_WALLET_REQUIRED_NO_AUTO_DEPLOY')
     # Constructor injection is confined to a single-threaded factory call, SDK 0.14.0.

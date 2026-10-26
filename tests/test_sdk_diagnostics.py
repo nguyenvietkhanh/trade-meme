@@ -3,9 +3,10 @@ import contextlib
 import io
 import json
 import unittest
+from types import SimpleNamespace
 from unittest.mock import Mock,patch
 import httpx
-from polymarket_arb.secure_bridge import SDKBridge,failure_code
+from polymarket_arb.secure_bridge import SDKBridge,GuardError,failure_code
 
 
 class SDKDiagnosticsTests(unittest.TestCase):
@@ -71,3 +72,24 @@ class SDKDiagnosticsTests(unittest.TestCase):
             bridge.handle_request(httpx.Request('GET','https://clob.polymarket.com/time'))
         self.assertEqual(page.evaluate.call_count,1)
         self.assertEqual(failure_code('unrecognized secret fixture'),'FETCH_FAILED')
+
+    def test_success_status_html_is_not_treated_as_json_or_retried(self):
+        bridge,page=self.bridge([{'status':200,'text':'<html>private_fixture challenge</html>',
+                                 'retry':'','content_type':'text/html'}])
+        stream=io.StringIO()
+        with contextlib.redirect_stdout(stream),self.assertRaisesRegex(GuardError,'SDK_AUTH_DERIVE_NON_JSON_RESPONSE'):
+            bridge.handle_request(httpx.Request('GET','https://clob.polymarket.com/auth/derive-api-key'))
+        self.assertEqual(page.evaluate.call_count,1)
+        self.assertNotIn('private_fixture',stream.getvalue())
+        self.assertEqual(bridge.last_error,'SDK_AUTH_DERIVE_NON_JSON_RESPONSE')
+
+    def test_cli_contextualizes_sdk_schema_failure_without_raw_details(self):
+        import ai_bot
+        from polymarket.errors import UnexpectedResponseError
+        bridge=SDKBridge();bridge.last_stage='POLYGON_READ'
+        settings=SimpleNamespace(wallet='fixture',private_key='fixture',dry_run=True)
+        with patch.object(ai_bot,'load_local'),patch.object(ai_bot.AISettings,'from_env',return_value=settings),\
+             patch.object(ai_bot,'Journal'),patch.object(ai_bot,'SDKBridge',return_value=bridge),\
+             patch.object(ai_bot,'connect_sdk',side_effect=UnexpectedResponseError('private_fixture details')):
+            with self.assertRaisesRegex(GuardError,'^SDK_POLYGON_READ_RESPONSE_SCHEMA_MISMATCH$'):
+                ai_bot.app(['--check-account'])
