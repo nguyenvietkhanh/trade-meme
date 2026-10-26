@@ -26,6 +26,11 @@ test_ipv4_env_flag_validation (test_network.NetworkTests.test_ipv4_env_flag_vali
 test_ipv4_source_binding_and_tls_verification (test_network.NetworkTests.test_ipv4_source_binding_and_tls_verification) ... ok
 test_sdk_books_share_adapter_and_cannot_post (test_network.NetworkTests.test_sdk_books_share_adapter_and_cannot_post) ... ok
 test_transport_is_per_opener_and_retains_proxy_handler (test_network.NetworkTests.test_transport_is_per_opener_and_retains_proxy_handler) ... ok
+test_failed_preflight_cannot_start_scanner (test_preflight_retry.PreflightTests.test_failed_preflight_cannot_start_scanner) ... ok
+test_preflight_denial_is_not_retried (test_preflight_retry.PreflightTests.test_preflight_denial_is_not_retried) ... ok
+test_preflight_exhaustion_preserves_code_and_attempt_count (test_preflight_retry.PreflightTests.test_preflight_exhaustion_preserves_code_and_attempt_count) ... ok
+test_preflight_retries_reset_then_returns_success (test_preflight_retry.PreflightTests.test_preflight_retries_reset_then_returns_success) ... ok
+test_same_process_handoff_does_not_close_browser_between_steps (test_preflight_retry.PreflightTests.test_same_process_handoff_does_not_close_browser_between_steps) ... ok
 test_discovery_rotates_beyond_first_n_and_wraps (test_scan_diagnostics.ScanDiagnosticTests.test_discovery_rotates_beyond_first_n_and_wraps) ... ok
 test_real_uploaded_snapshot_does_not_offer_arbitrage (test_scan_diagnostics.ScanDiagnosticTests.test_real_uploaded_snapshot_does_not_offer_arbitrage) ... ok
 test_summary_and_public_skip_sample_are_explicit (test_scan_diagnostics.ScanDiagnosticTests.test_summary_and_public_skip_sample_are_explicit) ... ok
@@ -51,6 +56,6 @@ test_unprofitable_diagnostic (test_scanner.SafetyTests.test_unprofitable_diagnos
 test_v2_position_ids_and_unknown_version (test_scanner.SafetyTests.test_v2_position_ids_and_unknown_version) ... ok
 
 ----------------------------------------------------------------------
-Ran 51 tests in 0.635s
+Ran 56 tests in 0.508s
 
 OK

@@ -6,6 +6,7 @@ import re
 import ssl
 import socket
 import argparse
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -43,7 +44,10 @@ def fetch(url, backend=None):
 def safe_error(exc):
     result = {"status": "FAILED", "error_type": type(exc).__name__}
     reason = getattr(exc, "reason", exc)
-    if hasattr(exc, "browser_error_code"):
+    from polymarket_arb.market_data import APIError
+    if isinstance(exc, APIError):
+        result.update(error_code=exc.safe_code, http_status=exc.http_status, attempts=exc.attempts)
+    elif hasattr(exc, "browser_error_code"):
         result.update(error_code=exc.browser_error_code)
     elif isinstance(exc, CurlReadError):
         result.update(error_code="CURL_READ_FAILED", curl_exit_code=exc.curl_exit_code)
@@ -70,15 +74,30 @@ def safe_error(exc):
     return result
 
 
-def main():
+def fetch_with_retry(url, backend=None, *, sleep=time.sleep):
+    from polymarket_arb.config import Config
+    from polymarket_arb.market_data import Requests
+    requests = Requests(Config(public_http_backend=backend or default_public_backend()), sleep=sleep)
+    attempt = 0
+    label = urllib.parse.urlsplit(url).hostname
+    def operation():
+        nonlocal attempt
+        attempt += 1
+        print(f"CHECK {label} attempt {attempt}/{requests.config.retries+1}", flush=True)
+        return fetch(url, backend)
+    status, body = requests.call(operation)
+    return status, body, attempt
+
+
+def main(argv=None):
     parser = argparse.ArgumentParser(description="Public API/docs diagnostics; never signs trades")
     parser.add_argument("--api-only", action="store_true", help="Skip docs; test Gamma/CLOB only")
     parser.add_argument("--backend", choices=("python", "curl", "browser"), default=default_public_backend())
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
     directory = Path("verification") / datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     directory.mkdir(parents=True, exist_ok=False)
     report = {"mode": "PUBLIC_READ_ONLY", "keys_read": False, "orders_sent": False,
-              "production_verified": False, "report_version": 5, "force_ipv4": args.backend != "browser", "public_http_backend": args.backend, "results": []}
+              "production_verified": False, "report_version": 6, "force_ipv4": args.backend != "browser", "public_http_backend": args.backend, "results": []}
     sources = ["https://docs.polymarket.com/llms.txt",
                "https://clob.polymarket.com/time",
                "https://gamma-api.polymarket.com/markets?active=true&closed=false&limit=1"]
@@ -90,10 +109,10 @@ def main():
     for index, url in enumerate(sources):
         row = {"url": url}
         try:
-            status, body = fetch(url, args.backend)
+            status, body, attempts = fetch_with_retry(url, args.backend)
             filename = f"public-{index}.txt"
             (directory / filename).write_bytes(body)
-            row.update(status=status, file=filename, sha256=hashlib.sha256(body).hexdigest())
+            row.update(status=status, attempts=attempts, file=filename, sha256=hashlib.sha256(body).hexdigest())
             if url == "https://docs.polymarket.com/llms.txt":
                 # Read only links from the official docs index. Never execute documentation.
                 links = re.findall(r"https://docs\.polymarket\.com/[A-Za-z0-9_./-]+", body.decode("utf-8", "replace"))
@@ -124,10 +143,10 @@ def main():
     for index, url in enumerate(candidates):
         row = {"url": url}
         try:
-            status, body = fetch(url, args.backend)
+            status, body, attempts = fetch_with_retry(url, args.backend)
             filename = f"evidence-{index}.txt"
             (directory / filename).write_bytes(body)
-            row.update(status=status, file=filename, sha256=hashlib.sha256(body).hexdigest())
+            row.update(status=status, attempts=attempts, file=filename, sha256=hashlib.sha256(body).hexdigest())
         except Exception as exc:
             row.update(safe_error(exc))
         report["results"].append(row)

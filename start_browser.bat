@@ -11,12 +11,7 @@ if errorlevel 1 goto fail
 .venv\Scripts\python.exe -m unittest discover -s tests -v
 if errorlevel 1 goto fail
 echo Chrome will open in a separate temporary profile. Keep that window open.
-.venv\Scripts\python.exe local_verify.py --api-only --backend browser
-if errorlevel 1 goto fail
-set "PUBLIC_HTTP_BACKEND=browser"
-set "DRY_RUN=true"
-echo Preflight passed. Starting READ-ONLY scanner. Ctrl+C stops it.
-.venv\Scripts\python.exe run_local.py --loop
+.venv\Scripts\python.exe browser_start.py
 if errorlevel 1 goto fail
 pause
 exit /b 0

@@ -63,10 +63,10 @@ def scan(config, data, storage):
     return best
 
 
-def main():
+def main(argv=None):
     parser = argparse.ArgumentParser(description="Stage 1: read-only binary-market scanner")
     parser.add_argument("--loop", action="store_true", help="Repeat scans at INTERVAL seconds")
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
     storage = None
     try:
         config = Config.from_env()

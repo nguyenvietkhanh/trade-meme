@@ -1,3 +1,9 @@
+> Cập nhật: launcher dùng cùng một phiên Chrome cho preflight và scanner.
+> Preflight giờ dùng cùng retry policy với scanner (tối đa 3 retry sau lần đầu,
+> backoff+jitter, in CHECK attempt n/4). Reset/timeout tạm thời mới retry;
+> CAPTCHA/403 không retry. Nếu vẫn thất bại thì dừng, không tự mở giao dịch.
+> Đây chưa phải bằng chứng rằng nguyên nhân reset mạng đã được xử lý.
+
 # Giải pháp đọc bằng Chrome trên máy local
 
 Giữ mạng dây và các cài đặt bảo mật. Yêu cầu Windows, Python 3.11+ và Google Chrome
