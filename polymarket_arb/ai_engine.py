@@ -59,8 +59,11 @@ class Account:
 def buy_plan(settings,decision,market,book,fees,cash,remaining,allowance):
     amount=number(decision['all_in_usd'])
     if allowance<=0:raise GuardError('MISSING_PUSD_EXCHANGE_APPROVAL_NO_AUTO_APPROVAL')
-    available=min(D(cash)/UNIT,remaining,settings.max_trade,allowance)
+    available=min(D(cash)/UNIT,remaining,settings.max_trade,D(2),allowance)
     if amount>available or amount<=0:raise GuardError('AI_SPEND_EXCEEDS_AVAILABLE_OR_TEST_BUDGET')
+    asks=levels(book['asks']);bids=levels(book.get('bids',[]))
+    if not asks or not bids or bids[-1][0]>asks[0][0]:raise GuardError('MISSING_OR_CROSSED_EXECUTION_BOOK')
+    if asks[0][0]-bids[-1][0]>min(settings.max_spread,D('.04')):raise GuardError('EXECUTION_SPREAD_EXCEEDS_LIMIT')
     if fees.rate and fees.exponent<1:raise GuardError('UNSUPPORTED_LIVE_FEE_EXPONENT')
     # For exponent >=1, collateral fee/notional <= rate for every possible fill price.
     # Reserve rounding per side, do not assume a top-of-book fee equals every fill's fee.
@@ -68,9 +71,9 @@ def buy_plan(settings,decision,market,book,fees,cash,remaining,allowance):
     if notional<=0:raise GuardError('BUDGET_TOO_SMALL_AFTER_FEES')
     worst,shares=walk_asks(book,notional)
     p=decision['probability_yes'] if decision['action']=='BUY_YES' else 1-decision['probability_yes']
-    if decision['confidence']<settings.confidence:raise GuardError('AI_CONFIDENCE_BELOW_CONFIGURED_LIMIT')
+    if decision['confidence']<max(settings.confidence,D('.6')):raise GuardError('AI_CONFIDENCE_BELOW_CONFIGURED_LIMIT')
     edge=p-worst-fees.per_share(worst)
-    if edge*100<settings.min_edge:raise GuardError('FORECAST_EDGE_BELOW_LIMIT')
+    if edge*100<max(settings.min_edge,D(8)):raise GuardError('FORECAST_EDGE_BELOW_LIMIT')
     return {'asset':market.yes if decision['action']=='BUY_YES' else market.no,
             'notional':notional,'cap':amount,'max_price':worst,'edge_pct':edge*100,'shares_estimate':shares}
 
@@ -105,6 +108,9 @@ class Executor:
             if before_qty!=position['qty']:raise GuardError('POSITION_CHANGED_EXTERNALLY_REVIEW_REQUIRED')
             book=yes if asset==market.yes else no
             bids=sorted([(number(x['price']),number(x['size'])) for x in book.get('bids',[])],reverse=True)
+            fair=decision['probability_yes'] if position['outcome']=='YES' else 1-decision['probability_yes']
+            if not bids or (bids[0][0]<=fair and decision.get('risk_changed') is not True):
+                raise GuardError('SELL_BID_NOT_ABOVE_FAIR_AND_NO_RISK_CHANGE')
             shares=(D(before_qty)/UNIT).quantize(D('.01'),rounding=ROUND_DOWN)
             if shares<number(book['min_order_size']):raise GuardError('POSITION_DUST_OR_BELOW_MIN_SIZE')
             total=D(0);floor=None

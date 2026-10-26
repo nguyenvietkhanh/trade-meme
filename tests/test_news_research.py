@@ -27,6 +27,15 @@ def evidence(now,identity='news:one',host='publisher-one.example'):
             'evidence_type':'RSS_HEADLINE_ONLY_NOT_FULL_ARTICLE'}
 
 
+def forecast_market(now,sources=None):
+    return {'market_id':'1','question':'fixture','description':'Public fixture resolution rule',
+            'resolution_source':'https://example.org/rules','end_date':datetime.fromtimestamp(now+86400,timezone.utc).isoformat(),
+            'yes_ask':'.7','yes_bid':'.69','no_ask':'.3','no_bid':'.29','yes_asset':'yes','no_asset':'no',
+            'yes_asks':[{'price':'.7','size':'100'}],'yes_bids':[{'price':'.69','size':'100'}],
+            'no_asks':[{'price':'.3','size':'100'}],'no_bids':[{'price':'.29','size':'100'}],
+            'minimum_shares':'5','fee_rate':'0','fee_exponent':1,'research':{'sources':sources or []}}
+
+
 class NewsTests(unittest.TestCase):
     def test_query_has_fixed_host_and_encoded_data(self):
         url=news_url('Federal Reserve rates & url=https://127.0.0.1/secret')
@@ -99,44 +108,45 @@ class NewsTests(unittest.TestCase):
         self.assertEqual(len(decision['cited_sources']),2)
         with self.assertRaises(ValueError):validate_decision(raw,[dict(market,research={'sources':[]})],[])
 
-    def test_uncited_model_buy_becomes_hold_even_if_model_claims_no_external_facts(self):
+    def test_news_basis_without_citations_becomes_hold(self):
         response=Mock(status_code=200)
-        response.json.return_value={'choices':[{'message':{'content':json.dumps({'action':'BUY_YES','market_id':'1',
-            'all_in_usd':2,'probability_yes':.8,'confidence':.9,'uses_external_facts':False,'reason':'fixture'})}}]}
+        response.json.return_value={'choices':[{'message':{'content':json.dumps({'decisions':[{'action':'BUY_YES','market_id':'1','position_asset':None,
+            'size_fraction':1,'basis':'news','probability_yes':.8,'confidence':.9,'uses_external_facts':True,'reason':'fixture'}]})}}]}
         client=Mock();client.post.return_value=response
         settings=AISettings('fixture','fixture',model_key='fixture')
         with patch('polymarket_arb.ai_model.httpx.Client') as factory:
             factory.return_value.__enter__.return_value=client
-            result=decide(settings,[{'market_id':'1'}],[],2,7)
+            result=decide(settings,[forecast_market(time.time())],[],2,7)
         self.assertEqual(result['action'],'HOLD')
 
     def test_model_buy_with_fresh_provided_citations_keeps_decision_and_audit(self):
         now=time.time();sources=[evidence(now),evidence(now,'news:two','publisher-two.example')]
-        raw={'action':'BUY_NO','market_id':'1','all_in_usd':2,'probability_yes':.2,'confidence':.8,
+        raw={'action':'BUY_NO','market_id':'1','position_asset':None,'size_fraction':1,'basis':'news','probability_yes':.2,'confidence':.8,
              'uses_external_facts':True,'cited_source_ids':[s['id'] for s in sources],'reason':'fixture uncertainty'}
-        response=Mock(status_code=200);response.json.return_value={'choices':[{'message':{'content':json.dumps(raw)}}]}
+        response=Mock(status_code=200);response.json.return_value={'choices':[{'message':{'content':json.dumps({'decisions':[raw]})}}]}
         client=Mock();client.post.return_value=response
         settings=AISettings('fixture-wallet','fixture-private',model_key='fixture-model')
         with patch('polymarket_arb.ai_model.httpx.Client') as factory:
             factory.return_value.__enter__.return_value=client
-            result=decide(settings,[{'market_id':'1','research':{'sources':sources}}],[],2,7)
+            result=decide(settings,[forecast_market(now,sources)],[],2,7)
         self.assertEqual(result['action'],'BUY_NO')
         self.assertEqual(result['cited_sources'],sources)
         payload=client.post.call_args.kwargs['json']
-        self.assertIn('HEADLINE_RESEARCH_REQUIRED',json.dumps(payload))
+        self.assertIn('BASE_RATE_WITH_OPTIONAL_HEADLINE_NEWS',json.dumps(payload))
         self.assertNotIn('fixture-private',json.dumps(payload))
         self.assertNotIn('fixture-wallet',json.dumps(payload))
 
     def test_model_can_sell_owned_position_without_news(self):
-        raw={'action':'SELL','position_asset':'held','probability_yes':.2,'confidence':.8,
+        raw={'action':'SELL','market_id':None,'position_asset':'held','size_fraction':0,'basis':'base_rate','probability_yes':.2,'confidence':.8,
              'uses_external_facts':False,'reason':'reduce owned risk','cited_source_ids':[]}
         positions=[{'asset':'held','qty':5000000,'cost':'2','outcome':'YES','market':{'id':'1','title':'fixture public question'}}]
         self.assertEqual(validate_decision(raw,[{'market_id':'1','research':{'sources':[]}}],positions)['action'],'SELL')
-        response=Mock(status_code=200);response.json.return_value={'choices':[{'message':{'content':json.dumps(raw)}}]}
+        hold={'action':'HOLD','market_id':'1','position_asset':None,'size_fraction':0,'basis':'none','probability_yes':.5,'confidence':.5,'uses_external_facts':False,'reason':'fixture'}
+        response=Mock(status_code=200);response.json.return_value={'choices':[{'message':{'content':json.dumps({'decisions':[hold,raw]})}}]}
         client=Mock();client.post.return_value=response
         with patch('polymarket_arb.ai_model.httpx.Client') as factory:
             factory.return_value.__enter__.return_value=client
-            result=decide(AISettings('fixture','fixture',model_key='fixture'),[{'market_id':'1'}],positions,0,0)
+            result=decide(AISettings('fixture','fixture',model_key='fixture'),[forecast_market(time.time())],positions,0,0)
         self.assertEqual(result['action'],'SELL')
         packet=json.loads(client.post.call_args.kwargs['json']['messages'][1]['content'])
         self.assertEqual(packet['owned_positions'][0]['market_id'],'1')

@@ -4,21 +4,45 @@ Bản hiện tại dùng **SDK chính thức `polymarket-client==0.14.0`** trên
 AI River chọn **BUY YES / BUY NO / SELL / HOLD**. Scanner arbitrage chỉ đọc vẫn có riêng.
 Mặc định **DRY_RUN=true**; code đặt lệnh thật chỉ hoạt động khi bạn đổi cấu hình và dùng launcher live.
 
+## Prompt dự báo mới — base-rate-forecast-v6
+
+Model dự báo từng market và vị thế, có now_utc, days_left, rules, volume, bid/ask
+YES/NO thực. Code tính lại edge/spread, chọn một lệnh, size_fraction nhân cash
+thực rồi cap **2 USD/lệnh BUY**. Tổng BUY toàn đợt vẫn tối đa **7 USD**.
+
+`base_rate` được BUY không cần headline/citation; không đặt uses_external_facts.
+`news` cần hai publisher còn mới, đúng market. Thiếu tin không tự động HOLD.
+Entry mặc định edge ≥8%, confidence ≥0.6, spread bên mua ≤4%; vẫn kiểm tra net
+edge sau phí, depth, min-size và fresh book. SELL asset đang giữ cần bid trên
+fair value hoặc risk_changed=true, được ưu tiên trước BUY mới.
+
+Cập nhật code như bên dưới rồi đặt cấu hình:
+
+```ini
+MAX_USD_PER_TRADE=2
+MIN_FORECAST_EDGE_PCT=8
+MAX_SPREAD_PCT=4
+MIN_AI_CONFIDENCE=0.6
+```
+
+Không thay keys, DRY_RUN, .venv hoặc ledger. FORECAST in dự báo từng mục và lý do
+bị chặn; AI/ORDER cho biết quyết định được chọn và kết quả. Xem AI_TRADING.md.
+
 ## Chạy ẩn và biết bot đang làm gì
 
-Bản `headless-status-v5` mặc định `BROWSER_HEADLESS=true`: Chrome không hiện cửa sổ.
+Bản hiện tại mặc định `BROWSER_HEADLESS=true`: Chrome không hiện cửa sổ.
 Có log SCAN START/END, QUOTE, AI REQUEST, WAIT và ALIVE mỗi 30 giây lúc chờ.
 Mặc định vòng kế tiếp bắt đầu sau 180 giây kể từ khi vòng trước kết thúc; sau HOLD
 không có lệnh không đồng nghĩa process đứng. Banner in rõ browser HIDDEN/VISIBLE và LIVE/DRY_RUN.
 
-Cập nhật từ v4: Ctrl+C, chờ Stopped rồi đóng cửa sổ bridge cũ. Chép `ai_bot.py`,
+Cập nhật từ v4/v5: Ctrl+C, chờ Stopped rồi đóng cửa sổ bridge cũ. Chép `ai_bot.py`,
 `news_check.py` và toàn bộ `polymarket_arb` vào bản đang dùng. Giữ `.env.ai`, `.venv`,
 journal và các launcher. Không cần cài thêm dependency. Thêm `BROWSER_HEADLESS=true`
 nếu muốn ghi rõ trong cấu hình; false bật UI để chẩn đoán. Giữ CMD mở hoặc thu nhỏ.
 
 ## Tin tức mới và chạy thật
 
-Bản `news-evidence-v4` lấy RSS Google News, kiểm tra thời gian/nguồn và yêu cầu BUY dẫn ít nhất hai publisher_host đã cung cấp. Headline chưa phải bằng chứng đã xác minh; thiếu nguồn thì HOLD. SELL vị thế đang giữ không bị bắt buộc có tin mới.
+Bản hiện tại lấy RSS Google News có thời gian/nguồn. BUY basis=news cần hai publisher_host đã cung cấp; BUY basis=base_rate không cần tin. Headline chưa phải bằng chứng đã xác minh. SELL vị thế đang giữ không bắt buộc có tin mới.
 
 Nếu đã cài bản cũ: chép `ai_bot.py`, `news_check.py`, `check_news.bat` và toàn bộ thư mục `polymarket_arb` vào bản đang dùng. Giữ `.env.ai`, `.venv` và journal. Không có dependency mới.
 
@@ -54,8 +78,8 @@ Bản này không chứa script wrap: cần kiểm tra đúng asset, spender, v�
 
 ## Kiểm chứng
 
-116 unit tests đã qua; fixture transport Chromium offline đã qua, dùng dữ liệu/khóa giả lập.
-**Người dùng đã xác minh tài khoản, đọc RSS và gọi River nhận HOLD ở bản trước. Chế độ ẩn mới trên Windows và BUY/SELL/settlement tiền thật vẫn chưa được kiểm chứng trên máy người dùng.**
+138 unit tests đã qua; fixture transport Chromium offline đã qua, dùng dữ liệu/khóa giả lập.
+**Người dùng đã xác minh tài khoản, đọc RSS và gọi River nhận HOLD ở bản trước. Schema JSON/dự báo v6, chế độ ẩn trên Windows và BUY/SELL/settlement tiền thật vẫn chưa được kiểm chứng trên máy người dùng.**
 Không coi test pass là xác nhận đã giao dịch thật. Không có công cụ tự sửa journal sau lệnh UNKNOWN; giữ nguyên trạng thái và kiểm tra tài khoản trước khi xử lý.
 
 ## Dependencies và mã nguồn
@@ -63,7 +87,7 @@ Không coi test pass là xác nhận đã giao dịch thật. Không có công c
 - [requirements.txt](requirements.txt): phiên bản đầy đủ.
 - [docs/dependencies.md](docs/dependencies.md): nguồn và mục đích từng dependency.
 - `ai_bot.py`: vòng chạy và account check.
-- `polymarket_arb/ai_settings.py`, `ai_model.py`, `ai_engine.py`, `ai_journal.py`, `secure_bridge.py`: cấu hình, AI, thực thi, sổ lệnh và transport có kiểm soát.
+- `polymarket_arb/ai_settings.py`, `ai_model.py`, `forecast.py`, `ai_engine.py`, `ai_journal.py`, `secure_bridge.py`: cấu hình, AI, thực thi, sổ lệnh và transport có kiểm soát.
 - `polymarket_arb/market_data.py`, `pricing.py`, `risk.py`: dữ liệu, tính giá/phí và kiểm tra.
 - [BROWSER.md](BROWSER.md): scanner public qua Chrome.
 - [docs/SCANNER_HISTORY.md](docs/SCANNER_HISTORY.md): lịch sử scanner, không dùng làm hướng dẫn AI hiện tại.

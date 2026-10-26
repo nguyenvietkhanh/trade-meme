@@ -30,7 +30,7 @@ def app(argv=None):
     if args.live and settings.dry_run:raise GuardError('SET_DRY_RUN_FALSE_EXPLICITLY_TO_ARM_LIVE')
     if not settings.dry_run and not args.live and not args.check_account:raise GuardError('LIVE_REQUIRES_EXPLICIT_LIVE_FLAG')
     headless=getattr(settings,'browser_headless',True)
-    print('AI LOCAL | revision=headless-status-v5 | browser='+('HIDDEN' if headless else 'VISIBLE')+' | mode='+('LIVE' if args.live else 'DRY_RUN'),flush=True)
+    print('AI LOCAL | revision=base-rate-forecast-v6 | browser='+('HIDDEN' if headless else 'VISIBLE')+' | mode='+('LIVE' if args.live else 'DRY_RUN'),flush=True)
     if not args.check_account:
         print(f'SCHEDULE | interval={settings.interval:g}s after each cycle | heartbeat=30s | model_limit={settings.max_calls}/day UTC',flush=True)
     bridge=SDKBridge(headless=headless);client=data=journal=None
@@ -47,9 +47,10 @@ def app(argv=None):
         account=Account(client)
         cash=account.snapshot()
         remaining=journal.remaining(settings.test_budget)
-        available=min(Decimal(cash.balance)/1000000,remaining,settings.max_trade)
+        available=min(Decimal(cash.balance)/1000000,remaining)
         print('ACCOUNT VERIFIED | wallet='+settings.wallet+' | type='+client.wallet_type,flush=True)
         print(f'Cash={Decimal(cash.balance)/1000000} pUSD | remaining cumulative BUY test cap={remaining} | usable <= {available}',flush=True)
+        print(f'ENTRY LIMITS | cap={min(settings.max_trade,Decimal(2))} USD | min_edge={settings.min_edge}% | max_spread={settings.max_spread*100}% | confidence={settings.confidence}',flush=True)
         print('State directory:',journal.directory,flush=True)
         for exchange in (cfg.standard_exchange,cfg.exchange_v3):
             limit=next((v for k,v in cash.allowances.items() if k.lower()==exchange.lower()),0)
@@ -81,7 +82,7 @@ def app(argv=None):
                     raw=account.balance(position['asset'],position['market']['version'])
                     if raw.balance!=position['qty']:raise GuardError('POSITION_CHANGED_EXTERNALLY_REVIEW_REQUIRED')
                 cash=account.snapshot();remaining=journal.remaining(settings.test_budget)
-                available=min(Decimal(cash.balance)/1000000,remaining,settings.max_trade)
+                available=min(Decimal(cash.balance)/1000000,remaining)
                 print(f'SCAN | cycle={cycle} | stage=DISCOVERY | usable={available} pUSD | positions={len(positions)}',flush=True)
                 markets=data.markets()
                 print(f'SCAN | cycle={cycle} | discovered={len(markets)}',flush=True)
@@ -96,11 +97,16 @@ def app(argv=None):
                         print(f'QUOTE | cycle={cycle} | market={market.id}',flush=True)
                         yes,no,fee,minimum,yt,nt=data.snapshot(market)
                         y=levels(yes['asks']);n=levels(no['asks'])
+                        yb=levels(yes.get('bids',[]));nb=levels(no.get('bids',[]))
                         context={'market_id':market.id,'question':market.title,'description':market.description,
-                                 'end_date':market.end_date,'resolution_source':market.resolution_source,
+                                 'resolution_rules':market.description,'end_date':market.end_date,'resolution_source':market.resolution_source,
+                                 'volume':market.volume or None,'yes_asset':market.yes,'no_asset':market.no,
                                  'yes_ask':str(y[0][0]),'no_ask':str(n[0][0]),'minimum_shares':str(minimum),
+                                 'yes_bid':str(yb[-1][0]) if yb else None,'no_bid':str(nb[-1][0]) if nb else None,
                                  'yes_asks':[{'price':str(p),'size':str(q)} for p,q in y[:20]],
                                  'no_asks':[{'price':str(p),'size':str(q)} for p,q in n[:20]],
+                                 'yes_bids':[{'price':str(p),'size':str(q)} for p,q in reversed(yb[-20:])],
+                                 'no_bids':[{'price':str(p),'size':str(q)} for p,q in reversed(nb[-20:])],
                                  'fee_rate':str(fee.rate),'fee_exponent':fee.exponent,'observed_at':time.time(),
                                  'research':research.collect(market.id,market.title)}
                         print('NEWS | market='+market.id+' | '+context['research']['status']+' | sources='+str(len(context['research']['sources'])),flush=True)
@@ -125,6 +131,10 @@ def app(argv=None):
                     print(f'AI REQUEST | {display_time()} | cycle={cycle} | markets={len(contexts)} | calls={used}/{settings.max_calls} UTC today | waiting for River',flush=True)
                     decision=decide(settings,contexts,positions,available,remaining)
                     print('AI | '+decision['action']+' | '+''.join(c for c in decision['reason'] if c.isprintable())[:500],flush=True)
+                    for item in decision.get('evaluations',[]):
+                        print('FORECAST | market='+str(item['market_id'])+' | asset='+str(item['position_asset'])+
+                              ' | '+item['proposed_action']+' -> '+item['action']+' | p_yes='+str(item['probability_yes'])+
+                              ' | edge='+str(item['edge'])+' | basis='+str(item['basis'])+' | blocked='+str(item.get('blocked_by','none')),flush=True)
                     journal.event('AI_DECISION',decision)
                     for source in decision.get('cited_sources',[]):
                         print('SOURCE | '+source['id']+' | '+source['publisher_host']+' | '+source['url'],flush=True)

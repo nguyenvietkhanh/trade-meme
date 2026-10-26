@@ -129,6 +129,7 @@ class Market:
     description: str = ""
     end_date: str = ""
     resolution_source: str = ""
+    volume: str = ""
 
 
 def array(value):
@@ -163,7 +164,8 @@ def market_from_gamma(raw, config):
     except ValueError: return None
     return Market(str(raw["id"]), condition, str(raw.get("question", ""))[:200], tokens[names.index("yes")], tokens[names.index("no")], version,
                   str(raw.get("description", ""))[:6000], str(raw.get("endDate", "")),
-                  str(raw.get("resolutionSource", ""))[:1000])
+                  str(raw.get("resolutionSource", ""))[:1000],
+                  str(raw.get("volumeNum",raw.get("volume",""))))
 
 
 def fee_parameters(info, market):

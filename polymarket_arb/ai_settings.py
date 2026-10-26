@@ -7,7 +7,7 @@ from .config import number
 
 NAMES={'SIGNER_PRIVATE_KEY','POLYMARKET_WALLET_ADDRESS','MODEL_API_KEY','MODEL_BASE_URL','MODEL_NAME',
        'DRY_RUN','MAX_TEST_BUDGET','MAX_USD_PER_TRADE','MIN_FORECAST_EDGE_PCT','MIN_AI_CONFIDENCE',
-       'AI_INTERVAL_SECONDS','MAX_MODEL_CALLS_PER_DAY','DAILY_LOSS_LIMIT','MAX_OPEN_POSITIONS','NEWS_RESEARCH_ENABLED','BROWSER_HEADLESS'}
+       'AI_INTERVAL_SECONDS','MAX_MODEL_CALLS_PER_DAY','DAILY_LOSS_LIMIT','MAX_OPEN_POSITIONS','NEWS_RESEARCH_ENABLED','BROWSER_HEADLESS','MAX_SPREAD_PCT'}
 
 
 def load_local(path=Path('.env.ai')):
@@ -31,15 +31,16 @@ class AISettings:
     model_name: str = 'deepseek-ai/DeepSeek-V4.1-Flash'
     dry_run: bool = True
     test_budget: Decimal = Decimal('7')
-    max_trade: Decimal = Decimal('7')
-    min_edge: Decimal = Decimal('3')
-    confidence: Decimal = Decimal('.65')
+    max_trade: Decimal = Decimal('2')
+    min_edge: Decimal = Decimal('8')
+    confidence: Decimal = Decimal('.6')
     interval: float = 180
     max_calls: int = 24
     daily_loss: Decimal = Decimal('1')
     max_positions: int = 3
     news_enabled: bool = True
     browser_headless: bool = True
+    max_spread: Decimal = Decimal('.04')
 
     @classmethod
     def from_env(cls):
@@ -50,14 +51,15 @@ class AISettings:
         dry=os.getenv('DRY_RUN','true').lower()
         if dry not in ('true','false'):raise ValueError('INVALID_DRY_RUN')
         budget=number(os.getenv('MAX_TEST_BUDGET','7'))
-        trade=number(os.getenv('MAX_USD_PER_TRADE','7'))
-        edge=number(os.getenv('MIN_FORECAST_EDGE_PCT','3'))
-        confidence=number(os.getenv('MIN_AI_CONFIDENCE','.65'))
+        trade=number(os.getenv('MAX_USD_PER_TRADE','2'))
+        edge=number(os.getenv('MIN_FORECAST_EDGE_PCT','8'))
+        confidence=number(os.getenv('MIN_AI_CONFIDENCE','.6'))
+        spread=number(os.getenv('MAX_SPREAD_PCT','4'))/100
         interval=float(number(os.getenv('AI_INTERVAL_SECONDS','180')))
         calls=int(os.getenv('MAX_MODEL_CALLS_PER_DAY','24'))
         loss=number(os.getenv('DAILY_LOSS_LIMIT','1'))
         max_positions=int(os.getenv('MAX_OPEN_POSITIONS','3'))
-        if not 0<budget<=7 or not 0<trade<=7 or not 0<=edge<100 or not 0<=confidence<=1 or interval<30 or not 1<=calls<=1000 or loss<=0 or not 1<=max_positions<=10:
+        if not 0<budget<=7 or not 0<trade<=7 or not 0<=edge<100 or not 0<=confidence<=1 or not 0<=spread<1 or interval<30 or not 1<=calls<=1000 or loss<=0 or not 1<=max_positions<=10:
             raise ValueError('INVALID_TEST_LIMITS_MAXIMUM_7_USD')
         base=os.getenv('MODEL_BASE_URL','https://api.river.ai/v1').rstrip('/')
         if base!='https://api.river.ai/v1':raise ValueError('MODEL_ENDPOINT_NOT_APPROVED')
@@ -67,7 +69,7 @@ class AISettings:
         if news not in ('true','false'):raise ValueError('INVALID_NEWS_RESEARCH_ENABLED')
         headless=os.getenv('BROWSER_HEADLESS','true').lower()
         if headless not in ('true','false'):raise ValueError('INVALID_BROWSER_HEADLESS')
-        return cls(wallet,key,model_key,base,os.getenv('MODEL_NAME',cls.model_name),dry=='true',budget,trade,edge,confidence,interval,calls,loss,max_positions,news=='true',headless=='true')
+        return cls(wallet,key,model_key,base,os.getenv('MODEL_NAME',cls.model_name),dry=='true',budget,min(trade,Decimal(2)),max(edge,Decimal(8)),max(confidence,Decimal('.6')),interval,calls,loss,max_positions,news=='true',headless=='true',min(spread,Decimal('.04')))
 
 
 def state_directory(wallet):

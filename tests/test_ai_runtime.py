@@ -30,8 +30,8 @@ WALLET=derive_proxy_wallet_address(OWNER,CFG.wallet_derivation)
 ASSET='32338220190071351435772801779725302244575775216413325951443816017994629993401'
 NO='25659310674993675562345759665114759892400026242514633218387667107987341231962'
 M=Market('559651','0x'+'ab'*32,'fixture',ASSET,NO)
-BOOK={'asks':[{'price':'.4','size':'100'}],'bids':[{'price':'.39','size':'100'}], 'min_order_size':'5'}
-DECISION={'action':'BUY_YES','market_id':M.id,'all_in_usd':D(3),'probability_yes':D('.8'),'confidence':D('.9'),'reason':'offline fixture'}
+BOOK={'asks':[{'price':'.3','size':'100'}],'bids':[{'price':'.29','size':'100'}], 'min_order_size':'5'}
+DECISION={'action':'BUY_YES','market_id':M.id,'all_in_usd':D(2),'probability_yes':D('.8'),'confidence':D('.9'),'reason':'offline fixture'}
 
 
 class FakeSDKWire(SDKBridge):
@@ -140,10 +140,10 @@ class AIBudgetTests(unittest.TestCase):
         with self.assertRaises(RuntimeError):Journal(self.directory,WALLET)
 
     def test_budget_uses_actual_cash_not_fixed_seven(self):
-        with self.assertRaises(GuardError):buy_plan(self.settings,DECISION,M,BOOK,Fees(D(0),1),2_000_000,D(7),D(7))
+        with self.assertRaises(GuardError):buy_plan(self.settings,DECISION,M,BOOK,Fees(D(0),1),1_000_000,D(7),D(7))
         plan=buy_plan(self.settings,DECISION,M,BOOK,Fees(D('.07'),1),6_570_000,D(7),D(7))
-        self.assertLess(plan['notional'],D(3))
-        self.assertLessEqual(plan['notional']*D('1.07')+D('.00002'),D(3))
+        self.assertLess(plan['notional'],D(2))
+        self.assertLessEqual(plan['notional']*D('1.07')+D('.00002'),D(2))
 
     def test_journal_reserves_before_post_and_survives_reopen(self):
         identifier=self.j.prepare(ASSET,'BUY',D(6),{'signature':'fixture'},6570000,0,D(7))
@@ -176,7 +176,7 @@ class AIBudgetTests(unittest.TestCase):
 
     def test_api_payload_contains_no_wallet_or_signer_secret(self):
         response=Mock(status_code=200)
-        response.json.return_value={'choices':[{'message':{'content':'{"action":"HOLD","reason":"no evidence"}'}}]}
+        response.json.return_value={'choices':[{'message':{'content':json.dumps({'decisions':[{'action':'HOLD','market_id':M.id,'position_asset':None,'basis':'none','probability_yes':.5,'confidence':.5,'size_fraction':0,'uses_external_facts':False,'reason':'no evidence'}]})}}]}
         client=Mock();client.post.return_value=response
         with patch('polymarket_arb.ai_model.httpx.Client') as constructor:
             constructor.return_value.__enter__.return_value=client
@@ -215,10 +215,10 @@ class ExecutorTests(unittest.TestCase):
         self.executor=Executor(self.settings,self.client,self.bridge,self.j)
         cash=SimpleNamespace(balance=6570000,allowances={CFG.standard_exchange:10000000})
         self.executor.account.snapshot=Mock(return_value=cash)
-        self.executor.account.balance=Mock(side_effect=[SimpleNamespace(balance=0),SimpleNamespace(balance=3582000),SimpleNamespace(balance=7470000)])
-        self.signed=SignedOrder(builder='0x'+'0'*64,expiration=0,maker=WALLET,maker_amount=2988000,
+        self.executor.account.balance=Mock(side_effect=[SimpleNamespace(balance=0),SimpleNamespace(balance=4590000),SimpleNamespace(balance=6600000)])
+        self.signed=SignedOrder(builder='0x'+'0'*64,expiration=0,maker=WALLET,maker_amount=1980000,
             metadata='0x'+'0'*64,order_type='FOK',salt=1,side='BUY',signature='0x'+'00'*65,
-            signature_type=1,signer=OWNER,taker_amount=7470000,timestamp=1,token_id=ASSET)
+            signature_type=1,signer=OWNER,taker_amount=6600000,timestamp=1,token_id=ASSET)
         self.client.create_market_order.return_value=self.signed
         response=SimpleNamespace(ok=True,order_id='0x'+'12'*32,trade_ids=('fixture-trade',),
             model_dump=lambda **_: {'ok':True,'order_id':'0x'+'12'*32,'trade_ids':['fixture-trade']})
@@ -237,21 +237,21 @@ class ExecutorTests(unittest.TestCase):
         def send(signed):
             state=self.j.db.execute('SELECT state,signed FROM orders').fetchone()
             self.assertEqual(state[0],'SENDING')
-            self.assertEqual(json.loads(state[1])['maker_amount'],2988000)
+            self.assertEqual(json.loads(state[1])['maker_amount'],1980000)
             self.bridge.authorize_order.assert_called_once()
             return response
         self.client.post_order.side_effect=send
         result=self.executor.execute(DECISION,M,BOOK,BOOK,Fees(D(0),1),live=True)
         self.assertEqual(result['status'],'CONFIRMED')
         self.client.post_order.assert_called_once()
-        self.assertEqual(self.j.remaining(D(7)),D('4.012'))
-        self.assertEqual(self.j.positions()[0]['qty'],7470000)
+        self.assertEqual(self.j.remaining(D(7)),D('5.02'))
+        self.assertEqual(self.j.positions()[0]['qty'],6600000)
 
     def test_post_timeout_is_unknown_never_retried(self):
         self.client.post_order.side_effect=TimeoutError('fixture only')
         with self.assertRaises(TimeoutError):self.executor.execute(DECISION,M,BOOK,BOOK,Fees(D(0),1),live=True)
         self.assertTrue(self.j.pending())
-        self.assertEqual(self.j.remaining(D(7)),D(4))
+        self.assertEqual(self.j.remaining(D(7)),D(5))
         with self.assertRaises(GuardError):self.executor.execute(DECISION,M,BOOK,BOOK,Fees(D(0),1),live=True)
         self.client.post_order.assert_called_once()
 
@@ -273,17 +273,42 @@ class ExecutorTests(unittest.TestCase):
 
     def test_sell_confirmed_position_records_realized_loss_and_does_not_reset_buy_cap(self):
         from dataclasses import replace
-        identifier=self.j.prepare(ASSET,'BUY',D(3),{},6570000,0,D(7))
-        self.j.confirmed(identifier,ASSET,'BUY',D('-2.988'),7470000,M,'YES',0)
-        sell=replace(self.signed,side='SELL',maker_amount=7470000,taker_amount=2913300)
+        identifier=self.j.prepare(ASSET,'BUY',D(2),{},6570000,0,D(7))
+        self.j.confirmed(identifier,ASSET,'BUY',D('-1.98'),6600000,M,'YES',0)
+        sell=replace(self.signed,side='SELL',maker_amount=6600000,taker_amount=1914000)
         self.client.create_market_order.return_value=sell
-        self.executor.account.snapshot.return_value=SimpleNamespace(balance=3582000,allowances={CFG.standard_exchange:10000000})
-        self.executor.account.balance=Mock(side_effect=[SimpleNamespace(balance=7470000),
-            SimpleNamespace(balance=7470000,allowances={CFG.standard_exchange:2**256-1}),
-            SimpleNamespace(balance=6495300),SimpleNamespace(balance=0)])
-        decision={'action':'SELL','position_asset':ASSET,'probability_yes':D('.5'),'confidence':D('.5')}
+        self.executor.account.snapshot.return_value=SimpleNamespace(balance=4590000,allowances={CFG.standard_exchange:10000000})
+        self.executor.account.balance=Mock(side_effect=[SimpleNamespace(balance=6600000),
+            SimpleNamespace(balance=6600000,allowances={CFG.standard_exchange:2**256-1}),
+            SimpleNamespace(balance=6504000),SimpleNamespace(balance=0)])
+        decision={'action':'SELL','position_asset':ASSET,'probability_yes':D('.5'),'confidence':D('.5'),'risk_changed':True}
         result=self.executor.execute(decision,M,BOOK,BOOK,Fees(D(0),1),live=True)
         self.assertEqual(result['status'],'CONFIRMED')
         self.assertEqual(self.j.positions(),[])
-        self.assertEqual(self.j.daily_pnl(),D('-.0747'))
-        self.assertEqual(self.j.remaining(D(7)),D('4.012'))
+        self.assertEqual(self.j.daily_pnl(),D('-.066'))
+        self.assertEqual(self.j.remaining(D(7)),D('5.02'))
+
+    def test_fresh_wide_spread_blocks_before_signing(self):
+        book=dict(BOOK,bids=[{'price':'.1','size':'100'}])
+        with self.assertRaisesRegex(GuardError,'EXECUTION_SPREAD_EXCEEDS_LIMIT'):
+            self.executor.execute(DECISION,M,book,book,Fees(D(0),1),live=True)
+        self.client.create_market_order.assert_not_called()
+        self.client.post_order.assert_not_called()
+
+    def test_more_than_two_dollars_is_blocked_even_with_larger_wallet(self):
+        from dataclasses import replace
+        self.executor.settings=replace(self.settings,max_trade=D(7))
+        decision=dict(DECISION,all_in_usd=D(3))
+        with self.assertRaises(GuardError):self.executor.execute(decision,M,BOOK,BOOK,Fees(D(0),1),live=True)
+        self.client.create_market_order.assert_not_called()
+        self.client.post_order.assert_not_called()
+
+    def test_sell_rechecks_fresh_bid_before_signing(self):
+        identifier=self.j.prepare(ASSET,'BUY',D(2),{},6570000,0,D(7))
+        self.j.confirmed(identifier,ASSET,'BUY',D('-1.98'),6600000,M,'YES',0)
+        self.executor.account.balance=Mock(return_value=SimpleNamespace(balance=6600000))
+        decision={'action':'SELL','position_asset':ASSET,'probability_yes':D('.5'),'confidence':D('.8'),'risk_changed':False}
+        with self.assertRaisesRegex(GuardError,'SELL_BID_NOT_ABOVE_FAIR_AND_NO_RISK_CHANGE'):
+            self.executor.execute(decision,M,BOOK,BOOK,Fees(D(0),1),live=True)
+        self.client.create_market_order.assert_not_called()
+        self.client.post_order.assert_not_called()

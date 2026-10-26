@@ -1,8 +1,68 @@
-# AI Polymarket local — headless-status-v5
+# AI Polymarket local — base-rate-forecast-v6
 
 AI River chọn BUY YES / BUY NO / SELL / HOLD. Đây là giao dịch dự đoán theo
 xác suất, không phải arbitrage bảo đảm lợi nhuận. SDK chính thức được pin ở
 `polymarket-client==0.14.0`, Polygon 137. Mặc định `DRY_RUN=true`.
+
+
+## Dự báo nhiều market và chọn lệnh ở v6
+
+Prompt mới phân tích resolution, base rate theo days_left rồi điều chỉnh theo
+headline trực tiếp liên quan. Input có now_utc, resolution_rules từ description
+Gamma, resolution_source, ngày kết thúc, volume Gamma (không mặc định là volume
+24h), ask/bid thật cả YES/NO và độ sâu mỗi bên. Thiếu ngày/rules/source hợp lệ
+hoặc spread hợp lệ thì không mở BUY; không bịa bid, volume hay ngày kết thúc.
+
+Model trả `decisions` cho từng market và thêm một mục cho từng vị thế đang giữ.
+Code kiểm tra đủ coverage, đúng ID và không trùng. HOLD của market cũng phải có
+market_id; HOLD/SELL của vị thế phải có position_asset. JSON chuẩn hoặc fenced
+JSON được hỗ trợ; prose trộn JSON, hai object, duplicate keys, NaN/Infinity bị
+chặn. API dùng response_format=json_object, max_tokens=2500 và timeout 90s.
+
+- `base_rate`: được BUY khi không có tin; uses_external_facts phải false. Không
+  yêu cầu hai nguồn. Đây là phán đoán prior của model, không phải thống kê thực
+  nghiệm đã được xác minh hoặc xác suất đã hiệu chuẩn.
+- `news`: khi headline làm thay đổi dự báo, uses_external_facts phải true và dẫn
+  ID còn mới, đúng market, từ ít nhất hai publisher_host khác nhau. Sai/mạo danh
+  citation bị từ chối; thiếu hai publisher thì mục đó HOLD.
+- probability_yes nằm trong [0.01,0.99]; confidence và size_fraction trong [0,1].
+- Code ghi đè edge model tự tính: p-yes_ask hoặc 1-p-no_ask; spread dùng đúng
+  bên đang mua, không dùng YES spread cho lệnh NO.
+- Mặc định/floor BUY edge 8%, confidence 0.6; spread tối đa 4%. Phí, độ sâu và
+  min-size vẫn qua guard chung: net edge sau phí tại mức giá sâu nhất cần khớp
+  cũng phải đạt 8%. Vì vậy gross edge vừa 8% chưa đủ nếu có phí/impact.
+- Cỡ lệnh = min(available cash * size_fraction, ngân sách còn lại * size_fraction,
+  max_per_trade, 2 USD), làm tròn xuống micro pUSD. Đây là tiền all-in gồm phí.
+  available cash không bị cắt xuống 2 trước khi nhân fraction.
+- Sàn có min-size riêng: trần 2 USD có thể không đủ mua 5 shares sau phí; code
+  HOLD thay vì nâng cỡ lệnh. Không tự mua thêm asset đã giữ hoặc vượt max positions.
+- SELL chỉ asset đang giữ, code tính owned-side bid - fair value. Nếu bid không
+  cao hơn fair value, cần model đặt `risk_changed=true`; trường này được thêm vào
+  schema để diễn đạt nhánh “risk has changed”. Code không tin edge SELL do model.
+- Chọn một lệnh mỗi vòng. SELL hợp lệ được ưu tiên trước mở BUY; trong nhóm phù
+  hợp chọn edge * confidence lớn nhất. Giữ tất cả evaluations để xem/audit.
+- Lấy lại book trước khi ký, kiểm tra spread/edge/fees/số dư; SELL cũng kiểm tra
+  lại bid/fair value. POST order vẫn chỉ một lần, UNKNOWN không tự gửi lại.
+
+Cấu hình khớp yêu cầu mới (đổi các dòng tương ứng trong `.env.ai`, giữ keys và
+DRY_RUN hiện tại):
+
+```ini
+MAX_USD_PER_TRADE=2
+MIN_FORECAST_EDGE_PCT=8
+MAX_SPREAD_PCT=4
+MIN_AI_CONFIDENCE=0.6
+```
+
+Giá trị cũ max_trade=7 được clamp xuống 2, edge dưới 8 được nâng lên 8, spread
+trên 4 được clamp 4. Confidence cũ 0.65 là cấu hình chặt hơn và vẫn có hiệu lực
+nếu chưa đổi thành 0.6. Có thể đặt giới hạn chặt hơn; không nới vượt các floor/cap
+của bản test. Tổng BUY toàn đợt vẫn tối đa 7 USD, journal cũ không reset.
+
+`FORECAST` in proposed action, action sau kiểm tra, p, basis, edge code tính và
+blocked_by. Debug lỗi model chỉ in mã lỗi, không dump content/headers/secrets.
+Module thực hiện: `ai_model.py` dựng prompt/gọi River, `forecast.py` enrich/parse/
+pick_best, `ai_engine.py` kiểm tra lại và thực thi.
 
 ## Cập nhật bản đang chạy trên Windows
 
@@ -43,16 +103,11 @@ retrieved_at và source ID. Chỉ giữ headline liên quan từ khóa market, �
 không chứng minh hai bên độc lập về sở hữu hay tin đúng. Headline có thể thiếu
 ngữ cảnh, giật tít hoặc mâu thuẫn; xác suất AI vẫn có thể sai.
 
-AI được nhận đúng nguồn đã thu thập, thời gian và luật resolution. Không được
-nhận khóa ký hoặc tự điều hướng web. Mọi headline/mô tả là dữ liệu không tin cậy,
-không phải lệnh. BUY mặc định cần dẫn source IDs đúng market, còn mới, từ ít nhất
-hai publisher_host. IDs giả, sai market, quá hạn bị từ chối. BUY không dẫn đủ
-nguồn chuyển thành HOLD. SELL vị thế bot có thể dựa trên rủi ro/giá khi không có
-tin mới. Luật confidence/edge/min-size/depth/fee vẫn áp dụng; không ép BUY.
-
-NEWS_RESEARCH_ENABLED=true là mặc định dù file cấu hình cũ chưa có dòng này.
-Tắt rõ ràng bằng false sẽ quay về phân tích market-only và bỏ gate hai nguồn.
-Không coi chế độ market-only là có nghiên cứu tin tức.
+AI nhận nguồn đã thu thập và luật resolution, không nhận khóa ký hoặc tự
+điều hướng web. Headline/mô tả là dữ liệu không tin cậy. Gate hai nguồn chỉ áp
+dụng BUY cơ sở news, không áp dụng base_rate. Không có headline mới vẫn có thể
+giao dịch theo base_rate nếu mọi guard khác đạt. NEWS_RESEARCH_ENABLED=true
+mặc định; false tắt RSS và dùng base_rate market-only, không cho bịa nguồn news.
 
 ## Kiểm tra rồi bật tiền thật
 
@@ -67,7 +122,7 @@ Không coi chế độ market-only là có nghiên cứu tin tức.
 4. Để chạy thật sau khi đã chủ động chọn: trong `.env.ai` đặt **DRY_RUN=false**,
    lưu file, chạy **start_ai_live.bat** (có `--live`). Cả env và cờ CLI đều phải bật.
 
-Banner phải có `revision=headless-status-v5`, `browser=HIDDEN` và `mode=LIVE` khi bật tiền thật (browser=VISIBLE nếu chủ động bật giao diện chẩn đoán).
+Banner phải có `revision=base-rate-forecast-v6`, `browser=HIDDEN` và `mode=LIVE` khi bật tiền thật (browser=VISIBLE nếu chủ động bật giao diện chẩn đoán).
 `NEWS` báo nguồn; `SOURCE` liệt kê nguồn AI dẫn. `ORDER ... CONFIRMED` chỉ xuất
 hiện khi SDK settlement và biến động cash/shares được đối soát. `ACCEPTED` không
 được hiểu là đã khớp. Dry-run in DRY_RUN_NO_ORDER_SIGNED_OR_SENT.
@@ -81,7 +136,7 @@ cấu hình (1–1000). Credit River tách khỏi vốn giao dịch; RSS không 
 Cash được đọc động từ CLOB; không hardcode số dư. AI chọn số tiền trong giới hạn.
 Tổng BUY đã xác nhận cộng reservation đang chờ tối đa **7 USD cả đợt test**;
 SELL/lãi không làm mới ngân sách, nạp thêm không tự nâng trần. MAX_USD_PER_TRADE
-là trần lệnh, không phải cỡ lệnh cố định. Đây là guard phần mềm/SDK max_spend,
+là trần lệnh, không phải cỡ lệnh cố định; cap cứng hiện tại 2 USD/lệnh BUY. Đây là guard phần mềm/SDK max_spend,
 không phải quyền chi tiêu bất biến trên chain; owner/allowances có quyền rộng hơn.
 
 Không tự approve/wrap/deploy/redeem/chuyển tiền. Thiếu allowance thì chặn. Không
@@ -106,10 +161,10 @@ gửi hoặc tự bán vị thế. Khi chương trình đóng, vị thế đang 
 
 ## Kết quả kiểm thử và giới hạn xác minh
 
-116 unit tests đã qua; Chromium offline fixture đã kiểm tra public RSS, auth
+138 unit tests đã qua; Chromium offline fixture đã kiểm tra public RSS, auth
 headers không sang Google, nội dung private không hiển thị và chặn replay order.
 Tài khoản người dùng đã đọc thành công số dư và gọi River HOLD ở
-bản trước. RSS cũng đã đọc được trên máy người dùng ở bản v4. **Chưa kiểm chứng chế độ ẩn trên Windows của người dùng hoặc BUY/SELL tiền thật.**
+bản trước. RSS cũng đã đọc được trên máy người dùng ở bản v4. **Schema JSON/dự báo v6, chế độ ẩn trên Windows và BUY/SELL tiền thật chưa được kiểm chứng trên tài khoản người dùng.**
 Không gọi model/đặt order thật bằng keys của người dùng trong quá trình phát triển.
 
 SDK transport + derive bootstrap được inject có giới hạn trong factory lock,

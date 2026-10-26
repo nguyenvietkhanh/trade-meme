@@ -102,6 +102,8 @@ def cited_evidence(raw,market,now=None):
 
 def enforce_buy_research(decision,required=True):
     if required and decision['action'].startswith('BUY_'):
+        if decision.get('basis')=='base_rate' and decision.get('uses_external_facts') is False:
+            return decision
         sources=decision.get('cited_sources',[])
         if len({s['publisher_host'] for s in sources})<2:
             return {'action':'HOLD','reason':'Chưa có trích dẫn mới từ ít nhất hai nguồn tin khác nhau; không gửi lệnh.'}
