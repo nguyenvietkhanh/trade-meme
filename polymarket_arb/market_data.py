@@ -15,7 +15,9 @@ CLOB = "https://clob.polymarket.com"
 
 
 class DataError(ValueError):
-    pass
+    def __init__(self, code, details=None):
+        super().__init__(code)
+        self.details = details or {}
 
 
 class APIError(RuntimeError):
@@ -125,6 +127,8 @@ def market_from_gamma(raw, config):
 
 def fee_parameters(info, market):
     # No SDK defaults: absence is UNKNOWN, never zero fee.
+    if not isinstance(info, dict):
+        raise DataError("INVALID_FEE_METADATA")
     if info.get("nr", False) is not False:
         raise DataError("UNKNOWN_OR_NEG_RISK")
     tokens = info.get("t")
@@ -146,7 +150,9 @@ def check_book(book, market, token, now, max_age):
         raise DataError("BOOK_ID_MISMATCH")
     timestamp = float(number(book.get("timestamp"))) / 1000
     if timestamp > now + 1 or now - timestamp > max_age:
-        raise DataError("STALE_OR_FUTURE_BOOK")
+        raise DataError("STALE_OR_FUTURE_BOOK", {"asset_id": token,
+            "book_timestamp": str(book.get("timestamp")), "client_time": now,
+            "max_age_seconds": max_age})
     asks = levels(book.get("asks"))
     minimum = number(book.get("min_order_size"))
     if minimum <= 0 or not asks:
@@ -180,30 +186,51 @@ class MarketData:
 
             client = ReadOnlyV2Client(host=CLOB, chain_id=137, retry_on_error=False)
         self.client = client
+        self.discovery_offset = 0
 
     def markets(self):
         result, seen = [], set()
-        for page in range(self.config.max_pages):
-            rows = self.requests.get(GAMMA, "/markets", {"active": "true", "closed": "false", "limit": 100, "offset": page * 100})
+        # Resume after the last inspected raw Gamma row, not the same first N markets.
+        # Offset pagination is best effort when Gamma ordering changes mid-scan.
+        for _ in range(self.config.max_pages):
+            offset = self.discovery_offset
+            rows = self.requests.get(GAMMA, "/markets", {"active": "true", "closed": "false", "limit": 100, "offset": offset})
             if not isinstance(rows, list): raise DataError("INVALID_GAMMA_RESPONSE")
-            for raw in rows:
+            if not rows:
+                self.discovery_offset = 0
+                break
+            for index, raw in enumerate(rows):
+                self.discovery_offset = offset + index + 1
                 try: market = market_from_gamma(raw, self.config)
                 except (ValueError, TypeError, KeyError): market = None
                 if market and market.condition not in seen:
                     seen.add(market.condition); result.append(market)
-                    if len(result) >= self.config.max_markets: return result
-            if len(rows) < 100: break
+                    if len(result) >= self.config.max_markets:
+                        if index == len(rows)-1 and len(rows) < 100:
+                            self.discovery_offset = 0
+                        return result
+            if len(rows) < 100:
+                self.discovery_offset = 0
+                break
         return result
 
     def snapshot(self, market):
         # Raw fd required: SDK internally defaults missing fees to zero; we do not.
         info = self.requests.get(CLOB, "/clob-markets/" + market.condition)
-        fees = fee_parameters(info, market)
+        try:
+            fees = fee_parameters(info, market)
+        except DataError as exc:
+            exc.details = {"metadata_fee_details": info.get("fd"), "metadata_version": info.get("v"),
+                "metadata_condition": info.get("c"), "metadata_tokens": info.get("t"),
+                "metadata_keys": sorted(info)} if isinstance(info, dict) else {"metadata_type": type(info).__name__}
+            raise
         # Public SDK calls only. Sequential snapshots; freshness/skew checked after both reads.
         yes = self.requests.call(lambda: self.client.get_order_book(market.yes))
         no = self.requests.call(lambda: self.client.get_order_book(market.no))
         now = time.time()
         yt, ym = check_book(yes, market, market.yes, now, self.config.max_book_age)
         nt, nm = check_book(no, market, market.no, now, self.config.max_book_age)
-        if abs(yt - nt) > self.config.max_book_skew: raise DataError("BOOK_SKEW")
+        if abs(yt - nt) > self.config.max_book_skew:
+            raise DataError("BOOK_SKEW", {"yes_timestamp": yt, "no_timestamp": nt,
+                "max_skew_seconds": self.config.max_book_skew})
         return yes, no, fees, max(ym, nm), yt, nt

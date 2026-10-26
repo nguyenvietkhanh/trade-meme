@@ -1,6 +1,7 @@
 import argparse
 import time
 import sys
+from collections import Counter
 from .config import Config
 from .market_data import MarketData, APIError, DataError
 from .pricing import evaluate
@@ -14,6 +15,11 @@ def safe_title(value):
 def scan(config, data, storage):
     markets = data.markets()
     best, errors = [], 0
+    counts, reasons = Counter(), Counter()
+    def record(market, status, reason="", **kwargs):
+        counts[status] += 1
+        if reason: reasons[reason] += 1
+        storage.save(market, status, reason, **kwargs)
     for market in markets:
         if config.stop_file.exists(): raise InterruptedError("STOP_FILE")
         try:
@@ -26,19 +32,23 @@ def scan(config, data, storage):
             diagnostic = estimate or evaluate(yes["asks"], no["asks"], fees, fees,
                 budget=config.max_usd_per_trade, min_edge_pct=config.min_edge_pct,
                 slippage_bps=config.slippage_bps, profitable_only=False)
-            storage.save(market, status, estimate=diagnostic, yes_timestamp=yt, no_timestamp=nt,
+            record(market, status, estimate=diagnostic, yes_timestamp=yt, no_timestamp=nt,
                          fee_rate=fees.rate, fee_exponent=fees.exponent)
             if estimate: best.append((market, estimate))
             errors = 0
         except APIError:
             errors += 1
-            storage.save(market, "API_ERROR", "Public API read failed")
+            record(market, "API_ERROR", "Public API read failed")
             if errors >= 3: raise APIError("Three consecutive market API failures; scanner stopped")
         except DataError as exc:
-            storage.save(market, "SKIP_DATA", str(exc))
+            record(market, "SKIP_DATA", str(exc))
+            storage.sample(market, str(exc), exc.details)
         except (ValueError, TypeError, KeyError, ArithmeticError):
-            storage.save(market, "SKIP_DATA", "Missing, stale, inconsistent or unsupported data")
+            record(market, "SKIP_DATA", "Missing, stale, inconsistent or unsupported data")
     print(f"READ ONLY | scanned {len(markets)} | estimates {len(best)} | fees/docs not production-verified")
+    print("RESULTS | " + " | ".join(f"{key}={value}" for key, value in sorted(counts.items())))
+    if reasons:
+        print("BLOCKS  | " + " | ".join(f"{key}={value}" for key, value in reasons.most_common()))
     print(f"{'Market':64} {'Edge/payout':>12} {'Max pairs':>12} {'Cost pUSD':>12} {'Profit est.':>12}")
     for market, e in sorted(best, key=lambda x: x[1].expected_profit, reverse=True)[:10]:
         print(f"{safe_title(market.title):64} {e.edge_pct:11.4f}% {e.max_size:12.6f} {e.cost:12.6f} {e.expected_profit:12.6f}")

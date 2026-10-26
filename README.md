@@ -1,3 +1,9 @@
+> Cập nhật log: mỗi vòng in RESULTS/BLOCKS (NO_EDGE, SKIP_DATA và lý do riêng).
+> Discovery tiếp tục từ raw offset đã đọc thay vì luôn bắt đầu ở 50 market đầu;
+> offset vẫn best effort khi Gamma thay đổi thứ tự. Mẫu public bị chặn lưu ở
+> `data/skip_samples/`, tối đa 100 mẫu duy nhất trong mỗi phiên. Ngưỡng phí và
+> book-age/skew không nới lỏng. estimates=0 không được hiểu là mọi market đã tính edge.
+
 > Cách chạy mới cho Windows: xem [BROWSER.md](BROWSER.md), bấm `start_browser.bat`.
 > Dùng Chrome cài sẵn để đọc market/book; vẫn chỉ đọc, không giữ khóa hoặc gửi lệnh.
 > Chưa xác nhận kết nối trên máy người dùng; không tự vượt CAPTCHA/HTTP 403.

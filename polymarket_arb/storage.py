@@ -1,4 +1,6 @@
 import csv
+import json
+import uuid
 import sqlite3
 from datetime import datetime, timezone
 
@@ -11,6 +13,8 @@ class Storage:
     def __init__(self, directory):
         directory.mkdir(parents=True, exist_ok=True)
         self.csv_path = directory / "scans.csv"
+        self.sample_dir = directory / "skip_samples"
+        self.sampled = set()
         self.db = sqlite3.connect(directory / "scans.sqlite3")
         self.db.execute("PRAGMA journal_mode=WAL")
         self.db.execute("CREATE TABLE IF NOT EXISTS scans (" + ",".join(f"{key} TEXT" for key in FIELDS) + ")")
@@ -30,6 +34,18 @@ class Storage:
             # CSV intended for spreadsheets: prevent formula injection from market titles.
             safe = {k: ("'" + v if k == "market" and v.lstrip().startswith(("=", "+", "-", "@")) else v) for k, v in row.items()}
             writer.writerow(safe)
+
+    def sample(self, market, reason, details):
+        key = (market.condition, reason)
+        if key in self.sampled or len(self.sampled) >= 100 or not details:
+            return
+        self.sample_dir.mkdir(parents=True, exist_ok=True)
+        row = {"captured_at": datetime.now(timezone.utc).isoformat(), "market_id": market.id,
+               "condition": market.condition, "reason": reason, "public_details": details}
+        # No error text, URLs with credentials, keys or private state are accepted here.
+        filename = uuid.uuid4().hex + ".json"
+        (self.sample_dir / filename).write_text(json.dumps(row, indent=2, default=str), encoding="utf-8")
+        self.sampled.add(key)
 
     def close(self):
         self.db.close()

@@ -20,6 +20,9 @@ test_ipv4_env_flag_validation (test_network.NetworkTests.test_ipv4_env_flag_vali
 test_ipv4_source_binding_and_tls_verification (test_network.NetworkTests.test_ipv4_source_binding_and_tls_verification) ... ok
 test_sdk_books_share_adapter_and_cannot_post (test_network.NetworkTests.test_sdk_books_share_adapter_and_cannot_post) ... ok
 test_transport_is_per_opener_and_retains_proxy_handler (test_network.NetworkTests.test_transport_is_per_opener_and_retains_proxy_handler) ... ok
+test_discovery_rotates_beyond_first_n_and_wraps (test_scan_diagnostics.ScanDiagnosticTests.test_discovery_rotates_beyond_first_n_and_wraps) ... ok
+test_real_uploaded_snapshot_does_not_offer_arbitrage (test_scan_diagnostics.ScanDiagnosticTests.test_real_uploaded_snapshot_does_not_offer_arbitrage) ... ok
+test_summary_and_public_skip_sample_are_explicit (test_scan_diagnostics.ScanDiagnosticTests.test_summary_and_public_skip_sample_are_explicit) ... ok
 test_best_ask_is_not_entire_depth (test_scanner.PricingTests.test_best_ask_is_not_entire_depth) ... ok
 test_budget_and_slippage (test_scanner.PricingTests.test_budget_and_slippage) ... ok
 test_depth_vwap_and_asymmetric_quantities (test_scanner.PricingTests.test_depth_vwap_and_asymmetric_quantities) ... ok
@@ -42,6 +45,6 @@ test_unprofitable_diagnostic (test_scanner.SafetyTests.test_unprofitable_diagnos
 test_v2_position_ids_and_unknown_version (test_scanner.SafetyTests.test_v2_position_ids_and_unknown_version) ... ok
 
 ----------------------------------------------------------------------
-Ran 42 tests in 0.493s
+Ran 45 tests in 0.476s
 
 OK
