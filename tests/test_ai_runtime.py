@@ -58,7 +58,7 @@ class SDKIntegrationTests(unittest.TestCase):
         try:
             self.assertEqual(client.wallet.lower(),WALLET.lower())
             self.assertEqual(client.wallet_type,'POLY_PROXY')
-            self.assertFalse(any(method=='POST' and path not in ('/','/auth/api-key') for method,path in bridge.calls))
+            self.assertFalse(any(method=='POST' and path!='/' for method,path in bridge.calls))
             self.assertFalse(any(path=='/deployed' for _,path in bridge.calls))
             self.assertEqual(bridge.rpc_methods,['eth_chainId','eth_getCode'])
         finally:client.close();bridge.shutdown()
@@ -69,14 +69,29 @@ class SDKIntegrationTests(unittest.TestCase):
         try:self.assertEqual(client.wallet_type,'DEPOSIT_WALLET')
         finally:client.close();bridge.shutdown()
 
-    def test_auth_create_400_falls_back_to_derive_before_onchain_check(self):
+    def test_existing_credentials_do_not_call_auth_create(self):
         bridge=FakeSDKWire();bridge.auth_exists=True
         client=connect_sdk(KEY,WALLET,bridge)
         try:
-            self.assertEqual(bridge.calls[:2],[('POST','/auth/api-key'),('GET','/auth/derive-api-key')])
+            self.assertEqual(bridge.calls[0],('GET','/auth/derive-api-key'))
+            self.assertNotIn(('POST','/auth/api-key'),bridge.calls)
             self.assertEqual(bridge.rpc_methods,['eth_chainId','eth_getCode'])
             self.assertFalse(any(path=='/deployed' for _,path in bridge.calls))
         finally:client.close();bridge.shutdown()
+
+    def test_failed_derive_never_falls_back_to_auth_create(self):
+        from polymarket.errors import RequestRejectedError
+        class MissingCredentials(FakeSDKWire):
+            def handle_request(self,request):
+                if request.url.path=='/auth/derive-api-key':
+                    self.calls.append((request.method,request.url.path))
+                    return httpx.Response(400,json={'error':'fixture missing credentials'},request=request)
+                return super().handle_request(request)
+        bridge=MissingCredentials()
+        try:
+            with self.assertRaises(RequestRejectedError):connect_sdk(KEY,WALLET,bridge)
+            self.assertEqual(bridge.calls,[('GET','/auth/derive-api-key')])
+        finally:bridge.shutdown()
 
     def test_sdk_session_fallback_is_not_silently_trusted(self):
         bridge=FakeSDKWire()

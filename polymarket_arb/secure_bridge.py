@@ -234,8 +234,15 @@ def connect_sdk(private_key, wallet, bridge):
 
         def _deploy_default_deposit_wallet(self):
             raise GuardError('EXISTING_WALLET_REQUIRED_NO_AUTO_DEPLOY')
+    def derive_existing_credentials(*,config,signer,clob,provided,nonce,validate,logger):
+        # This account has already provisioned credentials. Derive them using
+        # the SDK's official L1 signature and GET, never create/rotate on startup.
+        signature=module.sign_api_key_auth(signer,chain_id=config.chain_id,
+                                           timestamp=int(time.time()),nonce=nonce)
+        return module._auth_actions.derive_api_key_sync(clob,signature)
     # Constructor injection is confined to a single-threaded factory call, SDK 0.14.0.
-    with _FACTORY_LOCK,patch.object(module,'SyncTransport',InjectedTransport):
+    with _FACTORY_LOCK,patch.object(module,'SyncTransport',InjectedTransport),\
+         patch.object(module,'_bootstrap_credentials_sync',derive_existing_credentials):
         client=ExistingAccountClient.create(private_key=private_key,wallet=wallet,logger=None)
     if client.wallet.lower()!=wallet.lower() or client._ctx.signer_type!='OWNER':
         client.close();raise GuardError('WALLET_OWNER_NOT_VERIFIED')

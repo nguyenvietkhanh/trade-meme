@@ -28,8 +28,8 @@ Session key chưa được hỗ trợ trong bản này: signer phải là owner 
      Không dùng seed phrase, không dùng khóa ví Solana, không dùng một khóa tạo mới.
    - `MODEL_API_KEY`: API River của bạn. Đây không phải khóa Polymarket.
 4. Giữ `DRY_RUN=true`; chạy **check_account.bat**. Nó xác thực ví, kiểm tra chain
-   137, đọc cash/allowance và trạng thái journal. Có thể tạo/derive CLOB credentials
-   bằng chữ ký xác thực; không gửi lệnh, deploy, approve hay giao dịch on-chain.
+   137, đọc cash/allowance và trạng thái journal. Lấy lại CLOB credentials đã có bằng GET derive
+   với chữ ký xác thực; không gửi lệnh, deploy, approve hay giao dịch on-chain.
 5. Chạy **start_ai.bat**: AI được gọi, quotes được kiểm tra, in đề xuất/dry-run;
    không ký order giao dịch hay gửi order. L1 auth vẫn có chữ ký chứng minh signer.
 
@@ -100,7 +100,7 @@ không gửi signed orders/ledger riêng tư vào chat. Không tạo journal m�
 ## Transport và các giới hạn hiện tại
 
 SDK mới chưa cung cấp public constructor injection transport phù hợp trường hợp
-mạng này. Adapter được pin cho 0.14.0: injection chỉ ở constructor trong lock,
+mạng này. Adapter được pin cho 0.14.0: injection transport và bootstrap derive-only chỉ trong factory lock,
 không thay URL hay crypto của SDK, không patch toàn bộ HTTPX. Public scanner vẫn
 có lựa chọn Python/curl/Chrome đã thử; account/order dùng Chrome transport riêng.
 
@@ -135,8 +135,9 @@ chẩn đoán này. Chạy lại `check_account.bat` và gửi các dòng `SDK N
 
 ## Cập nhật kiểm tra ví trực tiếp trên chain
 
-Account check hiện in `revision=balance-refresh-ack-v2`. SDK vẫn tạo/derive
-credentials chính thức; HTTP 400 lúc tạo key có thể dẫn sang derive thành công.
+Bản trước in `revision=balance-refresh-ack-v2` và dùng create-or-derive.
+Bản hiện tại in `revision=derive-existing-v3`, dùng GET derive-only bằng SDK
+chính thức cho tài khoản đã có credentials; không POST tạo key lúc khởi động.
 Chương trình kiểm tra signer OWNER, chain 137 và `eth_getCode` của đúng ví
 contract thay cho `/deployed` của relayer. Không gọi relayer deployment-status
 trong bootstrap nữa. Không bỏ kiểm tra tồn tại ví, không deploy ví mới, không
@@ -158,9 +159,27 @@ cho auth, số dư, order hay RPC. Phản hồi HTML không được chấp nh�
 
 Sau refresh, chương trình luôn gọi `get_balance_allowance` và kiểm tra dữ liệu
 số dư/allowance của SDK. Không suy ra số dư từ acknowledgement, không dùng số
-dư giả khi đọc thất bại. Bản cập nhật có 95 unit tests và fixture Chromium
+dư giả khi đọc thất bại. Bản cập nhật có 96 unit tests và fixture Chromium
 offline đã qua; chưa được xác minh trên tài khoản thật của người dùng.
 
 Để cập nhật từ bản trước, thay ba file cùng phiên bản: `ai_bot.py`,
 `polymarket_arb/secure_bridge.py`, `polymarket_arb/ai_engine.py`. Không thay
 `.env.ai`, `.venv` hay journal; không cần cài thêm dependency.
+
+## Auth derive-only cho tài khoản đã xác minh
+
+Mỗi lần mở `check_account.bat` hoặc `start_ai.bat`, chương trình lấy credentials
+đã có qua GET `/auth/derive-api-key`, dùng chữ ký L1 do SDK 0.14.0 tạo local.
+Không lưu API secret ra file, không đổi crypto của SDK và không gọi POST
+`/auth/api-key` trong bootstrap. GET được thử lại tối đa 3 lần với lỗi mạng
+tạm thời theo policy hiện tại. Không retry khi server từ chối quyền truy cập.
+
+Nếu chưa có credentials hoặc derive bị từ chối, chương trình dừng; không tự
+chuyển sang tạo key. Bản này dành cho tài khoản hiện có đã kiểm tra thành công,
+không thực hiện provisioning cho tài khoản mới. Constructor adapter chặn deploy
+ví mới và giữ xác minh owner/chain/code ví như trước.
+
+Cập nhật từ balance-refresh-ack-v2: chỉ thay `ai_bot.py` và
+`polymarket_arb/secure_bridge.py`; giữ bản `ai_engine.py` đã sửa refresh,
+`.env.ai`, `.venv` và journal. Thư mục mới giải nén cũng chứa đầy đủ bản engine
+hiện tại. Không cần cài thêm dependency cho thay đổi auth.
