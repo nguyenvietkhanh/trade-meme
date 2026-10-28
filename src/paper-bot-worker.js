@@ -2,6 +2,7 @@ import {ACTIVE_BOT_CONFIGS as BOT_CONFIGS} from './paper-bot-config.js';
 import {BotStateStore} from './paper-bot-state.js';
 import {ModelBotRuntime as BotRuntime} from './paper-model-runtime.js';
 import {LiveModelBotRuntime} from './live-model-runtime.js';
+import {MultiLiveModelRuntime} from './multi-live-runtime.js';
 import {startPaperLoop} from './paper-loop.js';
 const [id,dir]=process.argv.slice(2),config=BOT_CONFIGS.find(a=>a.id===id);if(!config)throw Error('Unknown bot');
 const store=new BotStateStore(dir,id),state=await store.load();await store.flush(state);state.running=process.argv[4]!=='false';if(state.workerStarts)state.restarts++;state.workerStarts=(state.workerStarts??0)+1;await store.save(state);
@@ -9,9 +10,9 @@ let snapshot=null,closing=false,seq=0;const requests=new Map(),bootAt=Date.now()
 const send=data=>{if(process.connected)process.send(data,error=>{if(error&&!closing)console.error('worker IPC',id,error.message);});};
 let lastSaveAt=0,lastSentAt=0,lastFingerprint='';
 const modelSettings=process.argv[5]?JSON.parse(process.argv[5]):{};
-const Runtime=modelSettings.mode==='live'?LiveModelBotRuntime:BotRuntime;
+const Runtime=modelSettings.mode==='live'?(modelSettings.multiOrder?MultiLiveModelRuntime:LiveModelBotRuntime):BotRuntime;
 const runtime=new Runtime(config,state,{ai:modelSettings,decide:context=>new Promise((resolve,reject)=>{const requestId=id+':model:'+(++seq),timer=setTimeout(()=>{requests.delete(requestId);reject(Object.assign(Error('MODEL_TIMEOUT'),{code:'MODEL_TIMEOUT'}));},(modelSettings.timeoutMs??15000)+5000);requests.set(requestId,{resolve,reject,timer});send({type:'model',requestId,context});}),save:async s=>{
- const now=Date.now(),fingerprint=JSON.stringify([s.cashSol,s.rentLockedSol,s.positions,s.pending,s.cycle,s.sequence,s.running,s.maxDrawdownPct]);
+ const now=Date.now(),fingerprint=JSON.stringify([s.cashSol,s.rentLockedSol,s.positions,s.pending,s.pendingOrders,s.cycle,s.sequence,s.running,s.maxDrawdownPct]);
  if(s.outbox.length||fingerprint!==lastFingerprint||now-lastSaveAt>=5000){await store.save(s);await store.flush(s);lastSaveAt=now;lastFingerprint=fingerprint;}
  if(now-lastSentAt>=1000){send({type:'state',state:s});lastSentAt=now;}
 },log:error=>send({type:'error',error}),execute:(input,m)=>new Promise((resolve,reject)=>{const requestId=id+':rpc:'+(++seq),timer=setTimeout(()=>{requests.delete(requestId);reject(Error('Execution data timeout'));},20000);requests.set(requestId,{resolve,reject,timer});send({type:'execute',requestId,input,market:{mint:m.mint,pairAddress:m.pairAddress,dexId:m.dexId}});})});

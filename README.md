@@ -584,3 +584,31 @@ seconds with a repeat count. No ledger reset, position liquidation or new key is
 required for this update. Keep the existing Railway Volume attached at the same
 mount path. Restart temporarily interrupts server-side monitoring; recovery still
 requires a working RPC, and this change cannot increase a provider's quota.
+
+## Concurrent AI orders
+
+The live single-AI worker accepts `{"decisions":[...]}` with up to five independent
+BUY/SELL/HOLD decisions. Single-object replies remain supported. Every BUY still
+needs its own model-selected stop and accepted risk assessment. Distinct mints are
+required; aggregate BUY amounts use one shared spendable budget, excluding expected
+SELL proceeds and local/parent reservations. The inference request reserves at least
+2048 output tokens for the batch schema, including when an older environment sets
+MODEL_MAX_TOKENS=500.
+
+Up to five transaction intents can be outstanding. Validation, reservation,
+preparation and signing are serialized against the shared ledger; broadcasting
+continues asynchronously so another signed transaction can be sent before the
+previous transaction is confirmed or its send returns. This is multiple independent
+transactions, not an atomic all-or-nothing batch or a guarantee of same-slot fills.
+The existing 90% per-BUY cap, 0.05 SOL gas reserve, execution buffers, fresh quote
+checks and on-chain-only fill accounting remain enforced. Concurrent transactions
+may contend on-chain; their actual fees and outcomes are reconciled independently.
+
+The persisted `pendingOrders` worker queue coexists with legacy `pending` state.
+The parent publishes all outstanding order IDs/signatures; restart restores every
+one and polls it without generating replacement IDs or replaying broadcasts.
+Keep the same Volume. Do not reset ledgers or delete queued orders during upgrade.
+Independent stop monitoring can queue exits for multiple held mints. Telegram
+notifications still follow confirmed receipts. New schema is tested using mocked
+model responses and offline execution; production River responses and mainnet
+concurrency require observing the deployed service.

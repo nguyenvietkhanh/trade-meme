@@ -47,11 +47,13 @@ export class ModelBotRuntime extends BotRuntime{
   }
   a.status=applied?decision.action==='HOLD'?'holding':'decision-ready':'rejected';a.lastError=null;a.failures=0;a.lastDecision={...decision,at:now,applied,reason,requestSnapshotId:context.snapshotId};a.history=[...a.history,a.lastDecision].slice(-12);this.recordAI(snapshot,now,applied?decision.action:'WAIT',reason,{mint:decision.mint,token:decision.mint,confidence:decision.confidence,applied,modelName:reply.modelName??this.aiConfig.name,requestSnapshotId:context.snapshotId});
  }
+ canRequestModel(){return !this.state.pending;}
+ prepareDecisionContext(context){return context;}
  evaluate(snapshot,now){
   if(!this.aiConfig.enabled)return super.evaluate(snapshot,now);
   const s=this.state,a=s.ai;this.consumeModel(snapshot,now);s.cycle++;
-  if(!this.modelTask&&!s.pending&&now>=a.nextAt&&(s.running||s.positions.length)){
-   const context=createModelContext(this.config,s,snapshot,now,{maxCandidates:this.aiConfig.maxCandidates});
+  if(!this.modelTask&&this.canRequestModel()&&now>=a.nextAt&&(s.running||s.positions.length)){
+   const context=this.prepareDecisionContext(createModelContext(this.config,s,snapshot,now,{maxCandidates:this.aiConfig.maxCandidates}));
    if(!context.candidates.length&&!context.positions.length){a.status='waiting-data';a.nextAt=now+5000;}
    else{a.nextAt=now+this.aiConfig.pollMs;a.status='thinking';a.lastRequestedAt=now;a.candidateCount=context.candidates.length;const fingerprint=walletFingerprint(s);
     this.modelTask=Promise.resolve().then(()=>{if(!this.decide)throw Object.assign(Error('MODEL_NOT_CONFIGURED'),{code:'MODEL_NOT_CONFIGURED'});return this.decide(context);}).then(reply=>{this.inbox={reply,context,fingerprint};},error=>{this.inbox={error:{code:error.code??'MODEL_UNAVAILABLE',retryAt:error.retryAt??null}};}).finally(()=>{this.modelTask=null;});
