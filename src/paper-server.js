@@ -31,6 +31,8 @@ const root=fileURLToPath(new URL('../',import.meta.url)),dataDir=await initializ
 const onRailway=!!(process.env.RAILWAY_SERVICE_ID||process.env.RAILWAY_ENVIRONMENT_ID),storageMode=process.env.RAILWAY_VOLUME_MOUNT_PATH?'persistent-volume':onRailway?'ephemeral':'local-disk';
 const auth=new OwnerAuth({origin:process.env.PUBLIC_ORIGIN??(onRailway?'https://'+(process.env.RAILWAY_PUBLIC_DOMAIN??'trade-meme-production.up.railway.app'):null)});
 const execution=new SolanaExecution(),market=createPaperMarket(()=>({cashSol:0,positions:[]}),execution),data=new MarketData(market),modelClient=new PaperModelClient({env:liveMode?{...process.env,MODEL_TRADING_ENABLED:'true'}:process.env}),desk=liveMode?new AutomaticFleet(dir,data,{modelClient,execution,legacyDir:dataDir,storageMode,product}):new PaperDesk(dir,data,{modelClient});await desk.load();
+// Bound retained research in the active and retired data roots; financial files stay untouched.
+for(const archivedDir of [dataDir,path.join(dataDir,liveMode?'paper20':'live')])await new ResearchJournal(archivedDir).maintain();
 const research=new ResearchJournal(dir),reports=new PaperReports(dir,research),telegram=new WalletTelegram(path.join(dataDir,'paper20'),dataDir,globalThis.fetch,{chatId:liveMode?AI_POLICY.telegramChatId:null});await telegram.load();
 data.onExecution=row=>research.enqueue({type:'paper_replay_execution',at:Date.now(),...row});
 const transport={retryForever:liveMode,get state(){return liveMode?desk.treasury.s:desk.meta;},vault:{keypair:null},serial:fn=>liveMode?desk.treasury.serial(fn):desk.reportSerial(fn),save:()=>liveMode?desk.treasury.save():desk.save(),training:reports};

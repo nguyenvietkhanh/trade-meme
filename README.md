@@ -550,3 +550,19 @@ or double-counting fills. Legacy report references remain readable. Credentials
 must be configured/unlocked, the service must be running and Telegram delivery
 must succeed; enqueue time is not a promise of exact delivery time. Without a
 Railway Volume, ledger/report persistence across deployment is not assured.
+
+## Railway Volume: bounded research archives
+
+Research snapshots and scans are sampled at most once per 30 seconds. This only
+reduces archival writes; market refresh, AI decisions, execution, and stop monitoring
+keep their existing schedules. Research is a sampled diagnostic dataset, not a
+complete replay or the source of truth for fills.
+
+Recognized research `YYYY-MM-DD/HH-session.jsonl.gz` files are removed oldest first
+after 3 days, above 32 MiB per research root, or to keep 64 MiB free for critical
+writes. Maintenance runs before research writes and on startup for retained legacy
+research roots as well. No financial ledger, fills, pending orders, wallet or
+Telegram configuration is deleted. If reserve space remains insufficient, research
+writes stop and report an error; financial storage failures are not suppressed.
+`research.retention` in state exposes archive size and cleanup counters. This does
+not reclaim unrelated files or replace checking the actual Volume usage after deploy.
