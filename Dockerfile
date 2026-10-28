@@ -2,7 +2,7 @@ FROM node:24-alpine
 WORKDIR /app
 ENV NODE_ENV=production HOST=0.0.0.0 PORT=3000 DATA_DIR=/app/.data DROP_TO_NODE=true
 ENV TRADING_MODE=live
-ENV TRADING_PRODUCT=solana-perps
+ENV TRADING_PRODUCT=solana-spot
 ENV MODEL_BASE_URL=https://api.river.ai/v1 MODEL_NAME=deepseek-ai/DeepSeek-V4.1-Flash MODEL_TRADING_ENABLED=true
 COPY --chown=node:node package.json package-lock.json ./
 RUN npm ci --ignore-scripts --include=dev --no-audit && mkdir .data && chown node:node .data

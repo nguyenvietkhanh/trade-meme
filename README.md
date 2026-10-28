@@ -1,17 +1,12 @@
-# Current deployment: migrating to native Solana Perps (Drift)
+# Current deployment: autonomous AI meme trading on Solana
 
-The user has ended new meme spot trading. Docker selects
-`TRADING_PRODUCT=solana-perps`: the parent rejects new spot BUY and resume
-cannot re-enable them. Existing spot holdings and already-signed receipts still
-reconcile, with their authorized SELL/HOLD and stops preserved.
-
-**Derivatives execution is not enabled yet.** The chosen integration is Drift,
-using the existing Solana owner signer and RPC rather than a new Ranger API key.
-Venue/account/quote/leverage/stop verification must complete before any collateral
-funding or long/short is signed. The dashboard labels the migration status and
-legacy spot balances explicitly. See [transition status](docs/native-solana-perps.md).
-
-The spot documentation below describes the retained legacy engine.
+Docker selects `TRADING_PRODUCT=solana-spot`, restoring meme BUY/SELL/HOLD.
+If Railway has an explicit `TRADING_PRODUCT` variable, set it to `solana-spot`
+as service variables override Docker defaults. Perps execution remains disabled.
+The existing River API configuration, owner signer, durable ledger, gas reserve,
+profit payout and Telegram delivery are retained. Do not replace the Volume or
+reset the ledger when updating. A previously paused wallet stays paused after
+restart; authenticate the owner and use **Tiếp tục BUY** to resume it.
 
 # Meme Pilot · one autonomous AI · live Solana
 
