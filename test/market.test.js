@@ -88,3 +88,10 @@ test('paper gainer shortlist includes low-liquidity +54% token outside the old f
  const baseline=await loadMarkets();assert.equal(baseline.markets.some(m=>m.mint==='gainer'),false);
  const scalp=await loadMarkets(['slow-9'],{'slow-9':'pair-200009'},null,{rankMarket:rankPaperMarket,compare:compare5m});assert.equal(scalp.markets[0].mint,'gainer');assert.ok(scalp.markets.some(m=>m.mint==='slow-9'));assert.equal(scalp.markets.length,61);
 });
+test('LIVE prefers a SOL pool, keeps non-SOL-only tokens and never changes a held pool',async t=>{
+ const mint='route-token',quote='quote-token',sol={...pair(mint,'R',5000),pairAddress:'sol-pool',quoteToken:{address:SOL,symbol:'SOL'}},routed={...pair(mint,'R',20000),pairAddress:'other-pool',quoteToken:{address:quote,symbol:'PUMP'},priceChange:{m5:3,h6:4000,h24:5000}};
+ t.mock.method(globalThis,'fetch',async url=>new Response(JSON.stringify({pairs:String(url).endsWith(SOL)?[{...pair(SOL,'SOL',999999),priceUsd:'100'}]:[routed,sol]})));
+ const a=await loadMarkets([],{},null,{preferSolPools:true});assert.equal(a.markets[0].pairAddress,'sol-pool');
+ const b=await loadMarkets([mint],{[mint]:'other-pool'},null,{preferSolPools:true});assert.equal(b.markets[0].pairAddress,'other-pool');assert.equal(b.markets[0].quoteMint,quote);assert.equal(b.markets[0].change6hPctObserved,4000);
+ const c=await loadMarkets([],{},null,{});assert.equal(c.markets[0].pairAddress,'other-pool');
+});

@@ -1,3 +1,4 @@
+import {buildJupiterPumpSwap,JUPITER_V6,validateRoutedSimulation} from './jupiter-pumpswap-route.js';
 import {Connection,PublicKey,VersionedTransaction,TransactionMessage,SystemProgram} from '@solana/web3.js';
 import bs58 from 'bs58';
 import {OnlinePumpAmmSdk,poolPda,PUMP_PROGRAM_ID} from '@pump-fun/pump-swap-sdk';
@@ -194,15 +195,15 @@ export class SolanaExecution{
   await this.network();const owner=keypair?.publicKey??new PublicKey(ownerAddress);
   if(input===SOL){const balance=await this.balance(owner,minContextSlot);if(budgetAuthority===LIVE_BUDGET_AUTHORITY){if(Number(amount)>Math.floor(Math.round(balance*1e9)*9/10)||Math.round(balance*1e9)-Number(amount)<55000000)throw new TradePolicyError('LIVE_CAPITAL_LIMIT');}else{const size=walletOrderSol(balance,venue==='pumpfun'?CURVE_RULES.orderFraction:WALLET_ORDER_FRACTION);if(!size||String(amount)!==String(Math.round(size*1e9)))throw new TradePolicyError('Số dư đã đổi hoặc cỡ lệnh không khớp trần 0,6 SOL và dự phòng gas 0,1 SOL; tính lại quote trước khi ký.');}}
   const cap=executionSlippageBps(input===SOL?'BUY':'SELL',reason),emergency=cap===TRADE_RULES.emergencySlippageCapBps;
-  const route=venue==='pumpfun'?await this.curveRoute(input===SOL?output:input,input===SOL?'BUY':'SELL',poolAddress):{venue:'pumpswap',poolAddress};
-  const build=route.venue==='pumpfun'?buildPumpCurve:buildPumpSwap;
-  const {tx,quote:q,lastValidBlockHeight,closedInputAccount,entryQuoteProof}=await build(this.rpc,{owner,input,output,amount,poolAddress:route.poolAddress,slippageBps:emergency?cap:TRADE_RULES.slippageBps,maxReserveFraction:emergency?.1:.02,closeEmptyInput,referenceMinOut,referencePriceSol});
+  const route=venue==='pumpfun'?await this.curveRoute(input===SOL?output:input,input===SOL?'BUY':'SELL',poolAddress):{venue:venue==='jupiter-pumpswap'?'jupiter-pumpswap':'pumpswap',poolAddress};
+  const build=route.venue==='pumpfun'?buildPumpCurve:route.venue==='jupiter-pumpswap'?buildJupiterPumpSwap:buildPumpSwap;
+  const {tx,quote:q,lastValidBlockHeight,closedInputAccount,entryQuoteProof}=await build(this.rpc,{owner,input,output,amount,...(route.venue==='jupiter-pumpswap'?{fetcher:this.quoteFetch,checkMint:mint=>this.mintCheck(mint)}:{}),poolAddress:route.poolAddress,slippageBps:emergency?cap:TRADE_RULES.slippageBps,maxReserveFraction:emergency?.1:.02,closeEmptyInput,referenceMinOut,referencePriceSol});
   validateQuote(q,input,output,amount,cap,emergency?.1:LIVE_LIMITS.maxPriceImpact);
   const bytes=tx.serialize();if(bytes.length>1232)throw new TradePolicyError('Giao dịch vượt kích thước hỗ trợ.');
   if(tx.message.header.numRequiredSignatures!==1||!tx.message.staticAccountKeys[0].equals(owner))throw new TradePolicyError('Người ký không khớp ví bot.');
   const tables=[];for(const lookup of tx.message.addressTableLookups){const r=await this.rpc.getAddressLookupTable(lookup.accountKey);if(!r.value)throw new TradePolicyError('Không đọc được lookup table.');tables.push(r.value);}
   const keys=tx.message.getAccountKeys({addressLookupTableAccounts:tables});
-  if(tx.message.compiledInstructions.some(i=>!PROGRAMS.has(keys.get(i.programIdIndex).toBase58())))throw new TradePolicyError('Giao dịch gọi chương trình ngoài danh sách hỗ trợ.');
+  if(tx.message.compiledInstructions.some(i=>!PROGRAMS.has(keys.get(i.programIdIndex).toBase58())&&!(route.venue==='jupiter-pumpswap'&&keys.get(i.programIdIndex).equals(JUPITER_V6))))throw new TradePolicyError('Giao dịch gọi chương trình ngoài danh sách hỗ trợ.');
   const fee=await this.rpc.getFeeForMessage(tx.message);if(!Number.isSafeInteger(fee.value)||fee.value>25000)throw new TradePolicyError('Phí mạng vượt giới hạn 0,000025 SOL.');
   // Only accounts listed in this transaction can change. Inspect every referenced wallet-owned
   // token account, including unrelated mints, without requiring a full-wallet discovery RPC.
@@ -210,10 +211,13 @@ export class SolanaExecution{
   if(messageInfo.length!==messageKeys.length)throw new TradePolicyError('Thiếu dữ liệu tài khoản giao dịch.');
   const owned=messageKeys.filter((_,i)=>{const info=messageInfo[i];return info&&(info.owner.equals(TOKEN)||info.owner.equals(TOKEN2022))&&tokenData(info)?.owner===owner.toBase58();}),addresses=[owner,...owned];
   for(const mint of [input,output])if(mint!==SOL){const ata=PublicKey.findProgramAddressSync([owner.toBuffer(),new PublicKey(q.tokenProgram??TOKEN).toBuffer(),new PublicKey(mint).toBuffer()],ATA)[0];if(!addresses.some(a=>a.equals(ata)))addresses.push(ata);}
-  const beforeInfo=await this.rpc.getMultipleAccountsInfo(addresses),sim=await this.rpc.simulateTransaction(tx,{sigVerify:false,replaceRecentBlockhash:true,accounts:{encoding:'base64',addresses:addresses.map(a=>a.toBase58())}});
+  if(route.venue==='jupiter-pumpswap')for(let i=0;i<messageKeys.length;i++)if(!messageInfo[i]&&tx.message.isAccountWritable(i)&&!addresses.some(a=>a.equals(messageKeys[i])))addresses.push(messageKeys[i]);
+  const beforeInfo=await this.rpc.getMultipleAccountsInfo(addresses),sim=await this.rpc.simulateTransaction(tx,{sigVerify:false,replaceRecentBlockhash:true,...(route.venue==='jupiter-pumpswap'?{innerInstructions:true}:{}),accounts:{encoding:'base64',addresses:addresses.map(a=>a.toBase58())}});
   if(sim.value.err||!sim.value.accounts||sim.value.accounts.length!==addresses.length)throw new TradePolicyError('Mô phỏng giao dịch thất bại.');
+  if(route.venue==='jupiter-pumpswap'){validateRoutedSimulation(sim.value,keys,q,tx.message.compiledInstructions.findIndex(i=>keys.get(i.programIdIndex).equals(JUPITER_V6)));if(Date.now()-q.quotedAt>5000)throw new TradePolicyError('LIVE_ROUTE_QUOTE_STALE');}
   if(!beforeInfo[0]?.owner.equals(SystemProgram.programId)||sim.value.accounts[0]?.owner!==SystemProgram.programId.toBase58()||sim.value.accounts[0]?.executable||sim.value.accounts[0]?.data?.[0])throw new TradePolicyError('Giao dịch thay đổi cấu trúc ví SOL.');
-  const before=beforeInfo.slice(1).map(tokenData),after=sim.value.accounts.slice(1).map(tokenData);
+  const readToken=info=>route.venue!=='jupiter-pumpswap'||info&&[TOKEN.toBase58(),TOKEN2022.toBase58()].includes(String(info.owner))?tokenData(info):null;
+  const before=beforeInfo.slice(1).map(readToken),after=sim.value.accounts.slice(1).map(readToken);
   if(after.some(a=>a&&a.owner!==owner.toBase58()))throw new TradePolicyError('Tài khoản nhận token không thuộc ví bot.');
   validateSimulation({reserveSol:budgetAuthority===LIVE_BUDGET_AUTHORITY ? .05 : TRADE_RULES.reserveSol,beforeSol:beforeInfo[0]?.lamports,afterSol:sim.value.accounts[0]?.lamports,before,after,input,output,amount:String(amount),minOut:q.otherAmountThreshold,closeInputIndices:closedInputAccount?addresses.slice(1).flatMap((k,i)=>k.toBase58()===closedInputAccount?[i]:[]):[]});
   const minNativeOutLamports=output===SOL?BigInt(Math.min(Number(q.otherAmountThreshold)-fee.value,sim.value.accounts[0].lamports-beforeInfo[0].lamports-(Number(q.outAmount)-Number(q.otherAmountThreshold)))):null;

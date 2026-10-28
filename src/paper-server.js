@@ -1,3 +1,4 @@
+import {selectMomentumCandidates} from './early-momentum.js';
 import {radarPairAgeEligible} from './radar-policy.js';
 import {DatasetCollector} from './dataset.js';
 import {PROFIT_RECIPIENT as DATASET_PROFIT_RECIPIENT} from './desk-rules.js';
@@ -44,10 +45,10 @@ const discovery=new DiscoveryQueue(desk.meta.discovery);
 let refreshing=false,closing=false,feed=data.feed;
 const rankMarket=(m,_settings,now=Date.now())=>{if(liveMode)return {mint:m.mint,symbol:m.symbol,score:null,minScore:0,roughEligible:aiMarketEligible(m),eligible:false,blockingStage:'model',primaryReasons:[aiMarketEligible(m)?'M5 tăng; chờ AI đánh giá rủi ro và chọn stop-loss':'Chưa có M5 tăng hợp lệ; vẫn hiển thị radar khi có dữ liệu'],checks:[]};const rows=BOT_CONFIGS.map(c=>independentSignal(c,m,now,{liquidityCutoff:0}));return rows.sort((a,b)=>Number(b.eligible)-Number(a.eligible)||b.conditionRatio-a.conditionRatio||b.score-a.score)[0].rank;};
 const compareMarkets=(a,b)=>liveMode?compareAIMarkets(a,b):compare5m(a,b);
-const selectMarkets=(rows,limit=60)=>liveMode?rows.filter(aiMarketEligible).sort(compareMarkets).slice(0,limit):[...rows].sort((a,b)=>rankMarket(b).score-rankMarket(a).score||compare5m(a,b)).slice(0,limit);
+const selectMarkets=(rows,limit=60)=>liveMode?selectMomentumCandidates(rows,limit):[...rows].sort((a,b)=>rankMarket(b).score-rankMarket(a).score||compare5m(a,b)).slice(0,limit);
 const strategyData=new StrategyDataFeed(market,{selectTargets:rows=>rows.filter(m=>m.dexId==='pumpswap'&&(liveMode||m.liquidityUsd>=3000)).map(m=>({...m,needCandles:true,needFlow:liveMode||m.change5mPct>=2&&m.buys5m/Math.max(1,m.sells5m)>=1.1})).sort((a,b)=>{const ca=strategyData.cache.get(a.mint+':'+a.pairAddress),cb=strategyData.cache.get(b.mint+':'+b.pairAddress);return (ca?.candleAttemptAt??0)-(cb?.candleAttemptAt??0)||a.mint.localeCompare(b.mint);})});
 async function refresh(){
- if(closing)return;refreshing=true;try{const held=desk.state.positions,latest=await loadMarkets([...new Set(held.map(p=>p.mint))],Object.fromEntries(held.map(p=>[p.mint,p.pairAddress])),discovery,{rankMarket,compare:compareMarkets,selectMarkets});latest.markets=strategyData.applyCached(latest.markets);data.setFeed(latest);feed=data.feed;desk.meta.discovery=discovery.snapshot();research.scan(feed,{rankMarket});await desk.reportSerial(()=>desk.save());}
+ if(closing)return;refreshing=true;try{const held=desk.state.positions,latest=await loadMarkets([...new Set(held.map(p=>p.mint))],Object.fromEntries(held.map(p=>[p.mint,p.pairAddress])),discovery,{rankMarket,compare:compareMarkets,selectMarkets,preferSolPools:liveMode});latest.markets=strategyData.applyCached(latest.markets);data.setFeed(latest);feed=data.feed;desk.meta.discovery=discovery.snapshot();research.scan(feed,{rankMarket});await desk.reportSerial(()=>desk.save());}
  catch(error){desk.error(error);data.feed={...data.feed,error:'Market API/RPC chưa phản hồi; dữ liệu giữ nguyên timestamp.'};feed=data.feed;}finally{refreshing=false;}
 }
 async function enrichStrategyData(){if(closing||!data.feed.updatedAt)return;const current=data.feed,markets=await strategyData.enrichCached(current.markets);if(data.feed===current){const fingerprint=rows=>JSON.stringify(rows.map(m=>[m.mint,m.strategyData?.candleFetchedAt,m.strategyData?.flow?.checkedAt]));if(fingerprint(markets)!==fingerprint(current.markets))data.featureRevision++;data.feed={...current,markets};feed=data.feed;}}

@@ -15,7 +15,7 @@ const runtime=new Runtime(config,state,{ai:modelSettings,onDataset:modelSettings
  const now=Date.now(),fingerprint=JSON.stringify([s.cashSol,s.rentLockedSol,s.positions,s.pending,s.pendingOrders,s.cycle,s.sequence,s.running,s.maxDrawdownPct]);
  if(s.outbox.length||fingerprint!==lastFingerprint||now-lastSaveAt>=5000){await store.save(s);await store.flush(s);lastSaveAt=now;lastFingerprint=fingerprint;}
  if(now-lastSentAt>=1000){send({type:'state',state:s});lastSentAt=now;}
-},log:error=>send({type:'error',error}),execute:(input,m)=>new Promise((resolve,reject)=>{const requestId=id+':rpc:'+(++seq),timer=setTimeout(()=>{requests.delete(requestId);reject(Error('Execution data timeout'));},20000);requests.set(requestId,{resolve,reject,timer});send({type:'execute',requestId,input,market:{mint:m.mint,pairAddress:m.pairAddress,dexId:m.dexId}});})});
+},log:error=>send({type:'error',error}),execute:(input,m)=>new Promise((resolve,reject)=>{const requestId=id+':rpc:'+(++seq),timer=setTimeout(()=>{requests.delete(requestId);reject(Error('Execution data timeout'));},20000);requests.set(requestId,{resolve,reject,timer});send({type:'execute',requestId,input,market:{mint:m.mint,pairAddress:m.pairAddress,dexId:m.dexId,quoteMint:m.quoteMint??null}});})});
 process.on('message',message=>{
  if(message.type==='snapshot')snapshot=message.snapshot;
  else if(message.type==='book'&&state.mode==='live'&&message.book?.id===id)Object.assign(state,message.book);
