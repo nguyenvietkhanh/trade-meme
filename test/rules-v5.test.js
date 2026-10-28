@@ -10,22 +10,23 @@ test('F1-F8 standard, adaptive and infeasible match formulas including F6 zero o
  const c=sizingV5({...input(),account_equity_sol:.5,priority_fee_sol:.02});assert.equal(c.mode,'INFEASIBLE');assert.equal(c.size,0);assert.equal(c.maxPositions,0);assert.equal(c.frictionSol,0);
  const zero=sizingV5({...input(),account_equity_sol:0,available_capital_sol:0});assert.equal(zero.mode,'INFEASIBLE');
 });
-test('score maximum is 8.5; adaptive maximum 8; prompt examples cannot override penalties',()=>{
+test('V5.1 uses threshold six without changing the original full-research score arithmetic',()=>{
  const a=evaluateV5(input(),observed);assert.equal(a.score,8.5);assert.equal(a.verdict,'VALID_SETUP');assert.equal(Object.keys(a).length,17);
  const b=evaluateV5({...input(),account_equity_sol:.5},observed);assert.equal(b.score,8);assert.equal(b.verdict,'VALID_SETUP');assert.equal(b.requires_user_acknowledgment,true);assert.ok(b.size_warnings[0].includes('SIZE_DEVIATION'));
- const example=evaluateV5({...input(),account_equity_sol:.5,priority_fee_sol:.0005,expected_slippage_pct:3},observed);assert.equal(example.friction_detail.estimated_round_trip_friction_pct,10);assert.equal(example.score,6);assert.equal(example.verdict,'SKIP');assert.equal(example.rule_check.R8,'fail');
+ const example=evaluateV5({...input(),account_equity_sol:.5,priority_fee_sol:.0005,expected_slippage_pct:3},observed);assert.equal(example.friction_detail.estimated_round_trip_friction_pct,10);assert.equal(example.score,6);assert.equal(example.verdict,'VALID_SETUP');assert.equal(example.rule_check.R8,'pass');
 });
-test('hard rules cover holdings, dev, hours, liquidity regime, bundles, drift, slots and stale evidence',()=>{
- for(const update of [{top10_pct:25.1},{dev_wallet_pct:5.1},{dev_sell_history:[{age_minutes:2}]},{global_pumpfun_volume_24h_percentile:29},{block0_buyer_count:4},{bundle_clusters:[{wallet_count:3}]},{open_positions_count:5},{open_positions_detail:[{current_value_sol:.1}]}])assert.equal(evaluateV5({...input(),...update},observed).verdict,'SKIP');
- for(let h=0;h<24;h++)assert.equal(evaluateV5({...input(),current_utc_hour:h},observed).rule_check.R6,h>=3&&h<=17?'pass':'fail');
+test('holder/dev/bundle and capacity protection remain, hours and percentile no longer gate BUY',()=>{
+ for(const update of [{top10_pct:25.1},{dev_wallet_pct:5.1},{dev_sell_history:[{age_minutes:2}]},{block0_buyer_count:4},{bundle_clusters:[{wallet_count:3}]},{open_positions_count:5}])assert.equal(evaluateV5({...input(),...update},observed).verdict,'SKIP');
+ for(let h=0;h<24;h++)assert.equal(evaluateV5({...input(),current_utc_hour:h},observed).rule_check.R6,'pass');
  assert.equal(evaluateV5({...input(),token_age_minutes:361},{...observed,newAthWithin120m:false}).rule_check.R4,'fail');
  assert.throws(()=>evaluateV5({...input(),top10_pct:null},observed),RulesInputError);
  assert.throws(()=>evaluateV5({...input(),dev_sell_history:[{}]},observed),RulesInputError);
- assert.equal(evaluateV5(input(),{...observed,curveMonotonic:false}).verdict,'SKIP');
+ assert.equal(evaluateV5(input(),{...observed,curveMonotonic:false}).verdict,'VALID_SETUP');
+ assert.equal(evaluateV5({...input(),global_pumpfun_volume_24h_percentile:null,open_positions_detail:[{current_value_sol:.1}]},observed).verdict,'VALID_SETUP');
 });
 test('F3 floors size, never silently oversizes available funds; missing scoring facts get no bonus',()=>{
  const s=sizingV5({...input(),available_capital_sol:.0123456789});assert.equal(s.size,.012345678);
- const a=evaluateV5({...input(),funding_source_trace:null,narrative_heat:null},observed);assert.equal(a.score,7.5);assert.equal(a.verdict,'SKIP');assert.equal(a.rule_check.R8,'fail');
+ const a=evaluateV5({...input(),funding_source_trace:null,narrative_heat:null},observed);assert.equal(a.score,7.5);assert.equal(a.verdict,'VALID_SETUP');assert.equal(a.rule_check.R8,'pass');
 });
 test('fixed exit policy: hard stop, half at 2x, trailing only after confirmed TP, 90-minute band',()=>{
  const p={entryPriceSol:1,openedAt:0},m={};assert.equal(exitV5(p,.8,1000,m).reason,'stop-loss');assert.equal(exitV5(p,.9,1000,m).reason,'stop-loss');const tp={};assert.equal(exitV5(p,2,1000,tp).fraction,.5);assert.equal(exitV5(p,1.6,1000,tp).fraction,.5);tp.tpConfirmed=true;assert.equal(exitV5(p,1.7,1000,tp).reason,'rules-trailing-15');

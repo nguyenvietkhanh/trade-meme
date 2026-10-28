@@ -2,6 +2,7 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {Keypair,SystemProgram} from '@solana/web3.js';
 import BN from 'bn.js';
+import {LIVE_BUDGET_AUTHORITY} from '../src/live-budget-authority.js';
 import {SolanaExecution} from '../src/solana.js';
 import {SOL} from '../src/engine.js';
 import {curveState,curveRoundTrip,buildPumpCurve,canonicalPumpPoolPda} from '../src/pump-curve.js';
@@ -11,9 +12,18 @@ import {curveFixture} from './fixtures/curve-rpc.js';
 import {pumpFixture} from './fixtures/pump-rpc.js';
 import {walletOrderSol,validHistoricalBuy,LEGACY_WALLET_SIZING_VERSION,CURVE_RULES} from '../src/desk-rules.js';
 
-test('low-level execution rejects every curve BUY before any RPC or simulation, including Token-2022',async()=>{
+test('curve BUY still requires an internal live authority before any RPC, including Token-2022',async()=>{
  for(const token2022 of [false,true]){const f=await curveFixture({token2022}),e=new SolanaExecution();let calls=0;e.network=async()=>{calls++;};
   await assert.rejects(e.prepare({ownerAddress:f.user.toBase58(),input:SOL,output:f.mint.toBase58(),amount:'50000000',poolAddress:f.address.toBase58(),venue:'pumpfun'}),/Đã tắt BUY/);assert.equal(calls,0);
+ }
+});
+test('authorized live curve BUY uses the real SDK quote and simulation while preserving gas',async()=>{
+ for(const token2022 of [false,true]){
+  const f=await curveFixture({token2022}),e=new SolanaExecution();e.rpc=f.rpc;
+  const price=f.curve.virtualQuoteReserves.toNumber()/1e9/(f.curve.virtualTokenReserves.toNumber()/1e6);
+  const p=await e.prepare({ownerAddress:f.user.toBase58(),input:SOL,output:f.mint.toBase58(),amount:'50000000',poolAddress:f.address.toBase58(),venue:'pumpfun',referencePriceSol:price,budgetAuthority:LIVE_BUDGET_AUTHORITY});
+  assert.equal(p.signature,null);assert.equal(p.quote.inAmount,'50000000');assert.equal(p.entryQuoteProof.roundTripQuoteOk,true);assert.ok(p.entryQuoteProof.roundTripLossPct<=6);assert.ok(1e9+p.simulatedSolDeltaLamports>=50000000);
+  await assert.rejects(e.prepare({ownerAddress:f.user.toBase58(),input:SOL,output:f.mint.toBase58(),amount:'960000000',poolAddress:f.address.toBase58(),venue:'pumpfun',referencePriceSol:price,budgetAuthority:LIVE_BUDGET_AUTHORITY}),/LIVE_CAPITAL_LIMIT/);
  }
 });
 test('curve transaction guard rejects wrong PDA/owner, virtual-only liquidity and buys crossing completion',async()=>{

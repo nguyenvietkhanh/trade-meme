@@ -95,7 +95,7 @@ export class SolanaExecution{
   const excluded=new Set([poolKey.toBase58(),curve]),program=facts.tokenProgram==='spl-token'?TOKEN:TOKEN2022;
   // Full owner aggregation below already includes every large account; a redundant largest-accounts
   // request adds latency and can reject an otherwise supported indexed RPC.
-  const holders=await this.holderFacts(mint,program,excluded,new Set([pool.poolBaseTokenAccount.toBase58()]),m.creatorAddress);
+  const holders=await this.holderFacts(mint,program,excluded,new Set([pool.poolBaseTokenAccount.toBase58()]),pool.coinCreator?.toBase58()??m.creatorAddress);
   return {...facts,quoteReserveSol:Number(state.poolQuoteAmount.toString())/1e9,...holders};
  }
  // Compatibility reader; production verification stages facts before requesting any quote.
@@ -190,7 +190,7 @@ export class SolanaExecution{
  }
  async entryQuote(mint,amount){const q=await jupiterEntryQuote(mint,amount,this.quoteFetch),slot=await this.rpc.getSlot('confirmed');if(q.contextSlot>slot+20||slot-q.contextSlot>20)throw Error('Jupiter entry quote slot đã cũ.');return q;}
  async prepare({keypair,ownerAddress,input,output,amount,poolAddress,reason='',closeEmptyInput=false,referenceMinOut,minContextSlot,venue,referencePriceSol,budgetAuthority}){
-  if(input===SOL&&venue==='pumpfun')throw new TradePolicyError('Đã tắt BUY pump.fun trước migrate; SELL vị thế cũ vẫn hoạt động.');
+  if(input===SOL&&venue==='pumpfun'&&budgetAuthority!==LIVE_BUDGET_AUTHORITY)throw new TradePolicyError('Đã tắt BUY pump.fun trước migrate; SELL vị thế cũ vẫn hoạt động.');
   if(input===SOL&&!validBuyLamports(String(amount)))throw new TradePolicyError('Cỡ lệnh SOL không hợp lệ.');
   await this.network();const owner=keypair?.publicKey??new PublicKey(ownerAddress);
   if(input===SOL){const balance=await this.balance(owner,minContextSlot);if(budgetAuthority===LIVE_BUDGET_AUTHORITY){if(Number(amount)>Math.floor(Math.round(balance*1e9)*9/10)||Math.round(balance*1e9)-Number(amount)<55000000)throw new TradePolicyError('LIVE_CAPITAL_LIMIT');}else{const size=walletOrderSol(balance,venue==='pumpfun'?CURVE_RULES.orderFraction:WALLET_ORDER_FRACTION);if(!size||String(amount)!==String(Math.round(size*1e9)))throw new TradePolicyError('Số dư đã đổi hoặc cỡ lệnh không khớp trần 0,6 SOL và dự phòng gas 0,1 SOL; tính lại quote trước khi ký.');}}

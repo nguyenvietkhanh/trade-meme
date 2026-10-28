@@ -1,4 +1,4 @@
-# LIVE Rules V5.0 — không gọi AI
+# LIVE Rules V5.1 — không gọi AI
 
 Theo yêu cầu ngày 29/10/2026 (giờ Việt Nam), LIVE dùng bộ quy tắc định lượng
 thay model, giữ ví chủ và bộ ký tự động trên server. Không đọc khóa từ chat,
@@ -12,8 +12,7 @@ không đổi người nhận lãi, không xóa sổ hoặc phát lại chữ k�
    Bằng chứng thiếu/cũ hiển thị mã SKIP cụ thể. Dữ liệu chưa có không thành 0
    hoặc nhãn sạch/an toàn.
 3. Sniper: VALID_SETUP sinh giấy phép nội bộ, gắn đúng mint, pool, số lượng và
-   thời hạn. Bộ ký cha đọc lại evidence, kiểm lại vốn hiện tại, vị thế, thời gian
-   UTC, holder/dev on-chain và chấm lại điểm từ giá trị holder/dev thật. Sau
+   thời hạn. Bộ ký cha đọc lại evidence, kiểm lại vốn hiện tại, vị thế, holder/dev on-chain và chấm lại điểm từ giá trị holder/dev thật. Sau
    prepare còn kiểm lại sizing/vốn và tuổi evidence/quote trước ký. Giấy phép chỉ gắn một intent ID.
 4. Risk: chạy độc lập với pause BUY, theo giá mới. Vị thế V5 dùng stop -20%,
    bán 50% tại 2x, trailing -15% sau khi receipt xác nhận TP, time exit sau
@@ -48,22 +47,26 @@ Rules V5 áp dụng cho LIVE.
   hiển thị. Xác nhận có hiệu lực 30 giây và mất hiệu lực sau một lần ký hoặc
   thay đổi thiết lập/số liệu. Không có nút chấp thuận mọi mức cỡ lệnh vô hạn.
   Đó là xác nhận rủi ro sizing, không phải ví ký từng transaction.
-- R6 dùng current_utc_hour: chỉ nhận BUY trong các giờ UTC 03–17. Theo cách
-  hiểu nguyên văn các khoảng giờ trong prompt, giờ 02 cũng bị chặn toàn giờ.
-  Tương đương giờ Việt Nam 10:00–00:59. SELL bảo vệ và đối soát luôn chạy.
+- BUY hoạt động **24/7**, bỏ cổng giờ UTC ở cả bộ quyết định và signer.
+  Không chặn theo percentile toàn thị trường. SELL bảo vệ và đối soát luôn chạy.
+- R8 hạ từ 8 xuống **6**. R1 vẫn kiểm tra vốn, slot và định giá; giá trị vị thế
+  đang tăng không tự làm fail chỉ vì vượt kích thước lệnh ban đầu. Không tăng sizing.
+- Tất cả box UI có thu gọn/mở và nhớ trạng thái trên thiết bị, trừ Pipeline.
 
-## Các mâu thuẫn trong prompt được xử lý công khai
+## Khác biệt giữa V5.1 và prompt V5.0 nguyên bản
 
-Nguồn nguyên văn ở prompt-v5.txt. Công thức và hard rules có ưu tiên hơn ví dụ:
+Nguồn nguyên văn được lưu bất biến ở prompt-v5.txt. V5.1 nới điều kiện vào theo
+yêu cầu cập nhật của người dùng; không còn là bản sao nguyên xi mọi hard rule V5.0:
 
 - Tổng điểm dương tối đa là 8.5, không phải 9.0 như ví dụ STANDARD.
 - ADAPTIVE trừ 0.5, nên tối đa 8.0; nếu friction >6% còn bị trừ 2.0.
   Ví dụ 0.5 SOL / priority 0.0005 / slip 3% mỗi phía có friction 10%, điểm tối
-  đa 6.0, phải SKIP theo R8. Không ép thành VALID_SETUP như ví dụ.
+  đa 6.0. V5.1 đạt ngưỡng điểm 6, nhưng vẫn cần xác nhận ADAPTIVE và qua
+  quote/simulation thực; không bảo đảm được gửi lệnh nếu lớp thực thi loại.
 - Ví dụ STANDARD 3.33 SOL / priority 0.0005 / slip 1.5% mỗi phía có friction
-  khoảng 6.5015%; điểm tối đa 6.5 sau phạt, cũng không đạt R8.
-- R8 là hard rule score >=8.0; vì thế WATCH 7.x không thể xuất hiện cùng
-  “không có rule fail”. Bộ máy không tự nới R8 để tạo WATCH.
+  khoảng 6.5015%; điểm tối đa 6.5 sau phạt, đạt ngưỡng mới thay vì bị R8 cũ chặn.
+- R8 mới score >=6.0. Kết quả vẫn VALID_SETUP hoặc SKIP; không tạo WATCH giả.
+  Điểm không phải xác suất thắng và không chứng minh chiến lược có lãi.
 - F6 ở INFEASIBLE bằng proposed_size_sol(0) nhân friction, kết quả 0 SOL.
   Ví dụ 0.104 SOL dùng denominator khác, không được sao chép.
 - Khi max_concurrent_positions=0, kiểm tra R1b 0<0 là false, không phải true
@@ -99,8 +102,40 @@ Những số này chưa đủ chứng minh các điều kiện sau:
 
 Không suy ra block-0 từ slot giao dịch sớm nhất của một trang trade bị cắt.
 Không suy ra funding sạch chỉ vì mint/freeze đã revoke. Không dùng vài headline
-hay số holder để tự tạo narrative heat. Nếu các trường hard-rule thiếu, bot
-SKIP và liệt kê chính xác; cổng này không phải hạn chế credit AI.
+hay số holder để tự tạo narrative heat. V5.0 chặn toàn bộ khi thiếu những trường này. V5.1 mặc định dùng
+**onchain-momentum**, ghi rõ lịch sử nghiên cứu chưa xác minh, và không cấp
+điểm thưởng funding/social/narrative giả. Nếu cấu hình dịch vụ nghiên cứu
+đầy đủ, adapter vẫn yêu cầu coverage/freshness đúng hợp đồng.
+
+### Profile mặc định onchain-momentum (không cần thêm Variables)
+
+- Mint/pool phải qua kiểm tra RPC thực và simulation hiện có. Holder cộng theo owner,
+  loại vault LP/curve: top10 ≤25%, dev ≤5%, ≥20 holder. Creator PumpSwap lấy từ
+  `coinCreator` on-chain; thiếu dev không coi là 0%.
+- Dự trữ SOL thực ≥5 SOL; quote không vượt 2% depth/impact.
+- Giá 5 phút tăng >0 và ≤100%; ≥5 BUY, tổng ≥8 giao dịch; BUY/SELL ≥1,1
+  (mẫu số ít nhất 1), volume ≥0,5 SOL. Giá ≤5s, dữ liệu activity ≤30s.
+- Tín hiệu creator bán gần đây hoặc suspected bundle đã quan sát chặn BUY.
+  Không có tín hiệu **không chứng minh** dev chưa bán ở quá khứ/bundle sạch.
+- Quote vòng mua–bán theo chính cỡ lệnh từ ví phải thành công, loss ≤6%, hai
+  impact ≤2%, tuổi ≤5s. Tổng friction dùng loss thực + dự phòng phí mạng hai
+  chiều, mỗi chiều 0,000025 SOL là trần phí execution đã có. Phí protocol/
+  slippage không tách được thì để null, không bịa bằng 0.
+- Điểm core tối đa 10: top10 <15% +3, ≤20% +2, ≤25% +1; dev <3% +2,
+  ≤5% +1; momentum 5m phù hợp +2; BUY/SELL ≥1,2 +1; volume ≥2 SOL +1;
+  dự trữ ≥10 SOL +1. Friction >6% trừ 2; ADAPTIVE trừ 0,5. Ngưỡng ≥6.
+- Hồ sơ holder cache tối đa 30s cho scanner, có timestamp riêng. Bộ ký kiểm
+  tra holder/dev lại trực tiếp; quote và evidence có TTL riêng, không gia hạn
+  dữ liệu cũ bằng timestamp mới. Cache ≤500 token và RPC scan được lên lịch.
+- Không tự mua nếu thiếu bằng chứng core, ví chưa kết nối, tạm dừng, thiếu gas,
+  hết slot hoặc chưa xác nhận ADAPTIVE. UI hiển thị các lý do này.
+
+Sửa đường thực thi: BUY curve chỉ cho phép với capability nội bộ của treasury
+LIVE, không nhận capability từ JSON. Các caller curve cũ vẫn bị chặn BUY.
+Với PumpSwap không trả entryQuoteProof, signer lấy quote vòng đọc thật trước
+ký và kiểm lại cỡ lệnh, độ mới và cap; không bỏ cổng chi phí vì thiếu field.
+`rulesPolicyVersion` của vị thế/exit vẫn V5.0 để tiếp tục bảo vệ các vị thế cũ;
+version của **entry policy**/fingerprint mới là V5.1. Không sửa ledger/chữ ký cũ.
 
 Muốn cung cấp đủ DECISION INPUTS từ một nguồn nghiên cứu thật có thể cấu hình:
 

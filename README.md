@@ -1,14 +1,15 @@
-# Meme Pilot · LIVE Rules V5.0 · không dùng AI
+# Meme Pilot · LIVE Rules V5.1 · không dùng AI
 
-LIVE dùng quy tắc deterministic F1–F8/R1–R9 trong tài liệu người dùng. Không
+LIVE dùng quy tắc deterministic V5.1 (F1–F8/R1–R9, điều chỉnh theo yêu cầu mới). Không
 cần MODEL_API_KEY và không gọi API model; Docker cũng tắt MODEL_TRADING_ENABLED.
 Ví SOL thật và bộ ký tự động trên server giữ nguyên. Giữ 0,05 SOL gas + buffer.
 
 - STANDARD 2% equity; ADAPTIVE theo min viable và cần xác nhận SIZE_DEVIATION.
 - Vị thế V5: stop -20%, chốt 50% tại 2x, trail -15%, time exit 90 phút theo band.
-- UI mới: Equity → Scout / Analyst / Sniper / Risk / Banker → Activity → Goal.
+- BUY 24/7, điểm tối thiểu 6; các box UI thu gọn được, trừ Pipeline.
 - Giữ ledger, chữ ký/vị thế cũ và Telegram; không đặt lại tài khoản.
-- Thiếu holder/dev/bundle/block-0/volume percentile sẽ báo SKIP, không tạo số liệu.
+- Mặc định xét holder/dev on-chain + lực mua 5m + quote vòng thực; ghi rõ lịch sử
+  dev/bundle chưa xác minh. Thiếu dữ liệu core vẫn SKIP, không tạo số liệu.
 
 Đọc [hướng dẫn, hợp đồng dữ liệu và các mâu thuẫn trong prompt](docs/rules-v5/README.md)
 trước khi bật lệnh mới. Nguồn RPC hiện có chỉ đáp ứng một phần bằng chứng;
