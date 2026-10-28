@@ -127,12 +127,12 @@ export class SolanaExecution{
    out.push({mint:mints[i],pairAddress:keys[i].toBase58(),venue:'pumpfun',dexId:'pumpfun',priceUsd:priceSol*solUsd,valuationUsd:c.tokenTotalSupply.toNumber()/1e6*priceSol*solUsd,valuationSource:'curve-marketCap',liquidityQuoteSol:realSol,liquidityUsd:realSol*solUsd,creatorAddress:c.creator.toBase58(),tokenSupplyRaw:c.tokenTotalSupply.toNumber(),updatedAt:now,solUsd});
   }catch{}return out;
  }
- async inspectCurveMarket(m){
+ async inspectCurveMarket(m,probeAmount,{includeQuote=true}={}){
   const facts=await this.mintCheck(m.mint),state=await curveState(this.rpc,m.mint,m.pairAddress),{curve}=state;if(curve.complete)throw Error('Curve đã hoàn tất; chưa xét mua bằng dữ liệu curve cũ.');
   if(!PublicKey.isOnCurve(curve.creator.toBuffer()))throw Error('Creator dạng PDA/sharing chưa xác minh được ví dev; chưa BUY.');
   const vault=PublicKey.findProgramAddressSync([state.address.toBuffer(),state.tokenProgram.toBuffer(),state.mint.toBuffer()],ATA)[0];
   const holders=await this.holderFacts(state.mint,state.tokenProgram,new Set([state.address.toBase58()]),new Set([vault.toBase58()]),curve.creator.toBase58());
-  const amount=String(Math.round(walletOrderSol(await this.balance(DEFAULT_OWNER),CURVE_RULES.orderFraction)*1e9)),quote=curveRoundTrip(state,amount);
+  const amount=includeQuote?(probeAmount??String(Math.round(walletOrderSol(await this.balance(DEFAULT_OWNER),CURVE_RULES.orderFraction)*1e9))):null,quote=includeQuote?curveRoundTrip(state,amount):{};
   const progress=state.global.initialRealTokenReserves.sub(curve.realTokenReserves).muln(10000).div(state.global.initialRealTokenReserves).toNumber()/100;
   return {...facts,...holders,...quote,curveVerified:true,curveComplete:false,curveProgressPct:progress,quoteReserveSol:curve.realQuoteReserves.toNumber()/1e9,creatorAddress:curve.creator.toBase58()};
  }

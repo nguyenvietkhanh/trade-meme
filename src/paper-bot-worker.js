@@ -1,3 +1,4 @@
+import {RulesRuntime} from './rules-runtime.js';
 import {ACTIVE_BOT_CONFIGS as BOT_CONFIGS} from './paper-bot-config.js';
 import {BotStateStore} from './paper-bot-state.js';
 import {ModelBotRuntime as BotRuntime} from './paper-model-runtime.js';
@@ -10,8 +11,8 @@ let snapshot=null,closing=false,seq=0;const requests=new Map(),bootAt=Date.now()
 const send=data=>{if(process.connected)process.send(data,error=>{if(error&&!closing)console.error('worker IPC',id,error.message);});};
 let lastSaveAt=0,lastSentAt=0,lastFingerprint='';
 const modelSettings=process.argv[5]?JSON.parse(process.argv[5]):{};
-const Runtime=modelSettings.mode==='live'?(modelSettings.multiOrder?MultiLiveModelRuntime:LiveModelBotRuntime):BotRuntime;
-const runtime=new Runtime(config,state,{ai:modelSettings,onDataset:modelSettings.datasetEnabled?(kind,data)=>send({type:'dataset',kind,data}):undefined,decide:context=>new Promise((resolve,reject)=>{const requestId=id+':model:'+(++seq),timer=setTimeout(()=>{requests.delete(requestId);reject(Object.assign(Error('MODEL_TIMEOUT'),{code:'MODEL_TIMEOUT'}));},(modelSettings.timeoutMs??15000)+5000);requests.set(requestId,{resolve,reject,timer});send({type:'model',requestId,context});}),save:async s=>{
+const Runtime=modelSettings.engine==='rules-v5'?RulesRuntime:modelSettings.mode==='live'?(modelSettings.multiOrder?MultiLiveModelRuntime:LiveModelBotRuntime):BotRuntime;
+const runtime=new Runtime(config,state,{ai:modelSettings,onDataset:modelSettings.datasetEnabled?(kind,data)=>send({type:'dataset',kind,data}):undefined,decide:context=>new Promise((resolve,reject)=>{const requestId=id+':model:'+(++seq),timer=setTimeout(()=>{requests.delete(requestId);const code=modelSettings.engine==='rules-v5'?'RULES_EVALUATION_TIMEOUT':'MODEL_TIMEOUT';reject(Object.assign(Error(code),{code}));},(modelSettings.timeoutMs??15000)+5000);requests.set(requestId,{resolve,reject,timer});send({type:'model',requestId,context});}),save:async s=>{
  const now=Date.now(),fingerprint=JSON.stringify([s.cashSol,s.rentLockedSol,s.positions,s.pending,s.pendingOrders,s.cycle,s.sequence,s.running,s.maxDrawdownPct]);
  if(s.outbox.length||fingerprint!==lastFingerprint||now-lastSaveAt>=5000){await store.save(s);await store.flush(s);lastSaveAt=now;lastFingerprint=fingerprint;}
  if(now-lastSentAt>=1000){send({type:'state',state:s});lastSentAt=now;}

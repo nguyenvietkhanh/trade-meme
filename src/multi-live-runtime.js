@@ -55,7 +55,7 @@ export class MultiLiveModelRuntime extends LiveModelBotRuntime{
    else{o.wasSubmitted=true;o.signature=result.signature??o.signature;o.readyAt=now+2000;}
   }catch(e){
    o.readyAt=now+15000;this.error(e,now);
-   if(!submitted&&['LIVE_AI_RISK_ASSESSMENT_REQUIRED','LIVE_TOKEN_BALANCE_CONFLICT','LIVE_AI_TARGET_MARKET','LIVE_AI_MARKET_STALE','LIVE_SELL_LOT_MISMATCH','LIVE_AI_STOP_REQUIRED','LIVE_RETIRED_AGENT','LIVE_INVALID_INTENT','LIVE_INVALID_AMOUNT','LIVE_CAPITAL_CHANGED','LIVE_BUY_NOT_ADMITTED','LIVE_INTENT_EXPIRED','LIVE_PREPARE_FAILED'].includes(e.code))drop();
+   if(!submitted&&(e.code?.startsWith('RULES_')||['LIVE_AI_RISK_ASSESSMENT_REQUIRED','LIVE_TOKEN_BALANCE_CONFLICT','LIVE_AI_TARGET_MARKET','LIVE_AI_MARKET_STALE','LIVE_SELL_LOT_MISMATCH','LIVE_AI_STOP_REQUIRED','LIVE_RETIRED_AGENT','LIVE_INVALID_INTENT','LIVE_INVALID_AMOUNT','LIVE_CAPITAL_CHANGED','LIVE_BUY_NOT_ADMITTED','LIVE_INTENT_EXPIRED','LIVE_PREPARE_FAILED'].includes(e.code)))drop();
   }
  }
  async tick(snapshot,now=snapshot.timestamp){

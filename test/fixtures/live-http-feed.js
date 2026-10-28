@@ -7,7 +7,7 @@ SolanaExecution.prototype.balance=async()=>4.25;
 SolanaExecution.prototype.send=async()=>{throw Error('HTTP fixture must never broadcast');};
 OwnerAuth.prototype.authenticated=req=>req.headers['x-fixture-owner']==='true';
 
-// Exercise the actual model HTTP parser with a deterministic local response.
+// LIVE rules must never make even a mocked model HTTP request.
 const marketFetch=globalThis.fetch;
-globalThis.fetch=async(url,options)=>String(url).includes('api.river.ai')?new Response(JSON.stringify({choices:[{finish_reason:'stop',message:{content:JSON.stringify({action:'HOLD',mint:null,order_sol:null,sell_percent:null,confidence:0,reason:'API_OK'})}}]}),{status:200}):marketFetch(url,options);
+globalThis.fetch=async(url,options)=>{if(String(url).includes('api.river.ai')){console.error('FORBIDDEN_MODEL_REQUEST');throw Error('Rules mode must not call a model');}return marketFetch(url,options);};
 OwnerAuth.prototype.login=function(nonce,signature){if(nonce!=='fixture-owner-proof'||signature!=='fixture-signature')throw Error('invalid fixture proof');return 'fixture-session';};

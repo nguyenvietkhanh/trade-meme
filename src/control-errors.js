@@ -11,7 +11,7 @@ const reasons=Object.freeze({
  LIVE_SIGNER_INVALID:[503,'Server đã nhận LIVE_SIGNER_SECRET_KEY nhưng chưa đọc được định dạng khóa Solana. Hỗ trợ Base58, JSON keypair, Base64 và hex; không gửi giá trị khóa trong chat.'],
  LIVE_SIGNER_PUBLIC_ADDRESS:[503,'LIVE_SIGNER_SECRET_KEY đang chứa địa chỉ công khai của ví SOL, chưa phải khóa bí mật dùng ký giao dịch. Không gửi khóa trong chat.'],
  LIVE_SIGNER_OWNER_MISMATCH:[503,'Khóa ký server không khớp địa chỉ ví chủ. Kiểm tra đúng ví trong Railway Variables.'],
- LIVE_WALLET_NOT_CONNECTED:[409,'Kết nối và ký thông điệp xác thực ví chủ trước khi bật AI giao dịch tự động. Không cần mật khẩu ứng dụng.','connect-wallet'],
+ LIVE_WALLET_NOT_CONNECTED:[409,'Kết nối và ký thông điệp xác thực ví chủ trước khi bật giao dịch tự động. Không cần mật khẩu ứng dụng.','connect-wallet'],
  LIVE_WALLET_SIGNATURE_INVALID:[400,'Chữ ký giao dịch không hợp lệ hoặc không thuộc ví chủ. Không gửi giao dịch.'],
  LIVE_CAPITAL_CHANGED:[409,'Số dư ví thay đổi, không còn đủ số SOL khả dụng cho lệnh này. Bot sẽ đánh giá lại cỡ lệnh.'],
  LIVE_LEGACY_PENDING_REQUIRES_RECONCILIATION:[409,'Còn giao dịch thật cũ chưa đối soát; cần xác định kết quả trước khi nhận lệnh mới.'],

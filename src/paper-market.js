@@ -6,11 +6,11 @@ import {UiActivity} from './ui-activity.js';
 import {createSwapFlowReader} from './paper-swap-flow.js';
 import {PaperPoolReader} from './paper-amm-model.js';
 /** Capability boundary: only these read methods enter the paper engine. No prepare/send/sign. */
-export function createPaperMarket(cash,execution=new SolanaExecution()){
+export function createPaperMarket(cash,execution=new SolanaExecution(),{includeCurves=false}={}){
  const activity=new UiActivity(),readFlow=createSwapFlowReader(execution.rpc,{rolling:true}),pools=new PaperPoolReader(execution.rpc),decimals=new Map();
  return Object.freeze({get activity(){return activity.snapshot();},rpcMode:execution.rpcMode,heliusConfigured:execution.heliusConfigured,provider:execution.provider,
   readStrategyFlow:market=>activity.track('flow',market.mint,()=>readFlow(market)),
-  readPoolPrices:markets=>pools.refresh(markets),
+  readPoolPrices:async markets=>{const curves=includeCurves?markets.filter(m=>m.dexId==='pumpfun'||m.executionVenue==='pumpfun'):[],direct=await pools.refresh(markets.filter(m=>!curves.includes(m)));if(!curves.length)return direct;const read=await execution.curveMarketData(curves.map(m=>m.mint),1);const rows=read.map(m=>({mint:m.mint,pairAddress:m.pairAddress,spotPriceSol:m.priceUsd,priceAt:m.updatedAt,priceSource:'RPC bonding curve reserves'}));for(const c of curves.filter(c=>!read.some(r=>r.mint===c.mint)))try{const route=await execution.curveRoute(c.mint,'SELL',c.pairAddress);if(route.venue==='pumpswap'){const prices=await pools.refresh([{...c,dexId:'pumpswap',pairAddress:route.poolAddress}]);for(const price of prices)rows.push({...price,pairAddress:c.pairAddress,priceSource:'RPC migrated PumpSwap reserves'});}}catch{}return [...direct,...rows];},
   modelQuote:(input,m)=>pools.quote(input,m),
   providerStats:()=>execution.quoteFetch.diagnostics?.()??{},
   readDecimals:async mint=>{const old=decimals.get(mint);if(old&&Date.now()-old.at<600000)return old.value;const value=(await execution.rpc.getTokenSupply(new PublicKey(mint),'confirmed')).value.decimals;if(!Number.isInteger(value)||value<0||value>18)throw Error('Missing token decimals');decimals.set(mint,{at:Date.now(),value});return value;},

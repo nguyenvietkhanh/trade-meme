@@ -1,3 +1,30 @@
+# Meme Pilot · LIVE Rules V5.0 · không dùng AI
+
+LIVE dùng quy tắc deterministic F1–F8/R1–R9 trong tài liệu người dùng. Không
+cần MODEL_API_KEY và không gọi API model; Docker cũng tắt MODEL_TRADING_ENABLED.
+Ví SOL thật và bộ ký tự động trên server giữ nguyên. Giữ 0,05 SOL gas + buffer.
+
+- STANDARD 2% equity; ADAPTIVE theo min viable và cần xác nhận SIZE_DEVIATION.
+- Vị thế V5: stop -20%, chốt 50% tại 2x, trail -15%, time exit 90 phút theo band.
+- UI mới: Equity → Scout / Analyst / Sniper / Risk / Banker → Activity → Goal.
+- Giữ ledger, chữ ký/vị thế cũ và Telegram; không đặt lại tài khoản.
+- Thiếu holder/dev/bundle/block-0/volume percentile sẽ báo SKIP, không tạo số liệu.
+
+Đọc [hướng dẫn, hợp đồng dữ liệu và các mâu thuẫn trong prompt](docs/rules-v5/README.md)
+trước khi bật lệnh mới. Nguồn RPC hiện có chỉ đáp ứng một phần bằng chứng;
+RULES_EVIDENCE_URL là adapter tùy chọn tới nguồn nghiên cứu thật, không phải
+API sẵn có được đóng gói cùng bot.
+
+```sh
+npm ci --ignore-scripts
+npm run build
+npm test
+npm start
+```
+
+<details>
+<summary>Tài liệu lịch sử các phiên bản AI/paper trước đây</summary>
+
 # Current deployment: autonomous AI meme trading on Solana
 
 Docker selects `TRADING_PRODUCT=solana-spot`, restoring meme BUY/SELL/HOLD.
@@ -624,3 +651,5 @@ cap that fits the actual Volume while leaving 64 MiB free. Example defaults:
 of 14 days of history. Synthetic dense data measured about 2 GiB/day, so a 500 MiB
 cap may retain only hours. Runtime dataset status reports throughput and losses.
 `./export_redacted.sh LIVE_ROOT OUTPUT_DIR 250` exports sanitized samples only.
+
+</details>
