@@ -1,3 +1,4 @@
+import {observeDataset,observeDatasetError} from './dataset-observe.js';
 import {LiveTreasury} from './live-treasury.js';
 import {AutomaticSigner} from './automatic-signer.js';
 import {reconcileExternalInventory} from './external-inventory.js';
@@ -18,10 +19,10 @@ export class AutomaticTreasury extends LiveTreasury{
   if(!this.multiOrder)return super.broadcast(order,bytes);
   // authorizePrepared has fsynced the exact signed bytes and reserved funds.
   // Never retry a broadcast: a timeout remains unknown under the original ID.
-  const id=order.id,signature=order.signature;
+  const id=order.id,signature=order.signature;observeDataset(this.dataset,'executor',()=>{this.datasetSentAt??=new Map();this.datasetSentAt.set(id,Date.now());return {intentId:id,mint:order.mint,side:order.side,callId:order.datasetCallId??null,decisionIndex:order.datasetDecisionIndex??null,stage:'send_started',at:Date.now(),signature,quote:order.quote,decimals:this.execution.mintFacts?.get(order.mint)?.decimals??this.s.positions?.find(p=>p.mint===order.mint)?.decimals??null};});
   const task=Promise.resolve().then(()=>this.execution.send(bytes)).then(result=>result===signature?'pending':'unknown',()=> 'unknown').then(status=>this.serial(async()=>{
    const current=this.s.orders[id];if(!current||current.signature!==signature||current.terminal)return;
-   current.status=status;await this.save();
+   observeDataset(this.dataset,'executor',{intentId:id,mint:current.mint,side:current.side,callId:current.datasetCallId??null,decisionIndex:current.datasetDecisionIndex??null,stage:status==='pending'?'sent':'send_unknown',status,at:Date.now(),signature});current.status=status;await this.save();
   }));
   this.broadcastJobs.set(id,task);task.catch(()=>{this.lastError='LIVE_BROADCAST_PERSIST_FAILED';}).finally(()=>this.broadcastJobs.delete(id));
   return {status:'signed',terminal:false,signature,view:this.view(order.agentId)};

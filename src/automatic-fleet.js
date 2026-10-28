@@ -1,9 +1,10 @@
+import {observeDatasetError} from './dataset-observe.js';
 import {tradingProduct} from './trading-product.js';
 import {LiveFleet} from './live-fleet.js';
 import {AutomaticTreasury} from './automatic-treasury.js';
 export class AutomaticFleet extends LiveFleet{
  constructor(dir,data,options={}){super(dir,data,options);this.product=options.product??tradingProduct({});this.treasury=new AutomaticTreasury(dir,options.execution,{...options,multiOrder:options.multiOrder??true,spotEntriesAllowed:this.product.spotEntriesAllowed,marketSnapshot:()=>data.snapshot()});this.agentVersion='single-ai-autonomous-v1';}
- error(error){const now=Date.now(),message=(this.mode??'live').toUpperCase()+' · '+(error.bot??'data')+': '+(error.message??String(error)),prior=this.errors.find(e=>e.message===message&&now-e.at<30000);if(prior){prior.count=(prior.count??1)+1;prior.lastAt=now;return;}super.error(error);this.errors[0].count=1;this.errors[0].lastAt=now;}
+ error(error){observeDatasetError(this.dataset,error);const now=Date.now(),message=(this.mode??'live').toUpperCase()+' · '+(error.bot??'data')+': '+(error.message??String(error)),prior=this.errors.find(e=>e.message===message&&now-e.at<30000);if(prior){prior.count=(prior.count??1)+1;prior.lastAt=now;return;}super.error(error);this.errors[0].count=1;this.errors[0].lastAt=now;}
  async prepareModelContext(context){if(!this.product.spotEntriesAllowed)return {...context,candidates:[],wallet:{...context.wallet,running:false},transition:{target:this.product.label,spotEntriesAllowed:false,perpsEnabled:false,task:'Manage existing spot holdings only. Do not propose new spot buys or derivatives orders.'}};const read=this.treasury.execution.readModelMintFacts;let facts={};if(typeof read==='function')try{facts=await read.call(this.treasury.execution,context.candidates.map(c=>c.mint));}catch{}return {...context,candidates:context.candidates.map(c=>({...c,mintSafety:facts[c.mint]??{status:'unknown',facts:null,reason:'MINT_FACTS_NOT_AVAILABLE'},otherSecurity:{holders:null,lpLock:null,rugCheck:null,note:'Not verified by the supplied data; never imply certified safety'}}))};}
  async load(){await super.load();await this.treasury.adoptPortfolio();this.publish();}
  async pulse(){

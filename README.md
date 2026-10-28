@@ -612,3 +612,15 @@ Independent stop monitoring can queue exits for multiple held mints. Telegram
 notifications still follow confirmed receipts. New schema is tested using mocked
 model responses and offline execution; production River responses and mainnet
 concurrency require observing the deployed service.
+
+## Passive training dataset
+
+Opt in with `DATASET_ENABLED=true`; default is disabled. The collector does not
+change trading decisions, prompts, limits or make additional provider calls.
+It writes bounded/redacted gzip JSONL under `<LIVE_ROOT>/dataset` using a separate
+worker. See [schema, coverage, export and sizing](docs/dataset.md). Start with a
+cap that fits the actual Volume while leaving 64 MiB free. Example defaults:
+`DATASET_MAX_MIB=500`, `DATASET_RETENTION_DAYS=14`; these are ceilings, not a promise
+of 14 days of history. Synthetic dense data measured about 2 GiB/day, so a 500 MiB
+cap may retain only hours. Runtime dataset status reports throughput and losses.
+`./export_redacted.sh LIVE_ROOT OUTPUT_DIR 250` exports sanitized samples only.

@@ -18,11 +18,12 @@ export class MultiLiveModelRuntime extends LiveModelBotRuntime{
   const box=this.inbox;if(!box)return;if(box.error){super.consumeModel(snapshot,now);return;}
   let decisions;try{decisions=validateModelDecisions({decisions:box.reply.decisions??[box.reply.decision]},box.context);}catch{this.inbox={error:{code:'MODEL_INVALID_DECISION'}};super.consumeModel(snapshot,now);return;}
   if(walletFingerprint(this.state)!==box.fingerprint||now>(box.reply.expiresAt??box.context.asOf+30000)){
+   if(box.reply.datasetCallId)for(let i=1;i<decisions.length;i++)this.observe('decision_validation',{callId:box.reply.datasetCallId,decisionIndex:i,decision:decisions[i],applied:false,reason:walletFingerprint(this.state)!==box.fingerprint?'MODEL_WALLET_CHANGED':'MODEL_DECISION_EXPIRED',at:now});
    this.inbox={...box,reply:{...box.reply,decision:decisions[0]}};super.consumeModel(snapshot,now);return;
   }
-  for(const decision of decisions){
+  for(const [datasetDecisionIndex,decision] of decisions.entries()){
    if(this.outstanding().length>=this.maxOrders)break;
-   this.inbox={...box,fingerprint:walletFingerprint(this.state),reply:{...box.reply,decision,riskEvidence:box.reply.riskEvidenceByMint?.[decision.mint]??box.reply.riskEvidence??null}};
+   this.inbox={...box,fingerprint:walletFingerprint(this.state),reply:{...box.reply,decision,datasetDecisionIndex,riskEvidence:box.reply.riskEvidenceByMint?.[decision.mint]??box.reply.riskEvidence??null}};
    super.consumeModel(snapshot,now);this.harvest();
   }
  }

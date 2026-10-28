@@ -2,13 +2,14 @@ import {fork} from 'node:child_process';
 import {ACTIVE_BOT_CONFIGS as BOT_CONFIGS} from './paper-bot-config.js';
 import {startPaperLoop} from './paper-loop.js';
 export class BotSupervisor{
- constructor(dir,{execute,decide=null,cancelDecision=()=>{},modelSettings={},onState=()=>{},onError=console.error,clock=Date.now,running=true}={}){this.dir=dir;this.execute=execute;this.decide=decide;this.cancelDecision=cancelDecision;this.modelSettings=modelSettings;this.onState=onState;this.onError=onError;this.clock=clock;this.workers=new Map();this.closing=false;this.desiredRunning=running;}
+ constructor(dir,{execute,decide=null,cancelDecision=()=>{},modelSettings={},onState=()=>{},onError=console.error,onDataset=()=>{},clock=Date.now,running=true}={}){this.dir=dir;this.execute=execute;this.decide=decide;this.cancelDecision=cancelDecision;this.modelSettings=modelSettings;this.onState=onState;this.onError=onError;this.onDataset=onDataset;this.clock=clock;this.workers=new Map();this.closing=false;this.desiredRunning=running;}
  start(){for(const c of BOT_CONFIGS)this.spawn(c.id);this.watchdog=startPaperLoop(()=>this.check(),5000,{onError:this.onError});}
  spawn(id){
   if(this.closing)return;const prior=this.workers.get(id),worker=fork(new URL('./paper-bot-worker.js',import.meta.url),[id,this.dir,String(this.desiredRunning),JSON.stringify(this.modelSettings)],{execArgv:[],env:{NODE_ENV:process.env.NODE_ENV??'production',PATH:process.env.PATH,TZ:'UTC',PAPER_TESTING_MODE:process.env.PAPER_TESTING_MODE??'true'},stdio:['ignore','inherit','inherit','ipc']});
   const row={worker,id,lastHeartbeat:this.clock(),restarts:(prior?.restarts??-1)+1,startedAt:this.clock(),stopping:false};this.workers.set(id,row);
   worker.on('error',this.onError);worker.on('message',message=>{if(this.workers.get(id)!==row)return;
    if(message.type==='state'){row.lastHeartbeat=this.clock();row.state=message.state;this.onState(id,message.state,row);}
+   else if(message.type==='dataset'){try{this.onDataset(message.kind,message.data);}catch{}}
    else if(message.type==='error')this.onError({bot:id,...message.error});
    else if(message.type==='model')Promise.resolve().then(()=>{if(!this.decide)throw Object.assign(Error('MODEL_NOT_CONFIGURED'),{code:'MODEL_NOT_CONFIGURED'});return this.decide(id,message.context);}).then(result=>{if(worker.connected)worker.send({type:'reply',requestId:message.requestId,result});},error=>{if(worker.connected)worker.send({type:'reply',requestId:message.requestId,error:error.code??'MODEL_UNAVAILABLE',code:error.code??'MODEL_UNAVAILABLE',retryAt:error.retryAt??null});});
    else if(message.type==='execute')Promise.resolve().then(()=>this.execute(message.input,message.market,id)).then(result=>{if(worker.connected)worker.send({type:'reply',requestId:message.requestId,result});},error=>{this.onError({bot:id,message:error.message});if(worker.connected)worker.send({type:'reply',requestId:message.requestId,error:String(error.message).slice(0,250),code:error.code});});

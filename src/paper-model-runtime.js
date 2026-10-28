@@ -1,3 +1,4 @@
+import {observeDataset,observeDatasetError} from './dataset-observe.js';
 import {BotRuntime} from './paper-bot-runtime.js';
 import {createModelContext,validateModelDecision,walletFingerprint} from './paper-model-context.js';
 import {PAPER_SIZING} from './paper-sizing.js';
@@ -7,11 +8,12 @@ import {FILL_MODEL} from './paper-bot-config.js';
 import {scalpExitPlan} from './paper-scalp.js';
 export class ModelBotRuntime extends BotRuntime{
  constructor(config,state,options={}){
-  super(config,state,options);this.decide=options.decide;this.aiConfig={pollMs:30000,maxCandidates:8,...options.ai};
+  super(config,state,options);this.onDataset=options.onDataset;this.decide=options.decide;this.aiConfig={pollMs:30000,maxCandidates:8,...options.ai};
   this.aiConfig.enabled=!this.aiConfig.explicitRulesMode&&(this.aiConfig.enabled||state.ai?.wasEnabled===true);
   state.decisionEngine=this.aiConfig.enabled?'model':'rules';this.inbox=null;this.modelTask=null;
   if(this.aiConfig.enabled){state.ai={history:[],failures:0,...state.ai,wasEnabled:true,activatedAt:state.ai?.activatedAt??Date.now(),status:'idle',modelName:this.aiConfig.name??null,nextAt:Math.min(state.ai?.nextAt??Infinity,Date.now()+state.seed%this.aiConfig.pollMs)};if(state.pending?.side==='BUY'&&!state.pending.wasSubmitted&&!state.livePending&&state.pending.decisionEngine!=='model')state.pending=null;}else if(state.pending?.side==='BUY'&&state.pending.decisionEngine==='model')state.pending=null;
  }
+ observe(kind,data){try{this.onDataset?.(kind,data);}catch{}}
  allowExit(plan,position){return !this.aiConfig.enabled||position.controlMode!=='model'||['stop-loss','emergency-risk','scalp-max-hold'].includes(plan.reason);}
  exitPlan(position,m,now){
   const plan=scalpExitPlan(position,m,now);if(!this.aiConfig.enabled||position.controlMode!=='model')return plan;
@@ -45,6 +47,8 @@ export class ModelBotRuntime extends BotRuntime{
    const p=s.positions.find(p=>p.mint===decision.mint&&(!decision.position_id||p.paperPositionId===decision.position_id)),amount=p?BigInt(p.rawQuantity)*BigInt(Math.floor(decision.sell_percent*100))/10000n:0n;
    if(!p||amount<=0n)reason='MODEL_SELL_POSITION_CHANGED';else{s.pending={id:this.id('ai-sell'),side:'SELL',mint:p.mint,pairAddress:p.pairAddress,symbol:p.symbol,positionId:p.paperPositionId,amount:String(amount),decisionAt:now,readyAt:now+FILL_MODEL.delayMs,aiStopLossPct:decision.stop_loss_pct??null,aiRiskAssessment:decision.risk_assessment??null,aiRiskEvidence:reply.riskEvidence??null,reason:'AI: '+decision.reason,decisionEngine:'model',modelName:reply.modelName??this.aiConfig.name,confidence:decision.confidence,attempts:0};applied=true;}
   }
+  if(reply.datasetCallId&&applied&&s.pending){s.pending.datasetCallId=reply.datasetCallId;s.pending.datasetDecisionIndex=reply.datasetDecisionIndex??0;}
+  if(reply.datasetCallId)this.observe('decision_validation',{callId:reply.datasetCallId,decisionIndex:reply.datasetDecisionIndex??0,decision,applied,reason,intentId:applied?s.pending?.id??null:null,intentAmount:applied?s.pending?.amount??null:null,intentSide:applied?s.pending?.side??null:null,at:now});
   a.status=applied?decision.action==='HOLD'?'holding':'decision-ready':'rejected';a.lastError=null;a.failures=0;a.lastDecision={...decision,at:now,applied,reason,requestSnapshotId:context.snapshotId};a.history=[...a.history,a.lastDecision].slice(-12);this.recordAI(snapshot,now,applied?decision.action:'WAIT',reason,{mint:decision.mint,token:decision.mint,confidence:decision.confidence,applied,modelName:reply.modelName??this.aiConfig.name,requestSnapshotId:context.snapshotId});
  }
  canRequestModel(){return !this.state.pending;}

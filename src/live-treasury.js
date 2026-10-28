@@ -1,3 +1,4 @@
+import {observeDataset,observeDatasetError} from './dataset-observe.js';
 import {VersionedTransaction,PublicKey} from '@solana/web3.js';
 import bs58 from 'bs58';
 import {readFile,mkdir,appendFile} from 'node:fs/promises';
@@ -62,7 +63,7 @@ export class LiveTreasury{
    const prepared=await this.execution.prepare({ownerAddress:this.owner,input:input.side==='BUY'?SOL:input.mint,output:input.side==='BUY'?input.mint:SOL,amount:input.amount,poolAddress:input.pairAddress,venue:'pumpswap',reason:input.reason,referenceMinOut:reference?.minOut,referencePriceSol:input.referencePriceSol,closeEmptyInput:input.side==='SELL'&&held===amount&&!!this.s.rentByMint[input.mint],minContextSlot:this.s.lastReceiptSlot||undefined,budgetAuthority:LIVE_BUDGET_AUTHORITY});
    if(input.side==='BUY'&&this.clock()-input.decisionAt>30000)throw error('LIVE_INTENT_EXPIRED');
    return await this.authorizePrepared(order,prepared);
-  }catch(e){if(order.signature)throw error('LIVE_SIGNED_RECONCILIATION_REQUIRED');order.status='rejected';order.terminal=true;await this.save();throw error(e.code?.startsWith?.('LIVE_')?e.code:'LIVE_PREPARE_FAILED');}
+  }catch(e){observeDatasetError(this.dataset,e,'prepare_or_quote');if(order.signature)throw error('LIVE_SIGNED_RECONCILIATION_REQUIRED');order.status='rejected';order.terminal=true;await this.save();throw error(e.code?.startsWith?.('LIVE_')?e.code:'LIVE_PREPARE_FAILED');}
  }
  async authorizePrepared(order,prepared){
   if(!this.vault.keypair||order.side==='BUY'&&!this.running)throw error('LIVE_SIGNER_LOCKED');const tx=VersionedTransaction.deserialize(prepared.bytes);if(tx.message.header.numRequiredSignatures!==1||tx.message.staticAccountKeys[0].toBase58()!==this.owner)throw error('LIVE_SIGNER_MISMATCH');tx.sign([this.vault.keypair]);
@@ -80,7 +81,7 @@ export class LiveTreasury{
    else if(!status&&await this.execution.height()>order.lastValidBlockHeight){order.terminal=true;order.status='expired';}
   }await this.save();await this.archive();
  });}
- finish(order,r){const original=this.s;if(original.orders[order.id]?.terminal)return;this.s=structuredClone(original);try{this.applyReceipt(this.s.orders[order.id],r);}catch(e){this.s=original;throw e;}}
+ finish(order,r){const original=this.s;if(original.orders[order.id]?.terminal)return;this.s=structuredClone(original);try{const previous=this.s.positions.find(p=>p.paperPositionId===order.positionId),stopLossPct=previous?.aiStopLossPct;this.applyReceipt(this.s.orders[order.id],r);observeDataset(this.dataset,'fill',()=>({order:Object.fromEntries(['id','positionId','datasetCallId','datasetDecisionIndex','mint','side','amount','decisionAt','aiStopLossPct','reason','signature','quote'].map(k=>[k,order[k]])),receipt:{status:r.status,tokenDelta:r.tokenDelta,decimals:r.decimals,solDelta:r.solDelta,feeSol:r.feeSol,rentDeltaLamports:r.rentDeltaLamports},confirmedAt:this.clock(),sentAt:this.datasetSentAt?.get(order.id)??null,closed:this.s.trades[0]?.closed===true,positionPnlSol:this.s.trades[0]?.positionPnlSol??null,stopLossPct}));this.datasetSentAt?.delete(order.id);}catch(e){this.s=original;throw e;}}
  applyReceipt(order,r){
   if(order.terminal)return;if(r.signature!==order.signature||!Number.isSafeInteger(r.slot)||!Number.isFinite(r.feeSol)||r.feeSol<0)throw error('LIVE_RECEIPT_INVALID');const c=BOT_CONFIGS.find(c=>c.id===order.agentId),at=this.clock();let f;
   if(r.status==='failed'){this.s.cashSol=round(this.s.cashSol-r.feeSol);f={side:'FEE',pnlSol:-r.feeSol,sol:r.feeSol,closed:false};}

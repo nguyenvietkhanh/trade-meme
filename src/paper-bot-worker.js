@@ -11,7 +11,7 @@ const send=data=>{if(process.connected)process.send(data,error=>{if(error&&!clos
 let lastSaveAt=0,lastSentAt=0,lastFingerprint='';
 const modelSettings=process.argv[5]?JSON.parse(process.argv[5]):{};
 const Runtime=modelSettings.mode==='live'?(modelSettings.multiOrder?MultiLiveModelRuntime:LiveModelBotRuntime):BotRuntime;
-const runtime=new Runtime(config,state,{ai:modelSettings,decide:context=>new Promise((resolve,reject)=>{const requestId=id+':model:'+(++seq),timer=setTimeout(()=>{requests.delete(requestId);reject(Object.assign(Error('MODEL_TIMEOUT'),{code:'MODEL_TIMEOUT'}));},(modelSettings.timeoutMs??15000)+5000);requests.set(requestId,{resolve,reject,timer});send({type:'model',requestId,context});}),save:async s=>{
+const runtime=new Runtime(config,state,{ai:modelSettings,onDataset:modelSettings.datasetEnabled?(kind,data)=>send({type:'dataset',kind,data}):undefined,decide:context=>new Promise((resolve,reject)=>{const requestId=id+':model:'+(++seq),timer=setTimeout(()=>{requests.delete(requestId);reject(Object.assign(Error('MODEL_TIMEOUT'),{code:'MODEL_TIMEOUT'}));},(modelSettings.timeoutMs??15000)+5000);requests.set(requestId,{resolve,reject,timer});send({type:'model',requestId,context});}),save:async s=>{
  const now=Date.now(),fingerprint=JSON.stringify([s.cashSol,s.rentLockedSol,s.positions,s.pending,s.pendingOrders,s.cycle,s.sequence,s.running,s.maxDrawdownPct]);
  if(s.outbox.length||fingerprint!==lastFingerprint||now-lastSaveAt>=5000){await store.save(s);await store.flush(s);lastSaveAt=now;lastFingerprint=fingerprint;}
  if(now-lastSentAt>=1000){send({type:'state',state:s});lastSentAt=now;}
