@@ -20,7 +20,7 @@ process.on('message',message=>{
  if(message.type==='snapshot')snapshot=message.snapshot;
  else if(message.type==='book'&&state.mode==='live'&&message.book?.id===id)Object.assign(state,message.book);
  else if(message.type==='running')state.running=message.running;
- else if(message.type==='reply'){const r=requests.get(message.requestId);if(r){clearTimeout(r.timer);requests.delete(message.requestId);message.error?r.reject(Object.assign(Error(message.error),{code:message.code,retryAt:message.retryAt})):r.resolve(message.result);}}
+ else if(message.type==='reply'){const r=requests.get(message.requestId);if(r){clearTimeout(r.timer);requests.delete(message.requestId);message.error?r.reject(Object.assign(Error(message.error),{code:message.code,retryAt:message.retryAt,promptVersion:message.promptVersion??null,promptSha256:message.promptSha256??null})):r.resolve(message.result);}}
  else if(message.type==='shutdown')shutdown();
 });
 const loop=startPaperLoop(async()=>{state.uptimeMs=priorUptime+Date.now()-bootAt;if(snapshot&&!closing)await runtime.tick(snapshot,Date.now());else if(!closing){state.heartbeatAt=Date.now();send({type:'state',state});}},250,{onError:error=>{console.error(id,error);send({type:'error',error:{message:error.message}});}});

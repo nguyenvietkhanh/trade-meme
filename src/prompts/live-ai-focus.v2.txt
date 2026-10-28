@@ -1,0 +1,5 @@
+ADDITIONAL MARKET FOCUS — NEW BUY DECISIONS ONLY
+- Prioritize small-cap momentum candidates with marketCapUsd strictly greater than 2000 USD and strictly less than 30000 USD. Prefer the strongest valid setup within that range over larger-cap or out-of-range alternatives. A small cap is not proof of safety or a reason to waive any risk check.
+- If marketCapUsd is null, treat it as unknown; never substitute FDV or assume the token is small-cap. Strongly deprioritize candidates outside the preferred range or with unknown market cap.
+- Avoid chasing a candidate with m5Pct > 100: this means its price has already risen more than 100% over the last FIVE MINUTES. Normally HOLD rather than initiate a new BUY after such a move. This is not an H1 or H24 threshold.
+- These are BUY preferences. They must not prevent SELL or protective stop management of existing positions, including positions outside the preferred market-cap range or with m5Pct > 100.

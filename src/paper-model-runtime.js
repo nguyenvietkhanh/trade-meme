@@ -24,13 +24,13 @@ export class ModelBotRuntime extends BotRuntime{
   return null;
  }
  recordAI(snapshot,now,action,reason,extra={}){
-  const s=this.state,row={type:'decision',id:this.id('model'),ts:now,at:now,snapshotId:snapshot.snapshotId,bot:s.id,agentId:s.id,decisionEngine:'model',action,decision:action,stage:'model',blockingStage:'model',reason,minScore:0,score:extra.confidence==null?0:Math.round(extra.confidence*100),scoreParts:{confidence:extra.confidence??null,uncalibrated:true},checks:[],...extra};s.outbox.push(row);s.decisions=[row,...s.decisions].slice(0,100);return row;
+  const s=this.state,row={type:'decision',id:this.id('model'),ts:now,at:now,snapshotId:snapshot.snapshotId,bot:s.id,agentId:s.id,decisionEngine:'model',promptVersion:null,promptSha256:null,action,decision:action,stage:'model',blockingStage:'model',reason,minScore:0,score:extra.confidence==null?0:Math.round(extra.confidence*100),scoreParts:{confidence:extra.confidence??null,uncalibrated:true},checks:[],...extra};s.outbox.push(row);s.decisions=[row,...s.decisions].slice(0,100);return row;
  }
  consumeModel(snapshot,now){
   if(!this.inbox)return;const box=this.inbox;this.inbox=null;const s=this.state,a=s.ai;
-  if(box.error){a.failures++;a.status='error';a.lastError={at:now,code:box.error.code??'MODEL_UNAVAILABLE'};a.nextAt=Math.max(now+this.aiConfig.pollMs,box.error.retryAt??0);this.recordAI(snapshot,now,'WAIT',a.lastError.code);return;}
+  if(box.error){a.failures++;a.status='error';a.lastError={at:now,code:box.error.code??'MODEL_UNAVAILABLE'};a.nextAt=Math.max(now+this.aiConfig.pollMs,box.error.retryAt??0);this.recordAI(snapshot,now,'WAIT',a.lastError.code,{promptVersion:box.error.promptVersion??null,promptSha256:box.error.promptSha256??null});return;}
   const {reply,context,fingerprint}=box;let decision;
-  try{decision=validateModelDecision(reply.decision,context);}catch{a.status='error';a.lastError={at:now,code:'MODEL_INVALID_DECISION'};this.recordAI(snapshot,now,'WAIT','MODEL_INVALID_DECISION');return;}
+  try{decision=validateModelDecision(reply.decision,context);}catch{a.status='error';a.lastError={at:now,code:'MODEL_INVALID_DECISION'};this.recordAI(snapshot,now,'WAIT','MODEL_INVALID_DECISION',{promptVersion:reply.promptVersion??null,promptSha256:reply.promptSha256??null});return;}
   let reason=decision.reason,applied=false;
   if(now>(reply.expiresAt??context.asOf+30000)||now-context.asOf>30000)reason='MODEL_DECISION_EXPIRED';
   else if(walletFingerprint(s)!==fingerprint)reason='MODEL_WALLET_CHANGED';
@@ -49,7 +49,7 @@ export class ModelBotRuntime extends BotRuntime{
   }
   if(reply.datasetCallId&&applied&&s.pending){s.pending.datasetCallId=reply.datasetCallId;s.pending.datasetDecisionIndex=reply.datasetDecisionIndex??0;}
   if(reply.datasetCallId)this.observe('decision_validation',{callId:reply.datasetCallId,decisionIndex:reply.datasetDecisionIndex??0,decision,applied,reason,intentId:applied?s.pending?.id??null:null,intentAmount:applied?s.pending?.amount??null:null,intentSide:applied?s.pending?.side??null:null,at:now});
-  a.status=applied?decision.action==='HOLD'?'holding':'decision-ready':'rejected';a.lastError=null;a.failures=0;a.lastDecision={...decision,at:now,applied,reason,requestSnapshotId:context.snapshotId};a.history=[...a.history,a.lastDecision].slice(-12);this.recordAI(snapshot,now,applied?decision.action:'WAIT',reason,{mint:decision.mint,token:decision.mint,confidence:decision.confidence,applied,modelName:reply.modelName??this.aiConfig.name,requestSnapshotId:context.snapshotId});
+  a.status=applied?decision.action==='HOLD'?'holding':'decision-ready':'rejected';a.lastError=null;a.failures=0;a.lastDecision={...decision,promptVersion:reply.promptVersion??null,promptSha256:reply.promptSha256??null,at:now,applied,reason,requestSnapshotId:context.snapshotId};a.history=[...a.history,a.lastDecision].slice(-12);this.recordAI(snapshot,now,applied?decision.action:'WAIT',reason,{mint:decision.mint,token:decision.mint,confidence:decision.confidence,applied,modelName:reply.modelName??this.aiConfig.name,requestSnapshotId:context.snapshotId,promptVersion:reply.promptVersion??null,promptSha256:reply.promptSha256??null});
  }
  canRequestModel(){return !this.state.pending;}
  prepareDecisionContext(context){return context;}
@@ -60,7 +60,7 @@ export class ModelBotRuntime extends BotRuntime{
    const context=this.prepareDecisionContext(createModelContext(this.config,s,snapshot,now,{maxCandidates:this.aiConfig.maxCandidates}));
    if(!context.candidates.length&&!context.positions.length){a.status='waiting-data';a.nextAt=now+5000;}
    else{a.nextAt=now+this.aiConfig.pollMs;a.status='thinking';a.lastRequestedAt=now;a.candidateCount=context.candidates.length;const fingerprint=walletFingerprint(s);
-    this.modelTask=Promise.resolve().then(()=>{if(!this.decide)throw Object.assign(Error('MODEL_NOT_CONFIGURED'),{code:'MODEL_NOT_CONFIGURED'});return this.decide(context);}).then(reply=>{this.inbox={reply,context,fingerprint};},error=>{this.inbox={error:{code:error.code??'MODEL_UNAVAILABLE',retryAt:error.retryAt??null}};}).finally(()=>{this.modelTask=null;});
+    this.modelTask=Promise.resolve().then(()=>{if(!this.decide)throw Object.assign(Error('MODEL_NOT_CONFIGURED'),{code:'MODEL_NOT_CONFIGURED'});return this.decide(context);}).then(reply=>{this.inbox={reply,context,fingerprint};},error=>{this.inbox={error:{code:error.code??'MODEL_UNAVAILABLE',retryAt:error.retryAt??null,promptVersion:error.promptVersion??null,promptSha256:error.promptSha256??null}};}).finally(()=>{this.modelTask=null;});
    }
   }
   const reason=a.lastError?.code??(a.status==='thinking'?'AI đang phân tích ngữ cảnh riêng':a.lastDecision?.reason??(a.status==='waiting-data'?'AI chờ dữ liệu thị trường thật':'AI chờ lượt phân tích tiếp theo'));
