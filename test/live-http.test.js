@@ -25,9 +25,9 @@ test('LIVE rules HTTP makes zero model calls, requires the owner signer, reads m
  r=await fetch(base+'/api/live/wallet-orders');assert.equal(r.status,410);r=await fetch(base+'/api/live/wallet-submit',{method:'POST',headers:ownerHeaders,body:'{}'});assert.equal(r.status,410);
  assert.equal((await fetch(base+'/api/live/unlock',{method:'POST',headers:ownerHeaders,body:'{}'})).status,410);
  assert.equal((await fetch(base+'/api/direct/prepare',{method:'POST',headers,body:'{}'})).status,410);assert.equal((await fetch(base+'/api/signer/import',{method:'POST',headers,body:'{}'})).status,410);
- const html=await(await fetch(base)).text();assert.match(html,/LIVE · SERVER SIGNER/);assert.match(html,/Pipeline/);assert.match(html,/Analyst/);assert.match(html,/Banker/);assert.match(html,/ack-card/);assert.ok(!html.includes('khớp giả định'));
+ const html=await(await fetch(base)).text();assert.match(html,/LIVE · SERVER SIGNER/);assert.match(html,/Pipeline/);assert.match(html,/Analyst/);assert.match(html,/Banker/);assert.doesNotMatch(html,/ack-card|Xác nhận SIZE_DEVIATION/);assert.match(html,/AUTO/);assert.equal(state.rules.requiresSizeAcknowledgment,false);assert.equal(state.rules.maxOrderFraction,.5);assert.ok(!html.includes('khớp giả định'));
  assert.equal((await fetch(base+'/api/rules/ack',{method:'POST',headers,body:'{}'})).status,403);
- let ack=await fetch(base+'/api/rules/ack',{method:'POST',headers:ownerHeaders,body:JSON.stringify({fingerprint:'invalid'})});assert.equal(ack.status,409);
+ let ack=await fetch(base+'/api/rules/ack',{method:'POST',headers:ownerHeaders,body:JSON.stringify({fingerprint:'invalid'})});assert.equal(ack.status,200);assert.deepEqual(await ack.json(),{automatic:true,acknowledgmentRequired:false});
  assert.ok(!html.includes('id="live-password"'));assert.ok(!html.includes('id="password"'));
  for(let i=0;i<12;i++){r=await pause(true);}assert.equal(r.status,429);assert.ok(Number(r.headers.get('Retry-After'))>0);assert.equal((await r.json()).code,'RATE_LIMITED');
  const script=html.match(/src="(\/ui\/[a-f0-9]{20}\/rules\.js)"/)[1],asset=await fetch(base+script);assert.equal(asset.status,200);assert.match(asset.headers.get('Cache-Control'),/immutable/);

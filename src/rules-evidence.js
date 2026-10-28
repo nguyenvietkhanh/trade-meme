@@ -1,7 +1,8 @@
+import {planRulesOrder} from './rules-allocation.js';
 import {momentumChecks} from './rules-momentum.js';
 import {withRpcPriority} from './rpc-priority.js';
 // An optional research-data adapter. It receives public mint/pool only, never wallet or signer data.
-// Full research is optional in V5.1; absent histories are recorded as unknown, never certified clean.
+// Full research is optional in V5.2; absent histories are recorded as unknown, never certified clean.
 const INPUT_KEYS=['market_cap','curve_progress_pct','holder_count','top10_pct','dev_wallet_pct','block0_buyer_count','volume_5m','volume_1h','buy_sell_ratio','liquidity_depth','graduation_dump_model','narrative_heat','holder_growth_rate','token_age_minutes','global_pumpfun_volume_24h_percentile','priority_fee_sol','protocol_fee_pct','expected_slippage_pct'];
 function sanitize(data){const i=data.inputs??{},o=data.observations??{},inputs=Object.fromEntries(INPUT_KEYS.map(k=>[k,Number.isFinite(i[k])?i[k]:null]));
  inputs.dev_sell_history=Array.isArray(i.dev_sell_history)?i.dev_sell_history.map(t=>({age_minutes:t.age_minutes})):null;inputs.bundle_clusters=Array.isArray(i.bundle_clusters)?i.bundle_clusters.map(c=>({wallet_count:c.wallet_count??c.wallets?.length??null})):null;
@@ -19,9 +20,11 @@ export class RulesEvidence{
   const observations={evidenceProfile:'onchain-momentum',creatorSoldRecently:m.creatorSoldRecently===true,suspectedBundle:m.suspectedBundle===true};
   const checks=momentumChecks({...inputs,quote_reserve_sol:Infinity,holder_count:Infinity},observations),blocked=Object.entries(checks).filter(([,ok])=>!ok).map(([k])=>k);
   if(blocked.length)return {error:'RULES_MOMENTUM_NOT_READY',missing:blocked,inputs,checkedAt:now};
-  if(!(c.probeSol>0))return {error:'RULES_CAPITAL_NOT_READY',missing:['positive wallet-sized quote amount']};
+  if(!c.account&&!(c.probeSol>0))return {error:'RULES_CAPITAL_NOT_READY',missing:['positive wallet-sized quote amount']};
   const key=c.mint+':'+c.pool,prior=this.cache.get(key);
-  if(prior?.probeSol===c.probeSol&&now-prior.checkedAt<=2500)return prior;
+  // The cached quote is usable only for the same account and the same requested amount.
+  const accountKey=JSON.stringify(c.account??null);
+  if(prior?.accountKey===accountKey&&(!c.probeSol||prior.probeSol===c.probeSol)&&now-prior.checkedAt<=2500)return prior;
   let factsRow=this.factsCache.get(key);
   if(!factsRow||now-factsRow.at>30000){
    if(now<this.nextReadAt)return {error:'RULES_FACTS_READ_SCHEDULED',missing:['waiting for RPC holder scan']};this.nextReadAt=now+2500;
@@ -34,12 +37,15 @@ export class RulesEvidence{
   if(inputs.top10_pct>25||inputs.dev_wallet_pct>5)return {error:'RULES_HOLDER_REJECTED',missing:['top10 <=25%, dev <=5%'],inputs};
   const remaining=Object.entries(momentumChecks(inputs,observations)).filter(([,ok])=>!ok).map(([k])=>k);
   if(remaining.length)return {error:'RULES_MOMENTUM_NOT_READY',missing:remaining,inputs};
+  Object.assign(inputs,{priority_fee_sol:.000025});
+  const probeSol=c.probeSol??planRulesOrder({...inputs,...c.account},observations).size;
+  if(!(probeSol>=.0025))return {error:'RULES_CAPITAL_NOT_READY',missing:['spendable order >=0.0025 SOL after gas / reservations']};
   try{
-   const q=await withRpcPriority('background',()=>this.execution.roundTripQuote(c.mint,String(Math.floor(c.probeSol*1e9)),m)),at=this.clock();
-   if(q.roundTripQuoteOk!==true||q.probeSol!==c.probeSol||!Number.isFinite(q.roundTripLossPct)||q.roundTripLossPct<0||q.roundTripLossPct>6||!Number.isFinite(q.quoteCheckedAt)||q.quoteCheckedAt>at||at-q.quoteCheckedAt>5000||![q.buyImpactPct,q.sellImpactPct].every(x=>Number.isFinite(x)&&x>=0&&x<=2))throw Error('quote');
+   const q=await withRpcPriority('background',()=>this.execution.roundTripQuote(c.mint,String(Math.floor(probeSol*1e9)),m)),at=this.clock();
+   if(q.roundTripQuoteOk!==true||q.probeSol!==probeSol||!Number.isFinite(q.roundTripLossPct)||q.roundTripLossPct<0||q.roundTripLossPct>6||!Number.isFinite(q.quoteCheckedAt)||q.quoteCheckedAt>at||at-q.quoteCheckedAt>5000||![q.buyImpactPct,q.sellImpactPct].every(x=>Number.isFinite(x)&&x>=0&&x<=2))throw Error('quote');
    // 0.000025 SOL is the enforced per-transaction network fee ceiling, not an invented protocol fee.
-   Object.assign(inputs,{round_trip_quote_loss_pct:q.roundTripLossPct,priority_fee_sol:.000025});
-   const row={inputs,observations,checkedAt:at,holdersCheckedAt:factsRow.at,probeSol:c.probeSol,source:'RPC holders + observed market momentum + executable roundtrip quote',researchUnknowns:missingResearch};
+   Object.assign(inputs,{round_trip_quote_loss_pct:q.roundTripLossPct,quote_probe_sol:probeSol,priority_fee_sol:.000025});
+   const row={inputs,observations,checkedAt:at,holdersCheckedAt:factsRow.at,probeSol,accountKey,source:'RPC holders + observed market momentum + executable roundtrip quote',researchUnknowns:missingResearch};
    this.cache.set(key,row);for(const map of [this.cache,this.factsCache])while(map.size>500)map.delete(map.keys().next().value);return row;
   }catch{return {error:'RULES_QUOTE_UNAVAILABLE',missing:['fresh size-matched roundtrip quote, loss <=6%, impact <=2%'],inputs};}
  }

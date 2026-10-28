@@ -1,4 +1,4 @@
-# LIVE Rules V5.1 — không gọi AI
+# LIVE Rules V5.2 — không gọi AI
 
 Theo yêu cầu ngày 29/10/2026 (giờ Việt Nam), LIVE dùng bộ quy tắc định lượng
 thay model, giữ ví chủ và bộ ký tự động trên server. Không đọc khóa từ chat,
@@ -38,33 +38,45 @@ Rules V5 áp dụng cho LIVE.
   Không thay equity bằng vốn giả hoặc tiền nạp cố định. Thiếu định giá thì
   không cấp lệnh BUY mới. USD/USDC trong output là quy đổi theo giá SOL/USD,
   không phải chuyển tiền hay số dư USDC thực tế.
-- STANDARD = 2% equity, ADAPTIVE = min viable theo công thức, tối đa 15% equity
-  theo F8. F4 được tính lại, tối đa 5 vị thế. Pending BUY cũng chiếm slot/vốn.
-- Luôn giữ >=0.05 SOL gas và đệm 0.005 SOL. Cơ chế đặt chỗ vốn, phí/rent và
-  các guard signer/slippage/simulation cũ tiếp tục áp dụng. Guard 90% cũ là
-  hàng rào ngoài, không phải sizing mới; F2/F8 chặt hơn.
-- ADAPTIVE phải bấm xác nhận SIZE_DEVIATION cho số tiền/tỷ lệ/friction đang
-  hiển thị. Xác nhận có hiệu lực 30 giây và mất hiệu lực sau một lần ký hoặc
-  thay đổi thiết lập/số liệu. Không có nút chấp thuận mọi mức cỡ lệnh vô hạn.
-  Đó là xác nhận rủi ro sizing, không phải ví ký từng transaction.
+- **AUTO** hoàn toàn: không còn STANDARD 2% / ADAPTIVE 15% hay xác nhận
+  SIZE_DEVIATION. Quyền này được người dùng cấp rõ ràng trong yêu cầu mới.
+- Trần mỗi BUY = **50% số SOL đang có trong ví**, đồng thời không vượt 50%
+  equity. Vị thế token đang giữ không làm tăng trần trên số SOL thực có.
+  Ví dụ ví 0,5 SOL, trần 0,25 SOL; không phải lệnh nào cũng dùng hết trần.
+- Bot chấm điểm phân bổ trước chi phí: 6 điểm →10% SOL, 7→20%, 8→30%,
+  9→40%, 10→50%; điểm lẻ nội suy, luôn kẹp 10–50%. Ngưỡng điểm và toàn bộ
+  gate an toàn vẫn áp dụng riêng; có thể HOLD dù đã tính được kích thước.
+- Số tiền thực = min(target, trần 50%, vốn khả dụng đã trừ đặt chỗ/lãi,
+  SOL ví −0,05 gas −0,005 đệm phí, 2% dự trữ SOL của pool nếu đã đọc).
+  Làm tròn xuống lamport. Order <max(0,0025 SOL, trần phí mạng×40) thì SKIP.
+  Không còn sàn mua bắt buộc 0,05 SOL; 0,05 SOL là phần **để lại làm gas**.
+- Tối đa 5 vị thế, pending BUY chiếm cả slot và vốn. Nhiều lệnh dùng chung
+  ngân sách, không được mỗi lệnh tiêu lại cùng một số dư. Nếu cỡ lệnh bị
+  kẹp khác quote, phải đợi quote đúng size; không dùng giá quote của size cũ.
+- Profile core lấy quote đúng size sau khi đọc holder và depth. Tổng friction
+  tối đa 8%; quote vòng thực vẫn ≤6% và impact mỗi chiều ≤2%. Sizing được
+  chọn trước quote để tránh vòng lặp score–friction–size.
+- Signer đọc lại số dư ví, cap 50%, đặt chỗ, holder/dev, quote và mô phỏng
+  trước ký. Thay đổi size/vốn thì bỏ intent chưa ký và xét lại, không tự nới
+  quyền trên grant. Lệnh đã ký vẫn đối soát bằng ID/chữ ký cũ.
+- Không xác nhận từng size và không bấm ví cho từng giao dịch. Kết nối/xác
+  thực ví ban đầu, nút Tiếp tục BUY / Dừng BUY vẫn là quyền điều khiển của chủ.
 - BUY hoạt động **24/7**, bỏ cổng giờ UTC ở cả bộ quyết định và signer.
   Không chặn theo percentile toàn thị trường. SELL bảo vệ và đối soát luôn chạy.
 - R8 hạ từ 8 xuống **6**. R1 vẫn kiểm tra vốn, slot và định giá; giá trị vị thế
   đang tăng không tự làm fail chỉ vì vượt kích thước lệnh ban đầu. Không tăng sizing.
 - Tất cả box UI có thu gọn/mở và nhớ trạng thái trên thiết bị, trừ Pipeline.
 
-## Khác biệt giữa V5.1 và prompt V5.0 nguyên bản
+## Khác biệt giữa V5.2 và prompt V5.0 nguyên bản
 
-Nguồn nguyên văn được lưu bất biến ở prompt-v5.txt. V5.1 nới điều kiện vào theo
+Nguồn nguyên văn được lưu bất biến ở prompt-v5.txt. V5.2 nới điều kiện vào theo
 yêu cầu cập nhật của người dùng; không còn là bản sao nguyên xi mọi hard rule V5.0:
 
 - Tổng điểm dương tối đa là 8.5, không phải 9.0 như ví dụ STANDARD.
-- ADAPTIVE trừ 0.5, nên tối đa 8.0; nếu friction >6% còn bị trừ 2.0.
-  Ví dụ 0.5 SOL / priority 0.0005 / slip 3% mỗi phía có friction 10%, điểm tối
-  đa 6.0. V5.1 đạt ngưỡng điểm 6, nhưng vẫn cần xác nhận ADAPTIVE và qua
-  quote/simulation thực; không bảo đảm được gửi lệnh nếu lớp thực thi loại.
-- Ví dụ STANDARD 3.33 SOL / priority 0.0005 / slip 1.5% mỗi phía có friction
-  khoảng 6.5015%; điểm tối đa 6.5 sau phạt, đạt ngưỡng mới thay vì bị R8 cũ chặn.
+- V5.0/V5.1 từng trừ điểm ADAPTIVE và yêu cầu xác nhận cỡ lệnh. V5.2 bỏ
+  mode ADAPTIVE và penalty đó. Điểm full-research tối đa 8,5; core tối đa 10.
+- Ví dụ chi phí cao vẫn có thể bị SKIP dù đủ điểm: hard cap friction 8% và
+  các quote/simulation guard không được bỏ để cố tạo giao dịch.
 - R8 mới score >=6.0. Kết quả vẫn VALID_SETUP hoặc SKIP; không tạo WATCH giả.
   Điểm không phải xác suất thắng và không chứng minh chiến lược có lãi.
 - F6 ở INFEASIBLE bằng proposed_size_sol(0) nhân friction, kết quả 0 SOL.
@@ -102,7 +114,7 @@ Những số này chưa đủ chứng minh các điều kiện sau:
 
 Không suy ra block-0 từ slot giao dịch sớm nhất của một trang trade bị cắt.
 Không suy ra funding sạch chỉ vì mint/freeze đã revoke. Không dùng vài headline
-hay số holder để tự tạo narrative heat. V5.0 chặn toàn bộ khi thiếu những trường này. V5.1 mặc định dùng
+hay số holder để tự tạo narrative heat. V5.0 chặn toàn bộ khi thiếu những trường này. V5.2 mặc định dùng
 **onchain-momentum**, ghi rõ lịch sử nghiên cứu chưa xác minh, và không cấp
 điểm thưởng funding/social/narrative giả. Nếu cấu hình dịch vụ nghiên cứu
 đầy đủ, adapter vẫn yêu cầu coverage/freshness đúng hợp đồng.
@@ -123,19 +135,19 @@ hay số holder để tự tạo narrative heat. V5.0 chặn toàn bộ khi thi�
   slippage không tách được thì để null, không bịa bằng 0.
 - Điểm core tối đa 10: top10 <15% +3, ≤20% +2, ≤25% +1; dev <3% +2,
   ≤5% +1; momentum 5m phù hợp +2; BUY/SELL ≥1,2 +1; volume ≥2 SOL +1;
-  dự trữ ≥10 SOL +1. Friction >6% trừ 2; ADAPTIVE trừ 0,5. Ngưỡng ≥6.
+  dự trữ ≥10 SOL +1. Friction >6% trừ 2. Không có penalty ADAPTIVE. Ngưỡng ≥6.
 - Hồ sơ holder cache tối đa 30s cho scanner, có timestamp riêng. Bộ ký kiểm
   tra holder/dev lại trực tiếp; quote và evidence có TTL riêng, không gia hạn
   dữ liệu cũ bằng timestamp mới. Cache ≤500 token và RPC scan được lên lịch.
 - Không tự mua nếu thiếu bằng chứng core, ví chưa kết nối, tạm dừng, thiếu gas,
-  hết slot hoặc chưa xác nhận ADAPTIVE. UI hiển thị các lý do này.
+  hết slot hoặc quote khác cỡ lệnh đã chọn. UI hiển thị các lý do này.
 
 Sửa đường thực thi: BUY curve chỉ cho phép với capability nội bộ của treasury
 LIVE, không nhận capability từ JSON. Các caller curve cũ vẫn bị chặn BUY.
 Với PumpSwap không trả entryQuoteProof, signer lấy quote vòng đọc thật trước
 ký và kiểm lại cỡ lệnh, độ mới và cap; không bỏ cổng chi phí vì thiếu field.
 `rulesPolicyVersion` của vị thế/exit vẫn V5.0 để tiếp tục bảo vệ các vị thế cũ;
-version của **entry policy**/fingerprint mới là V5.1. Không sửa ledger/chữ ký cũ.
+version của **entry policy**/fingerprint mới là V5.2. Không sửa ledger/chữ ký cũ.
 
 Muốn cung cấp đủ DECISION INPUTS từ một nguồn nghiên cứu thật có thể cấu hình:
 

@@ -1,5 +1,5 @@
-// V5.1 entry alternative: only observed RPC/market/quote facts; unknown research stays unknown.
-export const ENTRY_RULES_VERSION='pumpfun-rules-v5.1';
+// V5.2 entry alternative: only observed RPC/market/quote facts; unknown research stays unknown.
+export const ENTRY_RULES_VERSION='pumpfun-rules-v5.2';
 export const MIN_RULES_SCORE=6;
 export const MOMENTUM_LIMITS=Object.freeze({minQuoteReserveSol:5,minHolders:20,minBuys5m:5,minTrades5m:8,minBuySellRatio:1.1,minVolume5mSol:.5,maxChange5mPct:100});
 export function momentumChecks(i,o={}){
@@ -19,6 +19,5 @@ export function momentumScore(i,z){
  if(i.volume_5m_sol>=2)add(1,'5m traded volume >=2 SOL');
  if(i.quote_reserve_sol>=10)add(1,'real quote reserve >=10 SOL');
  if(z.friction>6)add(-2,'roundtrip >6%');
- if(z.mode==='ADAPTIVE')add(-.5,'ADAPTIVE sizing');
  return {pos,neg};
 }
