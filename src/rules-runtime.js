@@ -8,9 +8,9 @@ export class RulesRuntime extends MultiLiveModelRuntime{
  recordAI(snapshot,now,action,reason,extra={}){reason=String(reason).replace(/^MODEL_/,'RULES_');const s=this.state,row={type:'decision',id:this.id('rule'),ts:now,at:now,snapshotId:snapshot.snapshotId,bot:s.id,agentId:s.id,decisionEngine:'rules-v5',policyVersion:RULES_VERSION,action,decision:action,reason,stage:'rules',blockingStage:'rules',score:s.rulesReports?.find(r=>r.mint===extra.mint)?.result?.score??0,minScore:8,...extra,modelName:null,promptVersion:null,promptSha256:null};s.outbox.push(row);s.decisions=[row,...s.decisions].slice(0,100);return row;}
  consumeModel(snapshot,now){const reports=this.inbox?.reply?.rulesReports;if(reports)this.state.rulesReports=reports;super.consumeModel(snapshot,now);}
  evaluate(snapshot,now){
-  this.consumeModel(snapshot,now);const s=this.state;s.cycle++;s.decisionEngine='rules-v5';s.ai.status='disabled';
+  this.consumeModel(snapshot,now);const s=this.state;s.decisionEngine='rules-v5';s.ai.status='disabled';
   if(!this.rulesTask&&now>=(s.rulesNextAt??0)){
-   s.rulesNextAt=now+5000;const context=this.prepareDecisionContext(createModelContext(this.config,s,snapshot,now,{maxCandidates:12})),fingerprint=walletFingerprint(s);
+   s.cycle++;s.rulesNextAt=now+5000;const context=this.prepareDecisionContext(createModelContext(this.config,s,snapshot,now,{maxCandidates:12})),fingerprint=walletFingerprint(s);
    if(context.candidates.length||context.positions.length)this.rulesTask=Promise.resolve().then(()=>{if(!this.decide)throw Object.assign(Error('RULES_ENGINE_NOT_CONFIGURED'),{code:'RULES_ENGINE_NOT_CONFIGURED'});return this.decide(context);}).then(reply=>{this.inbox={reply,context,fingerprint};},error=>{this.inbox={error:{code:error.code??'RULES_UNAVAILABLE'}};}).finally(()=>{this.rulesTask=null;});
   }
   const reports=s.rulesReports??[],reason=reports.find(r=>r.code)?.code??'Luật V5.0: đang kiểm tra dữ liệu và điều kiện',decisions=(snapshot.markets??[]).map(m=>({mint:m.mint,symbol:m.symbol,stage:'rules',blockingStage:'rules',eligible:false,reason,action:'SKIP',score:reports.find(r=>r.mint===m.mint)?.result?.score??0,minScore:8}));s.evaluations+=decisions.length;s.signal={at:now,cycle:s.cycle,evaluated:decisions.length,eligible:this.outstanding().filter(o=>o.side==='BUY').length,decisions,stages:{rules:decisions.length}};

@@ -16,3 +16,7 @@ test('a previously latched stop is queued during price-feed loss without inventi
  const now=Date.now(),config=ACTIVE_BOT_CONFIGS[0],p={paperPositionId:'lot',mint:'held',pairAddress:'pool',rulesPolicyVersion:'pumpfun-rules-v5.0',rawQuantity:'100',quantity:1,entryPriceSol:1,openedAt:now,rulesStopTriggered:true},s={...initialBotState(config,now),mode:'live',aiOnly:true,running:false,positions:[p],livePendings:[]},r=new RulesRuntime(config,s,{ai:{},execute:()=>{throw Error('NO_REAL_ORDER');}});
  r.monitor({markets:[],solUsd:null},now);assert.equal(s.pendingOrders[0].reason,'stop-loss');assert.equal(s.pendingOrders[0].amount,'100');assert.equal(s.pendingOrders[0].referencePriceSol,undefined);
 });
+test('rules cycles advance on the five-second schedule, not every heartbeat',()=>{
+ const now=Date.now(),config=ACTIVE_BOT_CONFIGS[0],s={...initialBotState(config,now),mode:'live',aiOnly:true,positions:[]},r=new RulesRuntime(config,s,{ai:{},execute:()=>{throw Error('NO_ORDER');}}),snap={markets:[],solUsd:100,snapshotId:'empty'};
+ const before=s.cycle;r.evaluate(snap,now);assert.equal(s.cycle,before+1);r.evaluate(snap,now+250);r.evaluate(snap,now+1000);assert.equal(s.cycle,before+1);r.evaluate(snap,now+5000);assert.equal(s.cycle,before+2);
+});
