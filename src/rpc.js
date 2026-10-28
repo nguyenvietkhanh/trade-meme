@@ -20,7 +20,7 @@ const WRITES=new Set(['sendTransaction','requestAirdrop']);
 export function keylessConnection(endpoints=PUBLIC_RPC_ENDPOINTS,{clock=Date.now,random=Math.random,preferPrimary=false}={}){
  if(!endpoints.length||endpoints.some(url=>new URL(url).protocol!=='https:'))throw Error('RPC cần HTTPS.');
  let active=0,lastFailures=[];const verified=new Map(),checking=new Map(),pending=new Map(),methods=new Map();
- const health=endpoints.map(()=>({failures:0,retryAt:0,epoch:0}));
+ const health=endpoints.map(()=>({failures:0,retryAt:0,epoch:0,reason:null}));
  const lanes=endpoints.map(()=>rpcScheduler());
  const request=(url,options)=>lanes[endpoints.indexOf(url)](JSON.parse(options.body).method,()=>{if(health[endpoints.indexOf(url)].retryAt>clock())throw new RpcFailure('RPC tạm chờ hồi phục',{waiting:true});return fetch(url,{...options,redirect:'error',signal:AbortSignal.timeout(10000)});});
  const httpError=response=>new RpcFailure('HTTP '+response.status,{status:response.status,retryAfter:retryAfterMs(response.headers.get('retry-after'),clock())});
@@ -53,15 +53,17 @@ export function keylessConnection(endpoints=PUBLIC_RPC_ENDPOINTS,{clock=Date.now
     return data;
    }catch(e){
     if(!e.waiting){
+     h.reason=e instanceof RpcFailure?e.message:e.name==='TimeoutError'?'Hết thời gian chờ':'Không kết nối được HTTPS';
      if(e.unsupported)methods.set(methodKey,clock()+60000);
      else{h.epoch++;h.failures++;const delay=Math.max(e.wrongChain?300000:e.status===403?30000:0,e.retryAfter??0,Math.min(60000,5000*2**Math.min(h.failures-1,4)*(1+Math.max(0,Math.min(1,random()))*.2)));h.retryAt=clock()+Math.min(600000,Math.ceil(delay));}
      if(e.wrongChain)verified.delete(url);
     }
-    failures.push({host:new URL(url).hostname,reason:e instanceof RpcFailure?e.message:e.name==='TimeoutError'?'Hết thời gian chờ':'Không kết nối được HTTPS'});lastFailures=failures;
+    failures.push({host:new URL(url).hostname,reason:e.waiting?(h.reason??e.message):h.reason});lastFailures=failures;
     if(write)throw Error('Chưa rõ kết quả gửi giao dịch. Giữ signature để đối soát.');
    }
   }
-  throw Error('Các RPC đã cấu hình đang lỗi hoặc giới hạn lượt gọi; thử kết nối lại sau.');
+  const retryAt=Math.min(...health.map(h=>h.retryAt).filter(at=>at>clock()));
+  throw Object.assign(Error('RPC_UNAVAILABLE: Các RPC đã cấu hình đang lỗi hoặc giới hạn lượt gọi; '+failures.map(f=>f.host+': '+f.reason).join('; ')),{code:'RPC_UNAVAILABLE',retryAt:Number.isFinite(retryAt)?retryAt:clock()+5000});
  };
  const transport=async(_url,options)=>{
   const message=JSON.parse(options.body);let data;

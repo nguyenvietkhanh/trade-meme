@@ -1,6 +1,9 @@
 // Only public, allowlisted reasons may cross the HTTP boundary. Never echo RPC,
 // filesystem paths, request bodies, passwords or arbitrary exception messages.
 const reasons=Object.freeze({
+ RPC_UNAVAILABLE:[503,'RPC đang lỗi hoặc giới hạn lượt gọi. Đang chờ kết nối lại để đối soát lệnh cũ; không cần xóa sổ hoặc nhập lại khóa.'],
+ LIVE_CONNECTION_FAILED:[503,'Chưa hoàn tất kết nối giao dịch; kiểm tra nhật ký dịch vụ. Sổ lệnh cũ được giữ nguyên.'],
+ LIVE_AI_STOP_REQUIRED:[409,'Lệnh AI thiếu stop-loss hợp lệ; yêu cầu AI đánh giá lại, không tự đặt stop thay AI.'],
  PERPS_NOT_READY:[409,'Đã chọn perps trên Solana nhưng API và quyền giao dịch LONG/SHORT chưa được xác minh. BUY meme đã khóa; các vị thế spot cũ vẫn được theo dõi.'],
  SPOT_ENTRIES_DISABLED_FOR_PERPS:[409,'Không nhận BUY meme mới trong chế độ chuyển sang perps.'],
  LIVE_SIGNER_LOCKED:[409,'Bộ ký server chưa sẵn sàng; kết nối ví chủ và kiểm tra cấu hình bộ ký tự động.','connect-wallet'],

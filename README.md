@@ -566,3 +566,21 @@ Telegram configuration is deleted. If reserve space remains insufficient, resear
 writes stop and report an error; financial storage failures are not suppressed.
 `research.retention` in state exposes archive size and cleanup counters. This does
 not reclaim unrelated files or replace checking the actual Volume usage after deploy.
+
+## RPC recovery while live positions are open
+
+RPC errors expose sanitized host/reason/cooldown diagnostics in `/api/health` and
+`/api/state`; query strings and keys are excluded. Live treasury polling backs off
+while RPCs recover. A previous failed connection retries even when the owner is
+already authorized but the signer remains locked. Reconnection restores the saved
+BUY pause before publishing a running state. Owner authorization, signer readiness
+and fresh balance are reported separately; stale balance is not zero capital.
+
+Stop updates report distinct wallet, signer and invalid-stop errors. Pending local
+stop updates wait for signer recovery. Submitted orders retain their original ID
+and signature across errors, are polled rather than resubmitted, and are never
+cleared as an invalid new intent. Identical live error events are grouped for 30
+seconds with a repeat count. No ledger reset, position liquidation or new key is
+required for this update. Keep the existing Railway Volume attached at the same
+mount path. Restart temporarily interrupts server-side monitoring; recovery still
+requires a working RPC, and this change cannot increase a provider's quota.

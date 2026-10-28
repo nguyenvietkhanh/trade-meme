@@ -10,7 +10,7 @@ export class ModelBotRuntime extends BotRuntime{
   super(config,state,options);this.decide=options.decide;this.aiConfig={pollMs:30000,maxCandidates:8,...options.ai};
   this.aiConfig.enabled=!this.aiConfig.explicitRulesMode&&(this.aiConfig.enabled||state.ai?.wasEnabled===true);
   state.decisionEngine=this.aiConfig.enabled?'model':'rules';this.inbox=null;this.modelTask=null;
-  if(this.aiConfig.enabled){state.ai={history:[],failures:0,...state.ai,wasEnabled:true,activatedAt:state.ai?.activatedAt??Date.now(),status:'idle',modelName:this.aiConfig.name??null,nextAt:Math.min(state.ai?.nextAt??Infinity,Date.now()+state.seed%this.aiConfig.pollMs)};if(state.pending?.side==='BUY'&&state.pending.decisionEngine!=='model')state.pending=null;}else if(state.pending?.side==='BUY'&&state.pending.decisionEngine==='model')state.pending=null;
+  if(this.aiConfig.enabled){state.ai={history:[],failures:0,...state.ai,wasEnabled:true,activatedAt:state.ai?.activatedAt??Date.now(),status:'idle',modelName:this.aiConfig.name??null,nextAt:Math.min(state.ai?.nextAt??Infinity,Date.now()+state.seed%this.aiConfig.pollMs)};if(state.pending?.side==='BUY'&&!state.pending.wasSubmitted&&!state.livePending&&state.pending.decisionEngine!=='model')state.pending=null;}else if(state.pending?.side==='BUY'&&state.pending.decisionEngine==='model')state.pending=null;
  }
  allowExit(plan,position){return !this.aiConfig.enabled||position.controlMode!=='model'||['stop-loss','emergency-risk','scalp-max-hold'].includes(plan.reason);}
  exitPlan(position,m,now){

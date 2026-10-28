@@ -93,3 +93,10 @@ test('a late healthy RPC response cannot erase a rate limit received by another 
  const rpc=keylessConnection(undefined,{clock:()=>1000,random:()=>0}),balance=rpc.getBalance(Keypair.generate().publicKey);await started;
  await assert.rejects(rpc.getSlot());release();assert.equal(await balance,300000000);assert.equal(rpc.rpcDiagnostics().cooldowns.length,2);
 });
+
+test('RPC cooldown failures keep the original HTTP reason, safe host and next retry time',async t=>{
+ let now=1000,calls=0;const secret='must-never-appear';t.mock.method(globalThis,'fetch',async()=>{calls++;return new Response('private response',{status:429,headers:{'Retry-After':'30'}});});
+ const rpc=keylessConnection(['https://rpc.example/?api-key='+secret],{clock:()=>now,random:()=>0});
+ await assert.rejects(rpc.getGenesisHash(),e=>e.code==='RPC_UNAVAILABLE'&&e.retryAt===31000&&e.message.includes('HTTP 429')&&!e.message.includes(secret));
+ now=2000;await assert.rejects(rpc.getGenesisHash(),e=>e.message.includes('HTTP 429')&&!e.message.includes(secret));assert.equal(calls,1);assert.equal(rpc.rpcDiagnostics().failures[0].reason,'HTTP 429');
+});
