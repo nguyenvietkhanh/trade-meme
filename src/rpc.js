@@ -5,6 +5,7 @@ import {rpcScheduler} from './rpc-priority.js';
 export const PUBLIC_RPC_ENDPOINTS=Object.freeze(['https://api.mainnet-beta.solana.com','https://solana-rpc.publicnode.com']);
 // Server-only configuration. Never return these URLs to a browser or a log.
 export function rpcConfiguration(apiKey=process.env.HELIUS_API_KEY){
+ if(process.env.SOLANA_RPC_URL){const urls=[process.env.SOLANA_RPC_URL,...(process.env.SOLANA_RPC_FALLBACK_URLS??'').split(',').filter(Boolean)].map(v=>v.trim());if(urls.some(v=>{const u=new URL(v);return u.protocol!=='https:'||u.username||u.password;}))throw Error('SOLANA_RPC_URL requires HTTPS without userinfo');return {endpoints:urls,heliusConfigured:urls.some(v=>new URL(v).hostname==='mainnet.helius-rpc.com'),mode:'configured-private-rpc'};}
  const key=typeof apiKey==='string'?apiKey.trim():'';
  if(!key)return {endpoints:[...PUBLIC_RPC_ENDPOINTS],heliusConfigured:false,mode:'public'};
  if(key.length>512||/\s/.test(key))throw Error('HELIUS_API_KEY không hợp lệ; kiểm tra Railway Variables.');

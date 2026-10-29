@@ -1,0 +1,3 @@
+export function confirmation(mint,pool,now){return {mint,pool,firstAt:now-6000,secondAt:now,firstPrice:1,secondPrice:1.01,firstBuys:18,secondBuys:20,firstSells:9,secondSells:10};}
+export function entryFacts(mint,pool,now){return {token:mint,pool,current_time_ms:now,holder_count:100,unique_buyers_5m:10,buys_5m:20,sells_5m:10,change_5m_pct:15,volume_5m_sol:3,entry_confirmation:confirmation(mint,pool,now),quote_reserve_sol:100};}
+export async function fakeQuotes(_c,plan){return {ok:true,size:plan.size,quote:{roundTripQuoteOk:true,probeSol:plan.size,roundTripLossPct:4,buyImpactPct:.2,sellImpactPct:.2,quoteCheckedAt:Date.now()},attempts:[]};}

@@ -1,21 +1,22 @@
-# Meme Pilot · LIVE Rules V5.2 · không dùng AI
+# Meme Pilot · LIVE Rules V5.4 · không dùng AI
 
-LIVE dùng quy tắc deterministic V5.2 (F1–F8/R1–R9, điều chỉnh theo yêu cầu mới). Không
-cần MODEL_API_KEY và không gọi API model; Docker cũng tắt MODEL_TRADING_ENABLED.
-Ví SOL thật và bộ ký tự động trên server giữ nguyên. Giữ 0,05 SOL gas + buffer.
+Bộ quy tắc quyết định BUY/SELL/HOLD; giữ bộ ký tự động trên server và số dư SOL
+đọc từ ví. Không cần MODEL_API_KEY. Không yêu cầu xác nhận size từng lệnh.
 
-- AUTO size: bot tự chọn tối đa 50% SOL trong ví/lệnh; không xác nhận từng size.
-  Ví 0,5 SOL có trần 0,25 SOL; vẫn giữ 0,05 SOL gas và 0,005 SOL đệm phí.
-- Vị thế V5: stop -20%, chốt 50% tại 2x, trail -15%, time exit 90 phút theo band.
-- BUY 24/7, điểm tối thiểu 6; các box UI thu gọn được, trừ Pipeline.
-- Giữ ledger, chữ ký/vị thế cũ và Telegram; không đặt lại tài khoản.
-- Mặc định xét holder/dev on-chain + lực mua 5m + quote vòng thực; ghi rõ lịch sử
-  dev/bundle chưa xác minh. Thiếu dữ liệu core vẫn SKIP, không tạo số liệu.
+- BUY 24/7; STANDARD từ 6 điểm, PROBE từ 4 điểm và cỡ lệnh bằng 1/3 STANDARD.
+- Ngân sách rủi ro mặc định 1,5%, giả định lỗ 50%; chặn thêm theo 10% tiền ví,
+  1,5% dự trữ SOL pool, tổng exposure 30% equity và tối đa 5 vị thế.
+- Giữ 0,05 SOL gas + 0,005 SOL đệm. Lỗ liên tiếp/drawdown giảm size,
+  không tự tạo giờ cấm BUY. KILL_SWITCH thủ công chặn BUY, SELL bảo vệ vẫn chạy.
+- Quote thật chỉ cho ứng viên cuối; chọn size lớn nhất hợp lệ qua thang giảm size,
+  hao hụt vòng <=6%, impact <=2%, quote không quá 5 giây.
+- Vị thế mới: stop -20%, dời về giá vào sau +50%, chốt nửa tại 2x rồi trail -15%.
+  Vị thế cũ và lệnh đã ký giữ chính sách/đối soát đã lưu.
+- Không xác minh được quan hệ chung nguồn cấp tiền giữa holder. Unique buyers,
+  lịch sử dev/bundle, RugCheck thiếu sẽ được báo rõ; điểm cao không chứng nhận an toàn.
 
-Đọc [hướng dẫn, hợp đồng dữ liệu và các mâu thuẫn trong prompt](docs/rules-v5/README.md)
-trước khi bật lệnh mới. Nguồn RPC hiện có chỉ đáp ứng một phần bằng chứng;
-RULES_EVIDENCE_URL là adapter tùy chọn tới nguồn nghiên cứu thật, không phải
-API sẵn có được đóng gói cùng bot.
+Xem [quy tắc và giới hạn](docs/rules-v5/README.md) và
+[biến môi trường](docs/rules-v5/ENVIRONMENT.md). Không thay Volume hoặc reset ledger khi cập nhật.
 
 ```sh
 npm ci --ignore-scripts
