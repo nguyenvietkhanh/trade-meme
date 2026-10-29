@@ -12,5 +12,5 @@ COPY --chown=node:node scripts ./scripts
 COPY --chown=node:node export_redacted.sh ./export_redacted.sh
 RUN npm run build && npm prune --omit=dev --ignore-scripts --offline --no-audit
 EXPOSE 3000
-HEALTHCHECK --interval=30s --timeout=5s CMD node -e "fetch('http://127.0.0.1:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+HEALTHCHECK --interval=30s --timeout=5s CMD node -e "fetch('http://127.0.0.1:'+(process.env.PORT||3000)+'/api/health',{signal:AbortSignal.timeout(4000)}).then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
 CMD ["node", "--use-env-proxy", "src/server.js"]
