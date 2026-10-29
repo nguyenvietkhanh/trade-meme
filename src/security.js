@@ -14,14 +14,14 @@ export class OwnerAuth{
  }
  login(nonce,signature){
   const challenge=this.nonces.get(nonce);this.nonces.delete(nonce);
-  if(!challenge||challenge.expires<this.clock())throw Error('Yêu cầu xác thực đã hết hạn hoặc đã dùng.');
+  if(!challenge||challenge.expires<=this.clock())throw Error('Yêu cầu xác thực đã hết hạn hoặc đã dùng.');
   const bytes=bs58.decode(signature),pub=bs58.decode(this.owner);
   if(bytes.length!==64||pub.length!==32)throw Error('Chữ ký không hợp lệ.');
   const key=createPublicKey({key:Buffer.concat([Buffer.from('302a300506032b6570032100','hex'),Buffer.from(pub)]),format:'der',type:'spki'});
   if(!verify(null,Buffer.from(challenge.message),key,bytes))throw Error('Chữ ký không hợp lệ.');
   const token=randomBytes(32).toString('hex');this.sessions.set(token,this.clock()+900000);return token;
  }
- authenticated(req){const token=(req.headers.cookie??'').split(';').map(c=>c.trim()).find(c=>c.startsWith('mp_session='))?.slice(11);if(!token)return false;const expires=this.sessions.get(token);if(!expires||expires<this.clock()){this.sessions.delete(token);return false;}return true;}
+ authenticated(req){const token=(req.headers.cookie??'').split(';').map(c=>c.trim()).find(c=>c.startsWith('mp_session='))?.slice(11);if(!token)return false;const expires=this.sessions.get(token);if(!expires||expires<=this.clock()){this.sessions.delete(token);return false;}return true;}
  logout(req){const token=(req.headers.cookie??'').split(';').map(c=>c.trim()).find(c=>c.startsWith('mp_session='))?.slice(11);this.sessions.delete(token);}
  cookie(token){return `mp_session=${token}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${token?900:0}${this.origin.startsWith('https:')?'; Secure':''}`;}
  sameOrigin(req){return req.headers.origin===this.origin&&req.headers['x-requested-with']==='meme-desk'&&req.headers['content-type']?.startsWith('application/json');}
