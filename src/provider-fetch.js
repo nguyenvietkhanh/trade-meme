@@ -18,8 +18,8 @@ export function backoffFetch(fetcher=(...args)=>globalThis.fetch(...args),{provi
  const fetchWithBackoff=async(url,options={})=>{
   if(String(options.method??'GET').toUpperCase()!=='GET')return run(url,options);
   const key=String(url)+':'+JSON.stringify(options.headers??{});
-  let task=pending.get(key);if(!task){task=run(url,options);pending.set(key,task);}
-  try{return (await task).clone();}finally{if(pending.get(key)===task)pending.delete(key);}
+  let task=pending.get(key);if(!task){if(pending.size>=16)throw Object.assign(Error(provider+' read queue full'),{code:'PROVIDER_QUEUE_BUSY'});task=run(url,options).then(async response=>{const reader=response.body?.getReader(),chunks=[];let length=0;if(reader)try{for(;;){const {done,value}=await reader.read();if(done)break;length+=value.byteLength;if(length>8*1024*1024){await reader.cancel();throw Object.assign(Error('PROVIDER_RESPONSE_TOO_LARGE'),{code:'PROVIDER_RESPONSE_TOO_LARGE'});}chunks.push(value);}}finally{reader.releaseLock();}const bytes=new Uint8Array(length);let offset=0;for(const chunk of chunks){bytes.set(chunk,offset);offset+=chunk.byteLength;}const headers=new Headers(response.headers);headers.delete('content-length');headers.delete('content-encoding');return {bytes,headers,status:response.status,statusText:response.statusText};});pending.set(key,task);}
+  try{const row=await task;return new Response([204,205,304].includes(row.status)?null:row.bytes,{status:row.status,statusText:row.statusText,headers:row.headers});}finally{if(pending.get(key)===task)pending.delete(key);}
  };
  fetchWithBackoff.diagnostics=()=>({provider,failures,retryAt,status:lastStatus,requests,http429,http429Rate:requests?http429/requests:null});return fetchWithBackoff;
 }

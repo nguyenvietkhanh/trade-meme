@@ -1,3 +1,4 @@
+import {pumpAmmClient} from './pump-amm-client.js';
 import {PublicKey,ComputeBudgetProgram,VersionedTransaction,TransactionMessage,TransactionInstruction} from '@solana/web3.js';
 import {OnlinePumpAmmSdk,PUMP_AMM_SDK,PUMP_AMM_PROGRAM_ID,PUMP_FEE_PROGRAM_ID,GLOBAL_CONFIG_PDA,PUMP_AMM_FEE_CONFIG_PDA,buyQuoteInput,sellBaseInput,poolPda,supportsTradeV2} from '@pump-fun/pump-swap-sdk';
 import BN from 'bn.js';
@@ -18,7 +19,7 @@ export async function buildPumpSwap(rpc,{owner,input,output,amount,poolAddress,s
  const started=Date.now(),slot=await rpc.getSlot('confirmed'),poolKey=new PublicKey(poolAddress),mint=new PublicKey(input===SOL?output:input);
  const accounts=await rpc.getMultipleAccountsInfo([poolKey,GLOBAL_CONFIG_PDA,PUMP_AMM_FEE_CONFIG_PDA]);
  if(!accounts[0]?.owner.equals(PUMP_AMM_PROGRAM_ID)||!accounts[1]?.owner.equals(PUMP_AMM_PROGRAM_ID)||!accounts[2]?.owner.equals(PUMP_FEE_PROGRAM_ID))fail('Pool hoặc cấu hình phí không thuộc chương trình PumpSwap.');
- const state=await new OnlinePumpAmmSdk(rpc).swapSolanaState(poolKey,owner),{pool}=state;
+ const state=await pumpAmmClient(rpc).swapSolanaState(poolKey,owner),{pool}=state;
  if(!pool.baseMint.equals(mint)||pool.quoteMint.toBase58()!==SOL||(!state.baseTokenProgram.equals(TOKEN)&&!state.baseTokenProgram.equals(TOKEN2022))||!state.quoteTokenProgram.equals(TOKEN)||!poolPda(pool.index,pool.creator,pool.baseMint,pool.quoteMint).equals(poolKey))fail('Pool không khớp mint/SOL hoặc chương trình token được hỗ trợ.');
  if(pool.isMayhemMode||!supportsTradeV2(pool))fail('Chưa hỗ trợ pool mayhem/cashback; không tạo lệnh.');
  if(state.userQuoteAccountInfo&&state.userQuoteAccountInfo.data.readBigUInt64LE(64)>0n)fail('Ví đang giữ WSOL trong ATA; cần tách tài sản trước khi swap để tránh trộn số dư.');

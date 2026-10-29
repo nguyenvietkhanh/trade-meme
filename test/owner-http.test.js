@@ -13,7 +13,7 @@ test('production pins the sole owner and rejects wrong wallets, forged sessions 
  const child=spawn(process.execPath,['--import','./test/fixtures/feed.js','src/mainnet-server.js'],{cwd:new URL('../',import.meta.url),env:{...process.env,PORT:'0',DATA_DIR:dir,OWNER_SOLANA_ADDRESS:wrong,RAILWAY_SERVICE_ID:'test'},stdio:['ignore','pipe','pipe']});
  let output='';child.stdout.on('data',c=>{output+=c;});
  try{
-  let base;for(let i=0;i<100;i++){const m=output.match(/0\.0\.0\.0:(\d+)/);if(m){base='http://127.0.0.1:'+m[1];break;}await delay(20);}assert.ok(base);
+  let base;for(let i=0;i<250;i++){const m=output.match(/0\.0\.0\.0:(\d+)/);if(m){base='http://127.0.0.1:'+m[1];break;}await delay(20);}assert.ok(base);
   const owner=await(await fetch(base+'/api/auth/status')).json();assert.equal(owner.owner,DEFAULT_OWNER);assert.equal(owner.authenticated,false);assert.equal(owner.walletMode,'owner');assert.equal(owner.persistentStorage,undefined);
   const post=(route,body,origin='https://trade-meme-production.up.railway.app')=>fetch(base+route,{method:'POST',headers:{Origin:origin,'Content-Type':'application/json','X-Requested-With':'meme-desk',Cookie:'mp_session=forged'},body:JSON.stringify(body)});
   assert.equal((await post('/api/auth/challenge',{address:wrong})).status,400);

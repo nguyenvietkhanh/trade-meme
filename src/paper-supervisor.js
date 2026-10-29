@@ -1,3 +1,4 @@
+import {LatestIpc} from './latest-ipc.js';
 import {fork} from 'node:child_process';
 import {ACTIVE_BOT_CONFIGS as BOT_CONFIGS} from './paper-bot-config.js';
 import {startPaperLoop} from './paper-loop.js';
@@ -6,7 +7,7 @@ export class BotSupervisor{
  start(){for(const c of BOT_CONFIGS)this.spawn(c.id);this.watchdog=startPaperLoop(()=>this.check(),5000,{onError:this.onError});}
  spawn(id){
   if(this.closing)return;const prior=this.workers.get(id),worker=fork(new URL('./paper-bot-worker.js',import.meta.url),[id,this.dir,String(this.desiredRunning),JSON.stringify(this.modelSettings)],{execArgv:[],env:{NODE_ENV:process.env.NODE_ENV??'production',PATH:process.env.PATH,TZ:'UTC',PAPER_TESTING_MODE:process.env.PAPER_TESTING_MODE??'true'},stdio:['ignore','inherit','inherit','ipc']});
-  const row={worker,id,lastHeartbeat:this.clock(),restarts:(prior?.restarts??-1)+1,startedAt:this.clock(),stopping:false};this.workers.set(id,row);
+  const row={worker,id,lastHeartbeat:this.clock(),restarts:(prior?.restarts??-1)+1,startedAt:this.clock(),stopping:false};row.latestIpc=new LatestIpc(worker,{onError:this.onError});this.workers.set(id,row);
   worker.on('error',this.onError);worker.on('message',message=>{if(this.workers.get(id)!==row)return;
    if(message.type==='state'){row.lastHeartbeat=this.clock();row.state=message.state;this.onState(id,message.state,row);}
    else if(message.type==='dataset'){try{this.onDataset(message.kind,message.data);}catch{}}
@@ -17,8 +18,8 @@ export class BotSupervisor{
   worker.on('exit',(code,signal)=>{row.exited=true;this.cancelDecision(id);if(!this.closing){this.onError({bot:id,code,signal,message:'Worker exited; isolated restart scheduled'});row.restartTimer=setTimeout(()=>this.spawn(id),Math.min(30000,1000*2**Math.min(row.restarts,5)));}});
  }
  check(){for(const row of this.workers.values())if(!row.exited&&!row.stopping&&this.clock()-row.lastHeartbeat>60000){row.stopping=true;this.onError({bot:row.id,message:'Heartbeat missing 60s; restarting only this worker'});row.worker.kill('SIGKILL');}}
- publish(snapshot){for(const row of this.workers.values())if(row.worker.connected&&!row.exited)row.worker.send({type:'snapshot',snapshot});}
- books(views){for(const [id,row]of this.workers)if(row.worker.connected&&!row.exited&&views[id])row.worker.send({type:'book',book:views[id]});}
- running(value){this.desiredRunning=value;for(const row of this.workers.values())if(row.worker.connected)row.worker.send({type:'running',running:value});}
+ publish(snapshot){for(const row of this.workers.values())if(row.worker.connected&&!row.exited)row.latestIpc.send('snapshot',{snapshot});}
+ books(views){for(const [id,row]of this.workers)if(row.worker.connected&&!row.exited&&views[id])row.latestIpc.send('book',{book:views[id]});}
+ running(value){this.desiredRunning=value;for(const row of this.workers.values())if(row.worker.connected)row.latestIpc.send('running',{running:value});}
  async stop(){this.closing=true;this.watchdog?.stop();await Promise.all([...this.workers.values()].map(row=>new Promise(resolve=>{clearTimeout(row.restartTimer);if(row.exited)return resolve();const timer=setTimeout(()=>row.worker.kill('SIGKILL'),10000);row.worker.once('exit',()=>{clearTimeout(timer);resolve();});row.worker.send({type:'shutdown'});})));await this.watchdog?.done;}
 }

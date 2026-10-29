@@ -1,0 +1,18 @@
+import {createHash} from 'node:crypto';
+import {runnerSize,runnerSafety} from './runner.js';
+import {withRpcPriority} from './rpc-priority.js';
+export class RunnerController {
+ constructor({policy,client,execution,scanner,account,clock=Date.now}={}){Object.assign(this,{policy,client,execution,scanner,account,clock});this.reports=[];this.nextAt=0;}
+ async decide(context,scalpDecisions){const p=this.policy;this.reports=[];if(scalpDecisions.length>=(context.limits.maxBatchOrders??10)||!p.enabled||!context.wallet.running||this.client.policy.killSwitch||this.clock()<this.nextAt)return [];if((this.scanner.observedBreakouts??this.scanner.totalBreakouts)<p.minEvents){this.reports=[{code:'RUNNER_BASELINE_INSUFFICIENT',events:this.scanner.totalBreakouts,required:p.minEvents}];return [];}
+  const events=context.candidates.map(c=>({c,event:this.scanner.recentEvent(c.mint)})).filter(({c,event})=>event&&!context.positions.some(x=>x.mint===c.mint)&&!context.openOrders?.some(x=>x.mint===c.mint)&&!scalpDecisions.some(x=>x.mint===c.mint));
+  if(!events.length)return [];this.nextAt=this.clock()+10000;
+  for(const {c,event}of events.slice(0,1)){let id;try{const facts=await withRpcPriority('research',()=>this.execution.inspectRunnerFacts({...c, mint:c.mint,pairAddress:c.pool,dexId:c.dex,liquidityUsd:c.liquidityUsd})),safe=runnerSafety(facts,c,p);if(!safe.ok){this.reports.push({mint:c.mint,code:'RUNNER_HARD_SAFETY',missing:safe.missing});continue;}
+   const a=this.account();if(!a.riskVerified){this.reports.push({mint:c.mint,code:'RUNNER_MARK_PNL_UNAVAILABLE'});continue;}const holds=this.client.reservations.totals(),plan=runnerSize({...a,availableSol:a.availableSol-holds.cashSol,exposureSol:a.exposureSol+holds.groupAmount('RUNNER'),positionsCount:a.positionsCount+holds.groupSlots('RUNNER'),reserveSol:facts.quoteReserveSol},p);if(!plan.size){this.reports.push({mint:c.mint,code:'RUNNER_SIZE_OR_EXPOSURE'});continue;}id='runner-quote:'+(++this.client.quoteSequence);
+   if(!this.client.reservations.reserve(id,{group:'RUNNER',mint:c.mint,amountSol:plan.size,bufferSol:.005,availableSol:a.availableSol,exposureSol:a.exposureSol,equitySol:a.equitySol,positionsCount:a.positionsCount,maxPositions:p.maxPositions,exposureFraction:p.totalCapFraction})){this.reports.push({mint:c.mint,code:'RUNNER_CAPITAL_RESERVED'});continue;}
+   const choice=await this.client.quoteSelector(c,{size:plan.size});if(!choice.ok){this.client.reservations.release(id);this.reports.push({mint:c.mint,code:'RUNNER_QUOTE_'+choice.reason});continue;}this.client.reservations.resize(id,choice.size);
+   const fingerprint=createHash('sha256').update(event.id+':'+id+':'+choice.size).digest('hex'),grant={group:'RUNNER',reservationId:id,mint:c.mint,pool:c.pool,amount:String(Math.round(choice.size*1e9)),eventId:event.id,detectedPriceSol:event.features.spotPriceSol,initialLiquidityUsd:c.liquidityUsd,checkedAt:this.clock(),expiresAt:this.clock()+15000,factor:plan.factor,inputs:{},result:{}};this.client.grants.set(fingerprint,grant);this.reports.push({mint:c.mint,eventId:event.id,code:'RUNNER_QUOTE_PASSED',size:choice.size});
+   return [{action:'BUY',mint:c.mint,order_sol:choice.size,sell_percent:null,stop_loss_pct:p.stopPct,position_id:null,confidence:0,reason:'RUNNER dormant event '+event.id,risk_assessment:{approved:true,reason:'Confirmed event and independent runner hard-safety checks',risks:['gap and liquidity collapse can exceed stop'],unknowns:['funding_clusters_not_verified']},_grant:fingerprint}];
+  }catch{if(id)this.client.reservations.release(id);this.reports.push({mint:c.mint,code:'RUNNER_DATA_UNAVAILABLE'});}}
+  return [];
+ }
+}

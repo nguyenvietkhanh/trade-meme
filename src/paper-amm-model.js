@@ -1,3 +1,4 @@
+import {pumpAmmClient} from './pump-amm-client.js';
 import {PublicKey} from '@solana/web3.js';
 import {OnlinePumpAmmSdk,PUMP_AMM_SDK,PUMP_AMM_PROGRAM_ID,PUMP_FEE_PROGRAM_ID,GLOBAL_CONFIG_PDA,PUMP_AMM_FEE_CONFIG_PDA,buyQuoteInput,sellBaseInput,poolPda,supportsTradeV2} from '@pump-fun/pump-swap-sdk';
 import BN from 'bn.js';
@@ -13,7 +14,7 @@ export class PaperPoolReader{
   const task=(async()=>{
    const at=this.clock(),poolKey=new PublicKey(m.pairAddress),accounts=await this.rpc.getMultipleAccountsInfo([poolKey,GLOBAL_CONFIG_PDA,PUMP_AMM_FEE_CONFIG_PDA],'confirmed');
    if(!accounts[0]?.owner.equals(PUMP_AMM_PROGRAM_ID)||!accounts[1]?.owner.equals(PUMP_AMM_PROGRAM_ID)||!accounts[2]?.owner.equals(PUMP_FEE_PROGRAM_ID))throw Error('Model pool/fee ownership mismatch');
-   const state=await new OnlinePumpAmmSdk(this.rpc).swapSolanaState(poolKey,new PublicKey(DEFAULT_OWNER)),p=state.pool;
+   const state=await pumpAmmClient(this.rpc).swapSolanaState(poolKey,new PublicKey(DEFAULT_OWNER)),p=state.pool;
    if(p.baseMint.toBase58()!==m.mint||p.quoteMint.toBase58()!==SOL||!poolPda(p.index,p.creator,p.baseMint,p.quoteMint).equals(poolKey)||p.isMayhemMode||!supportsTradeV2(p))throw Error('Unsupported model pool identity/version');
    // Unknown Token-2022 transfer effects are not modeled as zero fees.
    if(state.baseTokenProgram.toBase58()!==TOKEN||state.quoteTokenProgram.toBase58()!==TOKEN)throw Error('Model requires supported SPL token programs');

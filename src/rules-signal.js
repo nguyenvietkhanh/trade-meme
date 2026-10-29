@@ -4,9 +4,9 @@ export function preFilter(i,p=rulesConfig()){
 }
 export function signalTier(i,score,p=rulesConfig(),risk={}){
  const ratio=i.buys_5m/Math.max(1,i.sells_5m),trades=i.buys_5m+i.sells_5m,wash=ratio>=p.washRatio&&i.volume_5m_sol/Math.max(1,trades)<p.washAvgSol;
- const check=t=>({score:score>=(t===p.standard?p.scoreStandard:p.scoreProbe),ratio:ratio>=t.ratio,buys:i.buys_5m>=t.buys,trades:trades>=t.trades,volume:i.volume_5m_sol>=t.volume,change:Number.isFinite(i.change_5m_pct)&&i.change_5m_pct>=t.minChange&&i.change_5m_pct<=t.maxChange});
- const standard=check(p.standard),probe=check(p.probe),all=c=>Object.values(c).every(Boolean),tier=!wash&&!risk.probeOnly&&all(standard)?'STANDARD':all(probe)?'PROBE':'SKIP';
- return {tier,wash,ratio,trades,checks:{standard,probe},failed:Object.entries(tier==='STANDARD'?standard:probe).filter(([,v])=>!v).map(([k])=>k),thresholds:{standard:{score:p.scoreStandard,...p.standard},probe:{score:p.scoreProbe,...p.probe}}};
+ const check=t=>({score:score>=(t===p.standard?p.scoreStandard:t===p.quick?p.quick.score:p.scoreProbe),ratio:ratio>=t.ratio,buys:i.buys_5m>=t.buys,trades:trades>=t.trades,volume:i.volume_5m_sol>=t.volume,change:Number.isFinite(i.change_5m_pct)&&i.change_5m_pct>=t.minChange&&i.change_5m_pct<=t.maxChange});
+ const standard=check(p.standard),probe=check(p.probe),quick=check(p.quick),all=c=>Object.values(c).every(Boolean),tier=!wash&&!risk.probeOnly&&all(standard)?'STANDARD':all(probe)?'PROBE':p.quickEnabled&&all(quick)?'QUICK':'SKIP';
+ return {tier,wash,ratio,trades,checks:{standard,probe,quick},failed:Object.entries(tier==='STANDARD'?standard:tier==='QUICK'?quick:probe).filter(([,v])=>!v).map(([k])=>k),thresholds:{standard:{score:p.scoreStandard,...p.standard},probe:{score:p.scoreProbe,...p.probe}}};
 }
 export function signalScore(i,o={},p=rulesConfig()){
  const pos=[],neg=[],unknowns=[];const add=(points,reason)=>(points>0?pos:neg).push({points,reason});

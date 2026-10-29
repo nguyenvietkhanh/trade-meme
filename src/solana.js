@@ -1,3 +1,4 @@
+import {pumpAmmClient} from './pump-amm-client.js';
 import {buildJupiterPumpSwap,JUPITER_V6,validateRoutedSimulation} from './jupiter-pumpswap-route.js';
 import {Connection,PublicKey,VersionedTransaction,TransactionMessage,SystemProgram} from '@solana/web3.js';
 import bs58 from 'bs58';
@@ -87,9 +88,11 @@ export class SolanaExecution{
   }catch{for(const {mint}of missing)result[mint]={status:'unknown',facts:null,reason:'RPC_MINT_FACTS_UNAVAILABLE'};}
   return result;
  }
+ async runnerPoolDepth(m){const state=await pumpAmmClient(this.rpc).swapSolanaState(new PublicKey(m.pairAddress),new PublicKey(DEFAULT_OWNER));if(state.pool.baseMint.toBase58()!==m.mint||state.pool.quoteMint.toBase58()!==SOL||!poolPda(state.pool.index,state.pool.creator,state.pool.baseMint,state.pool.quoteMint).equals(new PublicKey(m.pairAddress)))throw Error('RUNNER_POOL_IDENTITY_UNVERIFIED');return {at:Date.now(),baseReserveRaw:state.poolBaseAmount.toString(),quoteReserveSol:Number(state.poolQuoteAmount.toString())/1e9,lpMint:state.pool.lpMint.toBase58()};}
+ async inspectRunnerFacts(m){const facts=await this.inspectMarketFacts(m),depth=await this.runnerPoolDepth(m),supply=await this.rpc.getTokenSupply(new PublicKey(depth.lpMint));return {...facts,...depth,lpLockedOrBurned:BigInt(supply.value.amount)===0n?true:null,lpProof:BigInt(supply.value.amount)===0n?'onchain_lp_supply_zero':'LP_LOCK_UNVERIFIED'};}
  async inspectMarketFacts(m){
   if(isPumpCurve(m)||m.dexId&&m.dexId!=='pumpswap')throw new TradePolicyError('Chỉ kiểm tra mua PumpSwap.');
-  const facts=await this.mintCheck(m.mint),mint=new PublicKey(m.mint),poolKey=new PublicKey(m.pairAddress),state=await new OnlinePumpAmmSdk(this.rpc).swapSolanaState(poolKey,new PublicKey(DEFAULT_OWNER)),{pool}=state;
+  const facts=await this.mintCheck(m.mint),mint=new PublicKey(m.mint),poolKey=new PublicKey(m.pairAddress),state=await pumpAmmClient(this.rpc).swapSolanaState(poolKey,new PublicKey(DEFAULT_OWNER)),{pool}=state;
   if(!pool.baseMint.equals(mint)||pool.quoteMint.toBase58()!==SOL||!poolPda(pool.index,pool.creator,pool.baseMint,pool.quoteMint).equals(poolKey))throw Error('Pool không khớp mint/PDA.');
   const curve=PublicKey.findProgramAddressSync([Buffer.from('bonding-curve'),mint.toBuffer()],PUMP_PROGRAM_ID)[0].toBase58();
   const excluded=new Set([poolKey.toBase58(),curve]),program=facts.tokenProgram==='spl-token'?TOKEN:TOKEN2022;
@@ -189,12 +192,12 @@ export class SolanaExecution{
   }catch{return {id:r.id,mint:r.mint,side:r.side,amount:r.amount,failed:true};}});
  }
  async entryQuote(mint,amount){const q=await jupiterEntryQuote(mint,amount,this.quoteFetch),slot=await this.rpc.getSlot('confirmed');if(q.contextSlot>slot+20||slot-q.contextSlot>20)throw Error('Jupiter entry quote slot đã cũ.');return q;}
- async prepare({keypair,ownerAddress,input,output,amount,poolAddress,reason='',closeEmptyInput=false,referenceMinOut,minContextSlot,venue,referencePriceSol,budgetAuthority}){
+ async prepare({keypair,ownerAddress,input,output,amount,poolAddress,reason='',closeEmptyInput=false,referenceMinOut,minContextSlot,venue,referencePriceSol,budgetAuthority,slippageBpsOverride}){
   if(input===SOL&&venue==='pumpfun'&&budgetAuthority!==LIVE_BUDGET_AUTHORITY)throw new TradePolicyError('Đã tắt BUY pump.fun trước migrate; SELL vị thế cũ vẫn hoạt động.');
   if(input===SOL&&!validBuyLamports(String(amount)))throw new TradePolicyError('Cỡ lệnh SOL không hợp lệ.');
   await this.network();const owner=keypair?.publicKey??new PublicKey(ownerAddress);
   if(input===SOL){const balance=await this.balance(owner,minContextSlot);if(budgetAuthority===LIVE_BUDGET_AUTHORITY){if(Number(amount)>Math.floor(Math.round(balance*1e9)*9/10)||Math.round(balance*1e9)-Number(amount)<55000000)throw new TradePolicyError('LIVE_CAPITAL_LIMIT');}else{const size=walletOrderSol(balance,venue==='pumpfun'?CURVE_RULES.orderFraction:WALLET_ORDER_FRACTION);if(!size||String(amount)!==String(Math.round(size*1e9)))throw new TradePolicyError('Số dư đã đổi hoặc cỡ lệnh không khớp trần 0,6 SOL và dự phòng gas 0,1 SOL; tính lại quote trước khi ký.');}}
-  const cap=executionSlippageBps(input===SOL?'BUY':'SELL',reason),emergency=cap===TRADE_RULES.emergencySlippageCapBps;
+  const requestedCap=executionSlippageBps(input===SOL?'BUY':'SELL',reason),cap=budgetAuthority===LIVE_BUDGET_AUTHORITY&&output===SOL&&Number.isFinite(slippageBpsOverride)?Math.min(requestedCap,Math.max(1,Math.floor(slippageBpsOverride))):requestedCap,emergency=cap===TRADE_RULES.emergencySlippageCapBps;
   const route=venue==='pumpfun'?await this.curveRoute(input===SOL?output:input,input===SOL?'BUY':'SELL',poolAddress):{venue:venue==='jupiter-pumpswap'?'jupiter-pumpswap':'pumpswap',poolAddress};
   const build=route.venue==='pumpfun'?buildPumpCurve:route.venue==='jupiter-pumpswap'?buildJupiterPumpSwap:buildPumpSwap;
   const {tx,quote:q,lastValidBlockHeight,closedInputAccount,entryQuoteProof}=await build(this.rpc,{owner,input,output,amount,...(route.venue==='jupiter-pumpswap'?{fetcher:this.quoteFetch,checkMint:mint=>this.mintCheck(mint)}:{}),poolAddress:route.poolAddress,slippageBps:emergency?cap:TRADE_RULES.slippageBps,maxReserveFraction:emergency?.1:.02,closeEmptyInput,referenceMinOut,referencePriceSol});
@@ -231,7 +234,7 @@ export class SolanaExecution{
   if(keypair)tx.sign([keypair]);
   const simulatedSolDeltaLamports=sim.value.accounts[0].lamports-beforeInfo[0].lamports;
   if(budgetAuthority===LIVE_BUDGET_AUTHORITY&&input===SOL&&(-simulatedSolDeltaLamports>Number(amount)+5000000||sim.value.accounts[0].lamports<50000000))throw new TradePolicyError('LIVE_FEE_RENT_RESERVE_LIMIT');
-  return {bytes:tx.serialize(),signature:keypair?bs58.encode(tx.signatures[0]):null,lastValidBlockHeight,quote:q,minNativeOutLamports,closedInputAccount,entryQuoteProof,venue:route.venue,poolAddress:route.poolAddress,...(budgetAuthority===LIVE_BUDGET_AUTHORITY?{simulatedSolDeltaLamports}:{})};
+  return {fixedEntryCostSol:input===SOL?Math.max(0,-simulatedSolDeltaLamports-Number(amount))/1e9:null,networkFeeEstimateSol:fee.value/1e9,bytes:tx.serialize(),signature:keypair?bs58.encode(tx.signatures[0]):null,lastValidBlockHeight,quote:q,minNativeOutLamports,closedInputAccount,entryQuoteProof,venue:route.venue,poolAddress:route.poolAddress,...(budgetAuthority===LIVE_BUDGET_AUTHORITY?{simulatedSolDeltaLamports}:{})};
  }
  async sellQuote({ownerAddress,mint,amount,poolAddress,venue}){
   if(venue==='pumpfun'){const p=await this.prepare({ownerAddress,input:mint,output:SOL,amount,poolAddress,venue,reason:'quote-probe'});return {mint,rawAmount:amount,checkedAt:Date.now(),netSol:Number(p.minNativeOutLamports)/1e9,provider:p.venue==='pumpfun'?'pump.fun':'PumpSwap',jupiterUnavailable:false,failed:false};}
@@ -278,7 +281,7 @@ export class SolanaExecution{
   const balance=await this.rpc.getBalance(from),lamports=balance-10000;if(lamports<=0)throw new TradePolicyError('Không đủ SOL để rút sau phí.');
   const message=new TransactionMessage({payerKey:from,recentBlockhash:block.blockhash,instructions:[SystemProgram.transfer({fromPubkey:from,toPubkey:new PublicKey(recipient),lamports})]}).compileToV0Message();
   const fee=await this.rpc.getFeeForMessage(message);if(fee.value===null||fee.value>10000)throw new TradePolicyError('Không xác minh được phí rút.');
-  const tx=new VersionedTransaction(message);tx.sign([keypair]);return {bytes:tx.serialize(),signature:bs58.encode(tx.signatures[0]),lastValidBlockHeight:block.lastValidBlockHeight,amountLamports:lamports};
+  const tx=new VersionedTransaction(message);tx.sign([keypair]);return {fixedEntryCostSol:input===SOL?Math.max(0,-simulatedSolDeltaLamports-Number(amount))/1e9:null,networkFeeEstimateSol:fee.value/1e9,bytes:tx.serialize(),signature:bs58.encode(tx.signatures[0]),lastValidBlockHeight:block.lastValidBlockHeight,amountLamports:lamports};
  }
  async send(bytes){return this.rpc.sendRawTransaction(bytes,{skipPreflight:false,maxRetries:0,preflightCommitment:'confirmed'});}
  async status(signature){const r=await this.rpc.getSignatureStatuses([signature],{searchTransactionHistory:true});return r.value[0];}

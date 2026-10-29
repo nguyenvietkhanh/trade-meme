@@ -14,6 +14,10 @@ test('LIVE rules HTTP makes zero model calls, requires the owner signer, reads m
  assert.equal(state.feed.markets.length,1,'$1m gainer remains a candidate without a cap limit');assert.equal(state.rankings.length,1,'RADAR still receives the discovered gainer');assert.equal(state.rankings[0].change5mPct,27);assert.equal(state.rankings[0].marketCapUsd,1000000);assert.equal(state.rankings[0].eligible,false);assert.equal(state.radar.rising,1);assert.equal(state.radar.buyTargets,1);assert.equal(state.radar.scanned,1);
  assert.equal((await fetch(base+'/api/live/connect',{method:'POST',headers,body:'{}'})).status,401);
  const ownerHeaders={...headers,'x-fixture-owner':'true'};
+ assert.equal((await fetch(base+'/api/export?format=dormant-csv')).status,401);
+ const csv=await fetch(base+'/api/export?format=dormant-csv',{headers:ownerHeaders});assert.equal(csv.status,200);assert.match(csv.headers.get('content-type'),/text\/csv/);assert.ok((await csv.text()).startsWith('id,kind,thresholdId,detectedAt'));
+ const exported=await(await fetch(base+'/api/export',{headers:ownerHeaders})).json();assert.equal(exported.hourlyFunnel.schemaVersion,2);assert.equal(exported.dormant.mode,'RECORD_ONLY');assert.equal(exported.runner.enabled,false);assert.ok(!JSON.stringify(exported).includes('fixture-no-network'));
+
  assert.equal((await fetch(base+'/api/live/connect',{method:'POST',headers:{...ownerHeaders,Origin:'https://attacker.invalid'},body:'{}'})).status,403);
  let login=await fetch(base+'/api/auth/login',{method:'POST',headers,body:JSON.stringify({nonce:'fixture-owner-proof',signature:'fixture-signature'})});assert.equal(login.status,200);for(let i=0;i<100;i++){state=await(await fetch(base+'/api/state')).json();if(state.model.verified)break;await delay(10);}assert.equal(state.model.verified,true);assert.equal(state.model.verification.status,'local-rules');assert.equal(state.model.externalModelCalls,0);assert.equal(state.model.enabled,false);assert.equal(state.realTradingEnabled,false);
  const pause=async(paused,url='/api/paper/pause')=>fetch(base+url,{method:'POST',headers:ownerHeaders,body:JSON.stringify({paused})});

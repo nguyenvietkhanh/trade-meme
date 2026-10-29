@@ -40,7 +40,7 @@ export function validateModelDecision(value,context){
 export function modelMessages(context){const messages=singleModelMessages(context);if(context.batchOrders)messages[0].content+=' BATCH MODE: Return {"decisions":[decision,...]} instead of one decision. Use the same decision fields. At most '+context.limits.maxBatchOrders+' decisions. Never trade or update a mint listed in openOrders. Use distinct mints across this batch. The sum of ALL order_sol BUY amounts must be <= limits.maxOrderSol; this is one shared budget, not a separate budget per order. Do not spend anticipated SELL proceeds. Every BUY requires its own stop_loss_pct and risk_assessment. You may choose fewer orders or a single portfolio HOLD; never fill a quota.';return messages;}
 export function validateModelDecisions(value,context){
  const bad=()=>{throw Object.assign(Error('MODEL_INVALID_DECISION'),{code:'MODEL_INVALID_DECISION'});};
- const rows=Array.isArray(value?.decisions)?value.decisions:[value];if(!rows.length||rows.length>Math.min(5,context.limits.maxBatchOrders??5))bad();
+ const rows=Array.isArray(value?.decisions)?value.decisions:[value];if(!rows.length||rows.length>Math.min(context.rulesEngine?10:5,context.limits.maxBatchOrders??5))bad();
  const decisions=rows.map(d=>validateModelDecision(d,context)),mints=new Set();let total=0n,buys=0;
  for(const d of decisions){if(d.mint){if(mints.has(d.mint)||(context.openOrders??[]).some(o=>o.mint===d.mint))bad();mints.add(d.mint);}if(d.action==='BUY'){buys++;total+=BigInt(Math.round(d.order_sol*1e9));}}
  if(total>BigInt(Math.floor(context.limits.maxOrderSol*1e9))||buys>0&&context.positions.length+buys>context.limits.maxPositions)bad();return decisions;

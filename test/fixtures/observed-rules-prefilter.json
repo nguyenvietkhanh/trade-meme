@@ -1,0 +1,62 @@
+{
+  "provenance": "Public candidate rows from user export 2026-10-29; old V5.2 observations only, not a V5.4 hourly dataset.",
+  "rows": [
+    {
+      "mint": "6uVNGKSMZ3pF7V1JbjziKxf4KaHVzTZpoSgT17KPf5jF",
+      "code": "RULES_MOMENTUM_NOT_READY",
+      "missing": [
+        "positive_momentum",
+        "active_flow"
+      ],
+      "availableInputs": {
+        "volume_5m": 0,
+        "volume_1h": 0,
+        "volume_5m_sol": null,
+        "buys_5m": 0,
+        "sells_5m": 0,
+        "change_5m_pct": null,
+        "quote_reserve_sol": 4e-09,
+        "holder_count": null,
+        "token_age_minutes": 1140.91255
+      }
+    },
+    {
+      "mint": "7ARKHxAxxB2S2xRGvgGNTdYs4g5sJL8WPSRasMNmpump",
+      "code": "RULES_MOMENTUM_NOT_READY",
+      "missing": [
+        "positive_momentum",
+        "active_flow"
+      ],
+      "availableInputs": {
+        "volume_5m": 0,
+        "volume_1h": 0,
+        "volume_5m_sol": null,
+        "buys_5m": 0,
+        "sells_5m": 0,
+        "change_5m_pct": null,
+        "quote_reserve_sol": 2.6119,
+        "holder_count": null,
+        "token_age_minutes": 477.62921666666665
+      }
+    },
+    {
+      "mint": "7K6GMuD2muHoSLuaCFNMY3FNzQuerrWuRerncQ8epump",
+      "code": "RULES_MOMENTUM_NOT_READY",
+      "missing": [
+        "positive_momentum",
+        "active_flow"
+      ],
+      "availableInputs": {
+        "volume_5m": 0,
+        "volume_1h": 0,
+        "volume_5m_sol": null,
+        "buys_5m": 0,
+        "sells_5m": 0,
+        "change_5m_pct": null,
+        "quote_reserve_sol": 1.9974,
+        "holder_count": null,
+        "token_age_minutes": 1141.41255
+      }
+    }
+  ]
+}

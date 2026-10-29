@@ -1,0 +1,50 @@
+{
+  "provenance": "Real user runtime excerpt, 2026-10-29; quote diagnostics only, not a complete hourly funnel.",
+  "rows": [
+    {
+      "at": 1793243625588,
+      "mint": "2fnGKgfwYjqv99ppnKCq5nCLLhRSJAPAhSMVkqjipump",
+      "pool": "4zyGG3NZ4td2dxSPoeY2rqfiU5MDbFeeSVeVR2KR1PwP",
+      "sizeSol": 0.013199702,
+      "attempt": 1,
+      "httpStatus": null,
+      "code": null,
+      "reason": "impact_too_high",
+      "quote_age_ms": 1128,
+      "price_impact_pct": 2.4558261068580456,
+      "roundtrip_loss_pct": 2.767600359462661,
+      "source": "jupiter",
+      "latencyMs": 1128
+    },
+    {
+      "at": 1793243627778,
+      "mint": "2fnGKgfwYjqv99ppnKCq5nCLLhRSJAPAhSMVkqjipump",
+      "pool": "4zyGG3NZ4td2dxSPoeY2rqfiU5MDbFeeSVeVR2KR1PwP",
+      "sizeSol": 0.006599851,
+      "attempt": 1,
+      "httpStatus": 429,
+      "code": null,
+      "reason": "rate_limited",
+      "quote_age_ms": null,
+      "price_impact_pct": null,
+      "roundtrip_loss_pct": null,
+      "source": "jupiter",
+      "latencyMs": 2190
+    },
+    {
+      "at": 1793243628863,
+      "mint": "2fnGKgfwYjqv99ppnKCq5nCLLhRSJAPAhSMVkqjipump",
+      "pool": "4zyGG3NZ4td2dxSPoeY2rqfiU5MDbFeeSVeVR2KR1PwP",
+      "sizeSol": 0.006599851,
+      "attempt": 2,
+      "httpStatus": 429,
+      "code": "PROVIDER_BACKOFF",
+      "reason": "rate_limited",
+      "quote_age_ms": null,
+      "price_impact_pct": null,
+      "roundtrip_loss_pct": null,
+      "source": "jupiter",
+      "latencyMs": 834
+    }
+  ]
+}

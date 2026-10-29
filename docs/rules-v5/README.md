@@ -1,3 +1,5 @@
+> **Đã cập nhật revision 2:** cấu hình 10 vị thế, TP1 +25%, hệ số min và khóa vốn nằm ở [UPDATE-V54-R2.md](UPDATE-V54-R2.md). Phần dưới là mô tả V5.4 ban đầu để đối chiếu lịch sử, không phải mặc định đang dùng.
+
 # LIVE Rules V5.4
 
 Không gọi model. Quy tắc quyết định BUY/SELL/HOLD, bộ ký server hiện có thực thi.

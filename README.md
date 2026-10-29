@@ -3,14 +3,14 @@
 Bộ quy tắc quyết định BUY/SELL/HOLD; giữ bộ ký tự động trên server và số dư SOL
 đọc từ ví. Không cần MODEL_API_KEY. Không yêu cầu xác nhận size từng lệnh.
 
-- BUY 24/7; STANDARD từ 6 điểm, PROBE từ 4 điểm và cỡ lệnh bằng 1/3 STANDARD.
-- Ngân sách rủi ro mặc định 1,5%, giả định lỗ 50%; chặn thêm theo 10% tiền ví,
-  1,5% dự trữ SOL pool, tổng exposure 30% equity và tối đa 5 vị thế.
+- BUY 24/7; STANDARD từ 6 điểm, PROBE từ 4 điểm và cỡ lệnh bằng 40% STANDARD.
+- Ngân sách rủi ro mặc định 2,5%, giả định lỗ 50%; chặn thêm theo 10% tiền ví,
+  1,5% dự trữ SOL pool, tổng exposure 50% equity và tối đa 10 vị thế.
 - Giữ 0,05 SOL gas + 0,005 SOL đệm. Lỗ liên tiếp/drawdown giảm size,
   không tự tạo giờ cấm BUY. KILL_SWITCH thủ công chặn BUY, SELL bảo vệ vẫn chạy.
 - Quote thật chỉ cho ứng viên cuối; chọn size lớn nhất hợp lệ qua thang giảm size,
   hao hụt vòng <=6%, impact <=2%, quote không quá 5 giây.
-- Vị thế mới: stop -20%, dời về giá vào sau +50%, chốt nửa tại 2x rồi trail -15%.
+- Vị thế mới: stop -20%, chốt 50% ở +25%, sau receipt nâng stop +4%; phần còn lại trail -15% hoặc chốt 2x.
   Vị thế cũ và lệnh đã ký giữ chính sách/đối soát đã lưu.
 - Không xác minh được quan hệ chung nguồn cấp tiền giữa holder. Unique buyers,
   lịch sử dev/bundle, RugCheck thiếu sẽ được báo rõ; điểm cao không chứng nhận an toàn.
@@ -24,6 +24,11 @@ npm run build
 npm test
 npm start
 ```
+
+Dormant chỉ ghi nhận; RUNNER mặc định tắt, SCALP giữ trạng thái hiện tại.
+Xem [hướng dẫn dormant/RUNNER và OOM](docs/rules-v5/DORMANT-RUNNER.md).
+
+Đọc [thay đổi V5.4 revision 2 và cấu hình triển khai](docs/rules-v5/UPDATE-V54-R2.md).
 
 <details>
 <summary>Tài liệu lịch sử các phiên bản AI/paper trước đây</summary>

@@ -1,15 +1,23 @@
-# Kiểm tra phát hành V5.4 — 2026-10-29
+# Kiểm tra revision 2 — 29/10/2026
 
-- `npm test`: 112 file test, 0 file lỗi, không bỏ file nào.
+- Toàn bộ `npm test`: **118 file**, 0 file lỗi, không bỏ file.
+- Các test bổ sung sau full suite: API export auth + CSV, treasury/runner/scalp,
+  capacity/lock/tranche/labels; đạt. Khởi động owner HTTP có budget 5s để tránh
+  false timeout khi import SDK; toàn bộ kiểm tra owner/cross-origin vẫn chạy.
 - `npm run check`, `npm run build`, `git diff --check`: đạt.
-- Kiểm tra riêng treasury/entry: 12 test đạt, gồm chặn embedded quote sai size,
-  stale, impact quá ngưỡng hoặc thiếu dữ liệu; không phát lệnh khi proof không hợp lệ.
-- Chromium với API mock nội bộ: viewport 390 và 1120 px; không lỗi JavaScript,
-  không tràn ngang; thu gọn mọi box trừ Pipeline; trạng thái thu gọn còn sau reload;
-  nút pause gửi đúng pause, không tự resume và không yêu cầu xác nhận size.
-- Test receipt/restart giữ nguyên position và signature; không broadcast trùng.
+- Chromium mock: 390px và 1120px, không lỗi JS/tràn ngang, mọi box trừ Pipeline
+  thu gọn và lưu trạng thái, pause gửi đúng pause, không bắt xác nhận size.
+- Stress heap **192 MiB**: SDK reuse, 50.000 snapshot/book vào kênh bị nghẽn,
+  original response body tiêu thụ một lần không unread clone tee: đạt.
+- Test từ dữ liệu thật: 3 candidate dead-pool trong export user và đoạn quote
+  impact→429→provider backoff của ngày 29/10. Các baseline/event/runner còn lại là
+  fixture mô phỏng được gắn rõ; không coi đó là vài trăm event LIVE.
+- Treasury tests giữ vị thế/chữ ký qua restart, không broadcast trùng; tranche
+  chỉ tăng qua receipt xác nhận. No time exit RUNNER, separate group risk/exposure/PnL,
+  root LP proof/event/grant/cash/depth gates, FIFO SELL priority được kiểm tra.
 
-Các kiểm tra dùng fixture/mock, không dùng signer hoặc gửi giao dịch thật.
-Không chứng minh hiệu quả/PnL hoặc mức hao hụt thực tế trên thị trường LIVE.
-Không có quyền truy cập trạng thái deploy/Volume Railway trong môi trường kiểm tra;
-phải phân biệt push GitHub thành công với deployment đã healthy.
+Không dùng signer thật hoặc gửi giao dịch tài chính trong các kiểm tra.
+Không có credentials/log/Volume Railway ở môi trường này: không tuyên bố RAM
+production đã hết tăng hoặc deployment đã healthy. `RUNTIME MEMORY` và funnel
+cần đối chiếu sau rollout. Đoạn log thực có OOM, không có heap snapshot để chứng
+minh duy nhất một nguồn leak. Source không truy cập được vẫn báo unavailable.

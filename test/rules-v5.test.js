@@ -2,8 +2,8 @@ import test from 'node:test';import assert from 'node:assert/strict';import {eva
 const now=1900000000000;
 export const input=()=>({token:'mint',pool:'pool',wallet_balance_sol:3.33,account_equity_sol:3.33,available_capital_sol:3,priority_fee_sol:.000025,sol_price_usd:150,top10_pct:10,dev_wallet_pct:2,holder_count:100,quote_reserve_sol:20,open_positions_count:0,buys_5m:20,sells_5m:10,volume_5m_sol:3,change_5m_pct:5});
 test('sizing is risk-based and safety constraints fail closed without treating optional history as safety',()=>{
- assert.equal(sizingV5(input()).size,.09);for(const k of ['top10_pct','dev_wallet_pct','holder_count'])assert.throws(()=>evaluateV5({...input(),[k]:null}),RulesInputError);
- for(const update of [{top10_pct:26},{dev_wallet_pct:6},{holder_count:19},{quote_reserve_sol:4.99},{open_positions_count:5},{available_capital_sol:0}])assert.equal(evaluateV5({...input(),...update}).verdict,'SKIP');
+ assert.equal(sizingV5(input()).size,.15);for(const k of ['top10_pct','dev_wallet_pct','holder_count'])assert.throws(()=>evaluateV5({...input(),[k]:null}),RulesInputError);
+ for(const update of [{top10_pct:26},{dev_wallet_pct:6},{holder_count:19},{quote_reserve_sol:4.99},{open_positions_count:10},{available_capital_sol:0}])assert.equal(evaluateV5({...input(),...update}).verdict,'SKIP');
  const r=evaluateV5(input());assert.equal(r.verdict,'VALID_SETUP');assert.ok(r.unknowns.includes('unique_buyers_5m'));assert.equal(r.requires_user_acknowledgment,false);
  assert.equal(evaluateV5(input(),{creatorSoldRecently:true}).verdict,'SKIP');assert.equal(evaluateV5(input(),{suspectedBundle:true}).verdict,'SKIP');
 });
@@ -24,5 +24,5 @@ test('old exit policy retains hard stop/confirmed half TP/trailing and ninety mi
 });
 test('quote size fallback is bound into the final intent and expiry starts after the read completes',async()=>{
  let clock=now;const c=new RulesClient({clock:()=>clock,quoteSelector:async(_c,plan)=>{clock+=7000;return {ok:true,size:Math.floor(plan.size*.5*1e9)/1e9,quote:{roundTripLossPct:3},attempts:[{reason:null}]};}}),ctx={snapshotId:'ladder',wallet:{running:true},limits:{maxBatchOrders:5},rulesAccount:{wallet_balance_sol:.5,account_equity_sol:.5,available_capital_sol:.445,sol_price_usd:150,open_positions_count:0},candidates:[{mint:'mint',pool:'pool',rulesEvidence:{checkedAt:now,inputs:input(),observations:{}}}]};
- const r=await c.decide('kade',ctx);assert.equal(r.decision.action,'BUY');assert.equal(r.decision.order_sol,.006675);const grant=c.grants.get(r.riskEvidenceByMint.mint.rulesGrant);assert.equal(grant.amount,'6675000');assert.ok(grant.expiresAt>clock+10000);
+ const r=await c.decide('kade',ctx);assert.equal(r.decision.action,'BUY');assert.equal(r.decision.order_sol,.011125);const grant=c.grants.get(r.riskEvidenceByMint.mint.rulesGrant);assert.equal(grant.amount,'11125000');assert.ok(grant.expiresAt>clock+10000);
 });

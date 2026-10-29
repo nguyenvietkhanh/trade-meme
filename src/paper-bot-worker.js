@@ -1,3 +1,4 @@
+import {LatestIpc} from './latest-ipc.js';
 import {RulesRuntime} from './rules-runtime.js';
 import {ACTIVE_BOT_CONFIGS as BOT_CONFIGS} from './paper-bot-config.js';
 import {BotStateStore} from './paper-bot-state.js';
@@ -8,7 +9,8 @@ import {startPaperLoop} from './paper-loop.js';
 const [id,dir]=process.argv.slice(2),config=BOT_CONFIGS.find(a=>a.id===id);if(!config)throw Error('Unknown bot');
 const store=new BotStateStore(dir,id),state=await store.load();await store.flush(state);state.running=process.argv[4]!=='false';if(state.workerStarts)state.restarts++;state.workerStarts=(state.workerStarts??0)+1;await store.save(state);
 let snapshot=null,closing=false,seq=0;const requests=new Map(),bootAt=Date.now(),priorUptime=state.uptimeMs??0;
-const send=data=>{if(process.connected)process.send(data,error=>{if(error&&!closing)console.error('worker IPC',id,error.message);});};
+const stateIpc=new LatestIpc(process,{onError:()=>{if(!closing)console.error('worker IPC unavailable');}});
+const send=data=>{if(data.type==='state'){stateIpc.send('state',{state:data.state});return;}if(process.connected)process.send(data,error=>{if(error&&!closing)console.error('worker IPC',id,error.message);});};
 let lastSaveAt=0,lastSentAt=0,lastFingerprint='';
 const modelSettings=process.argv[5]?JSON.parse(process.argv[5]):{};
 const Runtime=modelSettings.engine==='rules-v5'?RulesRuntime:modelSettings.mode==='live'?(modelSettings.multiOrder?MultiLiveModelRuntime:LiveModelBotRuntime):BotRuntime;
