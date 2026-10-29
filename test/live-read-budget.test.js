@@ -18,3 +18,7 @@ test('price cache drops departed markets and stale RPC observations do not overr
  now+=2000;const stale=data.snapshot().markets[0];assert.equal(stale.spotPriceSol,undefined);assert.equal(stale.priceUsd,10);assert.equal(stale.updatedAt,100000);
  data.setFeed({markets:[],updatedAt:now,solUsd:100});assert.equal(data.prices.size,0);
 });
+test('slow discovery RPC does not block the following held-position read or spawn duplicate jobs',async()=>{
+ let finish,fast=0,background=0;const planner=new LiveReadPlan(),held={mint:'held',pairAddress:'held'},candidate={mint:'new',pairAddress:'new',change5mPct:5},snapshot={markets:[held,candidate]},data={pricesFor:async(rows,{priority})=>{if(priority==='exit'){assert.equal(rows[0].mint,'held');fast++;return;}background++;await new Promise(resolve=>{finish=resolve;});}};
+ await planner.read(data,snapshot,[held],{now:0});assert.equal(fast,1);assert.equal(background,1);await planner.read(data,snapshot,[held],{now:1000});assert.equal(fast,2);assert.equal(background,1);finish();await planner.watchJob;
+});

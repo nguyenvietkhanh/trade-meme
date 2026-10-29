@@ -9,4 +9,10 @@ export class LiveReadPlan{
   const offset=rows.length?this.cursor%rows.length:0,watch=[...rows.slice(offset),...rows.slice(0,offset)].slice(0,this.maxWatch);this.cursor+=watch.length;
   return {held,watch};
  }
+ async read(data,snapshot,positions,{now=Date.now(),onUpdated=()=>{},onError=()=>{}}={}){
+  const plan=this.plan(snapshot,positions,now);await data.pricesFor(plan.held,{priority:'exit'});onUpdated();
+  // A slow SDK bootstrap must never hold up the next protective-price tick.
+  if(plan.watch.length&&!this.watchJob)this.watchJob=Promise.resolve().then(()=>data.pricesFor(plan.watch,{priority:'background'})).then(onUpdated).catch(onError).finally(()=>{this.watchJob=null;});
+ }
+
 }

@@ -57,7 +57,7 @@ async function refresh(){
 async function enrichStrategyData(){if(closing||!data.feed.updatedAt)return;const current=data.feed,markets=await strategyData.enrichCached(current.markets);if(data.feed===current){const fingerprint=rows=>JSON.stringify(rows.map(m=>[m.mint,m.strategyData?.candleFetchedAt,m.strategyData?.flow?.checkedAt]));if(fingerprint(markets)!==fingerprint(current.markets))data.featureRevision++;data.feed={...current,markets};feed=data.feed;}}
 const liveReadPlan=new LiveReadPlan();
 async function updatePrices(){
- if(liveMode){const plan=liveReadPlan.plan(data.snapshot(),desk.state.positions);await data.pricesFor(plan.held,{priority:'exit'});desk.publish();if(plan.watch.length)await data.pricesFor(plan.watch,{priority:'background'});desk.publish();return;}
+ if(liveMode){await liveReadPlan.read(data,data.snapshot(),desk.state.positions,{onUpdated:()=>{if(!closing)desk.publish();},onError:error=>desk.error(error)});return;}
  const snap=data.snapshot(),held=desk.state.positions.map(p=>snap.markets.find(m=>m.mint===p.mint&&m.pairAddress===p.pairAddress)??{...p,dexId:p.executionVenue==='pumpfun'?'pumpfun':'pumpswap'}),watch=snap.markets.filter(m=>liveMode||BOT_CONFIGS.some(c=>independentSignal(c,m,Date.now(),{liquidityCutoff:0}).conditionRatio>=.7));
  const targets=[...new Map([...held,...watch].map(m=>[m.mint+':'+m.pairAddress,m])).values()];await data.pricesFor(targets);desk.publish();
 }
