@@ -1,0 +1,32 @@
+import {Worker} from 'node:worker_threads';
+import path from 'node:path';
+import {publicPair,publicMarket,validId,decisionCode} from './candidate-observer-data.js';
+const number=(env,key,d,min,max)=>Math.min(max,Math.max(min,Number(env[key])||d));
+export function observerConfig(root,env=process.env){return {enabled:env.CANDIDATE_OBSERVER_ENABLED!=='false',dir:path.resolve(env.CANDIDATE_OBSERVER_DIR??path.join(root,'candidate-observer')),retentionDays:number(env,'CANDIDATE_RETENTION_DAYS',3,1,90),maxBytes:Math.floor(number(env,'CANDIDATE_MAX_MIB',32,8,2048)*1048576),minFreeBytes:number(env,'CANDIDATE_MIN_FREE_MIB',64,8,2048)*1048576,deleteRawAfterLabel:env.CANDIDATE_DELETE_RAW_AFTER_LABEL!=='false',maxPending:number(env,'CANDIDATE_MAX_PENDING',5000,30,20000),intervalMs:number(env,'CANDIDATE_API_INTERVAL_MS',10000,10000,300000),sampleMs:number(env,'CANDIDATE_SAMPLE_MS',30000,15000,120000),graceMs:number(env,'CANDIDATE_SNAPSHOT_GRACE_MS',20000,5000,60000)};}
+let lastObservationError=0;
+export function observeCandidates(target,method,...args){try{target?.[method]?.(...args);}catch{if(Date.now()-lastObservationError>60000){lastObservationError=Date.now();try{console.warn('CANDIDATE OBSERVER | HOOK_FAILED');}catch{}}}}
+export class CandidateObserver {
+ constructor(root,{env=process.env,log=console.warn,workerFactory=(url,options)=>new Worker(url,options)}={}) {
+  this.config=observerConfig(root,env);this.log=log;this.queue=[];this.metadataQueue=new Map();this.inFlight=false;this.inFlightCount=0;this.closed=false;this.metrics={enabled:this.config.enabled,ready:false,candidates:0,pendingSnapshots:0,dropped:0,usedBytes:0};this.lastErrorLog=0;
+  if(!this.config.enabled)return;
+  try{this.worker=workerFactory(new URL('./candidate-observer-worker.js',import.meta.url),{workerData:this.config,env:Object.fromEntries([['TZ','UTC'],...['HTTP_PROXY','HTTPS_PROXY','NO_PROXY','NODE_USE_ENV_PROXY','NODE_EXTRA_CA_CERTS','SSL_CERT_FILE','SSL_CERT_DIR'].filter(k=>process.env[k]!==undefined).map(k=>[k,process.env[k]])]),resourceLimits:{maxOldGenerationSizeMb:64,maxYoungGenerationSizeMb:8}});
+   this.worker.on('error',()=>this.fail('WORKER_ERROR'));this.worker.on('exit',code=>{if(!this.closed&&!this.closing)this.fail('WORKER_EXIT_'+code);});
+   this.worker.on('message',msg=>{if(msg.status)this.metrics={...this.metrics,...msg.status,error:msg.status.lastError??null};if(msg.error)this.report(msg.error);if(msg.ack){this.inFlight=false;this.inFlightCount=0;this.drain();}});
+   this.timer=setInterval(()=>this.drain(),1000);this.timer.unref();this.worker.unref();
+  }catch{this.fail('WORKER_START_FAILED');}
+ }
+ report(code){this.metrics.error=code;if(Date.now()-this.lastErrorLog>60000){this.lastErrorLog=Date.now();try{this.log('CANDIDATE OBSERVER | '+code);}catch{}}}
+ fail(code){this.metrics.ready=false;this.failed=true;this.metrics.dropped+=this.queue.length+this.metadataQueue.size+this.inFlightCount;this.inFlightCount=0;this.queue=[];this.metadataQueue.clear();clearInterval(this.timer);this.report(code);}
+ enqueue(row){if(!this.config.enabled||this.failed||this.closed||this.closing)return;if(this.queue.length>=2048){this.metrics.dropped++;if(row.kind==='seen'&&!this.metadataQueue.has(row.row.mint)){if(this.metadataQueue.size<8192)this.metadataQueue.set(row.row.mint,{kind:'seen',row:{mint:row.row.mint,pool:row.row.pool,firstSeenAt:row.row.firstSeenAt,poolCreatedAt:row.row.poolCreatedAt,source:row.row.source,observedAt:null,values:{},provenance:{},missing:{all:'OBSERVATION_BUFFER_FULL'}}});else this.metrics.droppedCandidateRegistrations=(this.metrics.droppedCandidateRegistrations??0)+1;}return;}this.queue.push(row);}
+ drain(){if(this.inFlight||this.failed||!this.worker||!this.queue.length&&!this.metadataQueue.size)return;try{const rows=this.queue.splice(0,128);if(!rows.length)for(const [mint,row]of this.metadataQueue){rows.push(row);this.metadataQueue.delete(mint);if(rows.length===128)break;}this.inFlightCount=rows.length;this.worker.postMessage({type:'rows',rows,dropped:this.metrics.dropped});this.inFlight=true;}catch{this.fail('IPC_FAILED');}}
+ pairs(rows,at=Date.now()){for(const p of rows??[]){const row=publicPair(p,at);if(row)this.enqueue({kind:'seen',row});}this.drain();}
+ ids(rows,source='discovery',at=Date.now()){for(const m of rows??[]){if(validId(m.mint))this.enqueue({kind:'seen',row:{mint:m.mint,pool:null,firstSeenAt:at,poolCreatedAt:null,source,observedAt:null,values:{},provenance:{},missing:{priceUsd:'NO_PAIR_DATA'}}});}this.drain();}
+ markets(rows,factsCache,at=Date.now()){for(const m of rows??[]){const row=publicMarket(m,at,'existing_feed',factsCache?.get(m.mint+':'+m.pairAddress));if(row)this.enqueue({kind:'seen',row});}this.drain();}
+ decisions(result){const buys=new Set((result.decisions??[]).filter(d=>d.action==='BUY').map(d=>d.mint));for(const r of result.rulesReports??[])this.enqueue({kind:'decision',row:{mint:r.mint,pool:r.pool,at:r.at??Date.now(),action:buys.has(r.mint)?'BUY':'SKIP',code:buys.has(r.mint)?'BUY_DECISION':decisionCode(r),wouldBuy:buys.has(r.mint),filterPassed:r.result?.verdict==='VALID_SETUP'}});this.drain();}
+ execution(row){if(!validId(row.mint)||row.side!=='BUY')return;this.enqueue({kind:'execution',row:{mint:row.mint,at:Date.now(),status:String(row.status??'UNKNOWN').replace(/[^A-Z_a-z0-9-]/g,'').slice(0,80),code:/429/.test(row.code??'')?'HTTP_429':/^[A-Z_0-9]{1,80}$/.test(row.code??'')?row.code:null}});this.drain();}
+ status(){return {...this.metrics,buffered:this.queue.length,bufferedCandidateRegistrations:this.metadataQueue.size,enabled:this.config.enabled,workerFailed:!!this.failed,storage:'SQLite',sampling:'discrete public observations; no Jupiter/RPC requests'};}
+ async close(){if(this.closed)return;this.closing=true;clearInterval(this.timer);if(!this.worker){this.closed=true;return;}if(this.failed||this.worker.threadId===-1){this.closed=true;await this.worker.terminate().catch(()=>{});return;}
+  // Bounded shutdown: drain accepted messages, ask worker to commit, then terminate if stuck.
+  await new Promise(resolve=>{const limit=setTimeout(()=>{clearInterval(poll);resolve();},5000),poll=setInterval(()=>{if(!this.inFlight){this.drain();if(!this.queue.length&&!this.metadataQueue.size&&!this.inFlight){clearInterval(poll);try{this.worker.postMessage({type:'close'});}catch{resolve();}}}},20);this.worker.once('exit',()=>{clearTimeout(limit);clearInterval(poll);resolve();});limit.unref();});this.closed=true;await this.worker.terminate().catch(()=>{});
+ }
+}

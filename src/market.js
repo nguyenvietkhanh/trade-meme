@@ -7,11 +7,13 @@ export async function fetchJson(url,{timeoutMs=12000,...options}={}) {
 }
 export async function loadMarkets(extraMints=[],preferredPools={},discovery=null,options={}) {
   const queries=['pumpswap','pump','solana'];
+  // Read-only observer sees raw provider results before ranking, price or venue filters.
+  const observe=(kind,rows)=>{try{options.onObserved?.(kind,rows);}catch{}};
   const discover=()=>Promise.allSettled([
     ...queries.map(q=>fetchJson('https://api.dexscreener.com/latest/dex/search?q='+q)),
     fetchJson('https://api.dexscreener.com/token-profiles/latest/v1'),
     fetchJson('https://api.geckoterminal.com/api/v2/networks/solana/new_pools')
-  ]);
+  ]).then(results=>{try{for(let i=0;i<queries.length;i++)if(results[i].status==='fulfilled')observe('pairs',results[i].value.pairs??[]);const profiles=results[queries.length];if(profiles.status==='fulfilled'&&Array.isArray(profiles.value))observe('profiles',profiles.value.filter(p=>p.chainId==='solana').map(p=>({mint:p.tokenAddress})));const pools=results[queries.length+1];if(pools.status==='fulfilled')observe('new_pools',(pools.value.data??[]).map(p=>({mint:String(p.relationships?.base_token?.data?.id??'').replace(/^solana_/,'')})));}catch{/* Optional observer data must not change market loading. */}return results;});
   const discoveries=discovery?await discovery.discover(discover):await discover();
   const good=discoveries.slice(0,queries.length).filter(r=>r.status==='fulfilled');
   const warnings=[];
@@ -35,7 +37,7 @@ export async function loadMarkets(extraMints=[],preferredPools={},discovery=null
   const tokenResults=await Promise.allSettled(batches.map(batch=>fetchJson(`https://api.dexscreener.com/latest/dex/tokens/${batch.join(',')}`,{timeoutMs:4000})));
   for(let i=0;i<tokenResults.length;i++){
     const result=tokenResults[i];
-    if(result.status==='fulfilled')pairs.push(...(result.value.pairs??[]));
+    if(result.status==='fulfilled'){observe('pairs',result.value.pairs??[]);pairs.push(...(result.value.pairs??[]));}
     else if(batches[i].some(m=>extraMints.includes(m)))throw Error('Không cập nhật được token theo dõi/vị thế mở. Tạm ngừng khớp lệnh.');
     else warnings.push('Không lấy được giá một nhóm token mới; nhóm này không được xét mua.');
   }

@@ -9,7 +9,7 @@ export class RulesQuoteBroker{
  async slot(work){if(this.active>=this.policy.quoteConcurrency)await new Promise(resolve=>this.queue.push(resolve));else this.active++;try{return await work();}finally{if(this.queue.length)this.queue.shift()();else this.active--;}}
  async select(c,plan){return this.slot(async()=>{
   const p=this.policy,attempts=[],market=this.snapshot().markets.find(m=>m.mint===c.mint&&m.pairAddress===c.pool);if(!market)return {ok:false,reason:'no_route',attempts};const provider=market.dexId==='pumpfun'?'pumpfun':'jupiter',retryAt=this.providerRetryAt.get(provider)??0;if(this.clock()<retryAt)return {ok:false,reason:'rate_limited',retryAt,attempts};
-  for(const size of quoteLadder(plan.size,p.minOrderSol)){
+  for(const size of quoteLadder(plan.size,Math.max(p.minOrderSol,plan.minSize??0))){
    for(let attempt=1;attempt<=p.quoteRetries;attempt++){
     const started=this.clock(),key=c.mint+':'+c.pool+':'+Math.round(size*1e9),cached=this.cache.get(key);let q,error;
     try{q=cached&&started-cached.at<=p.quoteCacheTtlMs?cached.quote:await this.execution.roundTripQuote(c.mint,String(Math.round(size*1e9)),market);}catch(e){error=e;}

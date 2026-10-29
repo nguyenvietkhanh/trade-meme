@@ -1,3 +1,4 @@
+import {processMemory} from './runtime-memory.js';
 import {LatestIpc} from './latest-ipc.js';
 import {RulesRuntime} from './rules-runtime.js';
 import {ACTIVE_BOT_CONFIGS as BOT_CONFIGS} from './paper-bot-config.js';
@@ -11,7 +12,7 @@ const store=new BotStateStore(dir,id),state=await store.load();await store.flush
 let snapshot=null,closing=false,seq=0;const requests=new Map(),bootAt=Date.now(),priorUptime=state.uptimeMs??0;
 const stateIpc=new LatestIpc(process,{onError:()=>{if(!closing)console.error('worker IPC unavailable');}});
 const send=data=>{if(data.type==='state'){stateIpc.send('state',{state:data.state});return;}if(process.connected)process.send(data,error=>{if(error&&!closing)console.error('worker IPC',id,error.message);});};
-let lastSaveAt=0,lastSentAt=0,lastFingerprint='';
+let lastSaveAt=0,lastSentAt=0,lastFingerprint='',lastMemoryAt=0;
 const modelSettings=process.argv[5]?JSON.parse(process.argv[5]):{};
 const Runtime=modelSettings.engine==='rules-v5'?RulesRuntime:modelSettings.mode==='live'?(modelSettings.multiOrder?MultiLiveModelRuntime:LiveModelBotRuntime):BotRuntime;
 const runtime=new Runtime(config,state,{ai:modelSettings,onDataset:modelSettings.datasetEnabled?(kind,data)=>send({type:'dataset',kind,data}):undefined,decide:context=>new Promise((resolve,reject)=>{const requestId=id+':model:'+(++seq),timer=setTimeout(()=>{requests.delete(requestId);const code=modelSettings.engine==='rules-v5'?'RULES_EVALUATION_TIMEOUT':'MODEL_TIMEOUT';reject(Object.assign(Error(code),{code}));},(modelSettings.timeoutMs??15000)+5000);requests.set(requestId,{resolve,reject,timer});send({type:'model',requestId,context});}),save:async s=>{
@@ -26,7 +27,7 @@ process.on('message',message=>{
  else if(message.type==='reply'){const r=requests.get(message.requestId);if(r){clearTimeout(r.timer);requests.delete(message.requestId);message.error?r.reject(Object.assign(Error(message.error),{code:message.code,retryAt:message.retryAt,promptVersion:message.promptVersion??null,promptSha256:message.promptSha256??null})):r.resolve(message.result);}}
  else if(message.type==='shutdown')shutdown();
 });
-const loop=startPaperLoop(async()=>{state.uptimeMs=priorUptime+Date.now()-bootAt;if(snapshot&&!closing)await runtime.tick(snapshot,Date.now());else if(!closing){state.heartbeatAt=Date.now();send({type:'state',state});}},250,{onError:error=>{console.error(id,error);send({type:'error',error:{message:error.message}});}});
+const loop=startPaperLoop(async()=>{if(Date.now()-lastMemoryAt>=30000){lastMemoryAt=Date.now();send({type:'memory',memory:processMemory()});}state.uptimeMs=priorUptime+Date.now()-bootAt;if(snapshot&&!closing)await runtime.tick(snapshot,Date.now());else if(!closing){state.heartbeatAt=Date.now();send({type:'state',state});}},250,{onError:error=>{console.error(id,error);send({type:'error',error:{message:error.message}});}});
 send({type:'state',state});
 async function shutdown(){if(closing)return;closing=true;loop.stop();for(const r of requests.values()){clearTimeout(r.timer);r.reject(Error('Worker shutting down'));}requests.clear();await loop.done;await store.save(state);await store.flush(state);process.exit(0);}
 process.on('SIGTERM',shutdown);process.on('disconnect',shutdown);

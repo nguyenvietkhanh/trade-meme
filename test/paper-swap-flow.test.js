@@ -31,3 +31,12 @@ test('unsupported transaction versions are backoff-cached as incomplete, never a
  let at=now,reads=0;const account=await program.coder.accounts.encode('pool',{...data('pool'),baseMint:mint,quoteMint:new PublicKey(SOL)}),rpc={getAccountInfo:async()=>({owner:PUMP_AMM_PROGRAM_ID,data:account}),getSignaturesForAddress:async()=>[{signature:'unsupported',blockTime:now/1000,err:null}],getTransaction:async(_s,options)=>{assert.equal(options.maxSupportedTransactionVersion,0);reads++;throw Object.assign(Error('RPC error (-32015)'),{code:-32015});}};
  const read=createSwapFlowReader(rpc,{clock:()=>at});assert.equal((await read(m)).windowComplete,false);assert.equal(reads,1);at+=31000;assert.equal((await read(m)).windowComplete,false);assert.equal(reads,1);at+=600000;await read(m);assert.equal(reads,2);
 });
+
+test('wrong mint rejection is cached, bounded and rechecked after TTL without returning fake flow',async()=>{
+ let at=now,reads=0;const account=await program.coder.accounts.encode('pool',{...data('pool'),baseMint:user,quoteMint:new PublicKey(SOL)}),rpc={getAccountInfo:async()=>{reads++;return {owner:PUMP_AMM_PROGRAM_ID,data:account};}};
+ const read=createSwapFlowReader(rpc,{clock:()=>at});await assert.rejects(read(m),/mint mismatch/);for(let i=0;i<100;i++)await assert.rejects(read(m),e=>e.cachedReadRejection===true);assert.equal(reads,1);at+=600001;await assert.rejects(read(m),/mint mismatch/);assert.equal(reads,2);
+});
+test('simultaneous flow reads share one public RPC job',async()=>{
+ let reads=0,windows=0,release;const gate=new Promise(r=>release=r),account=await program.coder.accounts.encode('pool',{...data('pool'),baseMint:mint,quoteMint:new PublicKey(SOL)}),rpc={getAccountInfo:async()=>{reads++;await gate;return {owner:PUMP_AMM_PROGRAM_ID,data:account};},getSignaturesForAddress:async()=>{windows++;return [];}};
+ const read=createSwapFlowReader(rpc,{clock:()=>now}),first=read(m),second=read(m);release();const rows=await Promise.all([first,second]);assert.equal(reads,1);assert.equal(windows,1);assert.equal(rows[0],rows[1]);assert.equal(rows[0].windowComplete,true);
+});

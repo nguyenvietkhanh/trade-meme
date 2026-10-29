@@ -10,6 +10,7 @@ export class BotSupervisor{
   const row={worker,id,lastHeartbeat:this.clock(),restarts:(prior?.restarts??-1)+1,startedAt:this.clock(),stopping:false};row.latestIpc=new LatestIpc(worker,{onError:this.onError});this.workers.set(id,row);
   worker.on('error',this.onError);worker.on('message',message=>{if(this.workers.get(id)!==row)return;
    if(message.type==='state'){row.lastHeartbeat=this.clock();row.state=message.state;this.onState(id,message.state,row);}
+   else if(message.type==='memory'){const m=message.memory;if(m&&['at','heapUsedMiB','heapTotalMiB','rssMiB','externalMiB','arrayBuffersMiB','uptimeSeconds'].every(k=>Number.isFinite(m[k])&&m[k]>=0))row.memory=Object.fromEntries(['at','heapUsedMiB','heapTotalMiB','rssMiB','externalMiB','arrayBuffersMiB','uptimeSeconds'].map(k=>[k,m[k]]));}
    else if(message.type==='dataset'){try{this.onDataset(message.kind,message.data);}catch{}}
    else if(message.type==='error')this.onError({bot:id,...message.error});
    else if(message.type==='model')Promise.resolve().then(()=>{if(!this.decide)throw Object.assign(Error('MODEL_NOT_CONFIGURED'),{code:'MODEL_NOT_CONFIGURED'});return this.decide(id,message.context);}).then(result=>{if(worker.connected)worker.send({type:'reply',requestId:message.requestId,result});},error=>{if(worker.connected)worker.send({type:'reply',requestId:message.requestId,error:error.code??'MODEL_UNAVAILABLE',code:error.code??'MODEL_UNAVAILABLE',retryAt:error.retryAt??null,promptVersion:error.promptVersion??null,promptSha256:error.promptSha256??null});});

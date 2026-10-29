@@ -1,3 +1,4 @@
+import {ReadRejectionCache} from './read-rejection-cache.js';
 import {PublicKey} from '@solana/web3.js';
 import {OFFLINE_PUMP_AMM_PROGRAM as program,PUMP_AMM_PROGRAM_ID} from '@pump-fun/pump-swap-sdk';
 import bs58 from 'bs58';
@@ -33,7 +34,8 @@ export function flowSummary(m,signatures,receipts,checkedAt,now=Date.now()){
  return {mint:m.mint,pairAddress:m.pairAddress,checkedAt,provider:'confirmed-pumpswap-events',windowStart,windowComplete,walletsComplete:windowComplete&&events.every(t=>t.user!==null),uniqueBuyersByMinute:windowComplete&&events.every(t=>t.user!==null)?[2,1,0].map(i=>new Set(buys.filter(t=>t.user&&t.at>now-(i+1)*60000&&t.at<=now-i*60000).map(t=>t.user)).size):null,lastTenComplete:prefixComplete&&lastTen.length===10,lastTen,uniqueBuyers:new Set(buys.filter(t=>t.user).map(t=>t.user)).size,uniqueSellers:new Set(sells.filter(t=>t.user).map(t=>t.user)).size,largestBuySharePct:volume>0?Math.max(0,...buys.map(t=>t.quoteSol))/volume*100:null,smallBuyFraction:buys.length&&volume>0?buys.filter(t=>t.quoteSol<=volume*.05).length/buys.length:null,eventsObserved:events.length,coverageNote:'Distinct signing addresses, not independently funded humans. Partial RPC windows never count as complete.'};
 }
 export function createSwapFlowReader(rpc,{clock=Date.now,rolling=false}={}){
- const pools=new Map();return async m=>{
+ const pools=new Map(),jobs=new Map(),rejections=new ReadRejectionCache({clock});
+ const read=async m=>{
   if(m.dexId!=='pumpswap')throw Error('PumpSwap only');const key=m.mint+':'+m.pairAddress,checkedAt=clock();let cache=pools.get(key);
   if(!cache){const account=await rpc.getAccountInfo(new PublicKey(m.pairAddress),'confirmed');if(!account?.owner?.equals(PUMP_AMM_PROGRAM_ID))throw Error('Pool program mismatch');const pool=program.coder.accounts.decode('pool',account.data);if(pool.baseMint.toBase58()!==m.mint||pool.quoteMint.toBase58()!==SOL)throw Error('Pool mint mismatch');cache={receipts:new Map(),at:checkedAt};pools.set(key,cache);}
   let signatures=await rpc.getSignaturesForAddress(new PublicKey(m.pairAddress),{limit:40},'confirmed');if(!Array.isArray(signatures)||signatures.length>40||signatures.some(s=>typeof s.signature!=='string'||!s.signature)||new Set(signatures.map(s=>s.signature)).size!==signatures.length)throw Error('Missing/invalid signature window');
@@ -50,8 +52,11 @@ export function createSwapFlowReader(rpc,{clock=Date.now,rolling=false}={}){
   const missing=signatures.filter(s=>!s.err&&(!cache.receipts.has(s.signature)||cache.receipts.get(s.signature).complete!==true&&clock()-(cache.receipts.get(s.signature).readAt??0)>=30000&&clock()>=(cache.receipts.get(s.signature).retryAt??0))).slice(0,12);
   // At most two background receipt reads concurrently; existing RPC scheduler
   // reserves capacity for SELL and never broadcasts any transaction here.
-  for(let i=0;i<missing.length;i+=2)await Promise.all(missing.slice(i,i+2).map(async s=>{try{const tx=await rpc.getTransaction(s.signature,{commitment:'confirmed',maxSupportedTransactionVersion:0});if(tx)cache.receipts.set(s.signature,{...decodeSwapTrades(tx,m,s.signature),readAt:clock()});}catch(error){const unsupported=error.code===-32015||/-32015/.test(error.message),at=clock();cache.receipts.set(s.signature,{complete:false,events:[],readAt:at,retryAt:Math.max(at+(unsupported?600000:30000),error.retryAt??0),readError:unsupported?'UNSUPPORTED_TRANSACTION_VERSION':'RPC_READ_FAILED'});console.error('paper flow receipt',s.signature,unsupported?'UNSUPPORTED_TRANSACTION_VERSION':error.code??'RPC_READ_FAILED');}}));
+  for(let i=0;i<missing.length;i+=2)await Promise.all(missing.slice(i,i+2).map(async s=>{try{const tx=await rpc.getTransaction(s.signature,{commitment:'confirmed',maxSupportedTransactionVersion:0});if(tx)cache.receipts.set(s.signature,{...decodeSwapTrades(tx,m,s.signature),readAt:clock()});}catch(error){const unsupported=error.code===-32015||/-32015/.test(error.message),at=clock();cache.receipts.set(s.signature,{complete:false,events:[],readAt:at,retryAt:Math.max(at+(unsupported?600000:30000),error.retryAt??0),readError:unsupported?'UNSUPPORTED_TRANSACTION_VERSION':'RPC_READ_FAILED'});if(!unsupported)console.warn('paper flow receipt',error.code==='RPC_UNAVAILABLE'?'RPC_UNAVAILABLE':'RPC_READ_FAILED');}}));
   const keep=new Set(signatures.map(s=>s.signature));for(const s of cache.receipts.keys())if(!keep.has(s))cache.receipts.delete(s);cache.at=clock();for(const [k,v]of pools)if(clock()-v.at>600000)pools.delete(k);while(pools.size>60)pools.delete(pools.keys().next().value);
   const summary=flowSummary(m,signatures,cache.receipts,checkedAt,clock());if(!pagesComplete){summary.windowComplete=false;summary.walletsComplete=false;}return summary;
+ };
+ return async m=>{const key=m.mint+':'+m.pairAddress,rejected=rejections.get(key);if(rejected)throw rejected;if(jobs.has(key))return jobs.get(key);
+  const task=read(m);jobs.set(key,task);try{return await task;}catch(error){rejections.remember(key,error);throw error;}finally{jobs.delete(key);}
  };
 }

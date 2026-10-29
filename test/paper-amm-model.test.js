@@ -22,3 +22,10 @@ test('RPC bootstrap overload backs off across pools without fabricating fresh re
  reader.ensure=async()=>{calls++;throw Object.assign(Error('RPC_UNAVAILABLE'),{code:'RPC_UNAVAILABLE',retryAt:now+60000});};
  assert.deepEqual(await reader.refresh(rows),[]);assert.equal(calls,1);now+=5001;assert.deepEqual(await reader.refresh(rows),[]);assert.equal(calls,1);now+=55000;await reader.refresh(rows);assert.equal(calls,2);
 });
+
+test('deterministically unsupported token programs are rejected without repeated SDK/RPC bootstrap',async()=>{
+ const f=await pumpFixture(),m={mint:f.mint.toBase58(),pairAddress:f.poolKey.toBase58(),dexId:'pumpswap'};let now=100000,reads=0;const original=f.rpc.getMultipleAccountsInfo.bind(f.rpc);f.rpc.getMultipleAccountsInfo=async(...args)=>{reads++;return original(...args);};f.map.get(f.mint.toBase58()).owner=new PublicKey('TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb');const reader=new PaperPoolReader(f.rpc,{clock:()=>now});
+ await assert.rejects(reader.ensure(m),/token programs/);const initial=reads;assert.ok(initial>0);
+ for(let i=0;i<100;i++)await assert.rejects(reader.ensure(m),e=>e.cachedReadRejection===true);
+ assert.equal(reads,initial);assert.deepEqual(reader.prices([m]),[]);now+=600001;await assert.rejects(reader.ensure(m),/token programs/);assert.ok(reads>initial);
+});

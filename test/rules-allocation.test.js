@@ -1,6 +1,6 @@
 import test from 'node:test';import assert from 'node:assert/strict';import {planRulesOrder} from '../src/rules-allocation.js';import {rulesConfig} from '../src/rules-config.js';import {softRisk} from '../src/rules-risk.js';
-const i={wallet_balance_sol:.5,account_equity_sol:.5,available_capital_sol:.445,open_exposure_sol:0,quote_reserve_sol:10,holder_count:100,top10_pct:10,dev_wallet_pct:2,volume_5m_sol:3,buys_5m:20,sells_5m:10,change_5m_pct:5},p=rulesConfig({});
-test('risk sizing uses available cash, 2.5% /50% and bounded pool/wallet/exposure, not a 50% allocation',()=>{
+const i={wallet_balance_sol:.5,account_equity_sol:.5,available_capital_sol:.445,open_exposure_sol:0,quote_reserve_sol:10,holder_count:100,top10_pct:10,dev_wallet_pct:2,volume_5m_sol:3,buys_5m:20,sells_5m:10,change_5m_pct:5},p=rulesConfig({SMALL_WALLET_ORDER_ENABLED:'false'});
+test('legacy sizing (small-wallet override disabled) uses available cash, 2.5% /50% and bounded pool/wallet/exposure, not a 50% allocation',()=>{
  const s=planRulesOrder(i,{},p);assert.equal(s.tier,'STANDARD');assert.equal(s.size,.02225);assert.equal(s.maxOrder,.05);assert.ok(s.size<.5*.1);
  const probe=planRulesOrder({...i,buys_5m:4,sells_5m:3,volume_5m_sol:.3}, {},p);assert.equal(probe.tier,'PROBE');assert.equal(probe.size,.0089);
  assert.equal(planRulesOrder({...i,account_equity_sol:100,wallet_balance_sol:100,available_capital_sol:99}, {},p).size,.15);

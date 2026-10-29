@@ -7,6 +7,7 @@ export class DiscoveryQueue{
   this.prune();
  }
  remember(rows,now=Date.now()){
+  try{this.onObserved?.(rows,now);}catch{/* Optional observer cannot affect discovery. */}
   for(const row of rows){
    if(!validMint(row?.mint))continue;
    const old=this.entries.get(row.mint),created=Number.isFinite(row.pairCreatedAt)&&row.pairCreatedAt>0&&row.pairCreatedAt<=now?row.pairCreatedAt:null;
