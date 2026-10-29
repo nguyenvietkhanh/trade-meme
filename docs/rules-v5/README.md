@@ -258,3 +258,30 @@ error vẫn qua pipeline cũ; không tạo model_calls giả khi không còn g�
 - Chromium local kiểm tra mobile 390px / desktop 1120px, không tràn ngang hoặc
   lỗi JavaScript; số dư ảnh kiểm thử là fixture riêng, không phải tài khoản thật.
 - Không đọc .env thật, không gửi lệnh hoặc sửa dữ liệu production bằng test.
+
+## Giảm tải RPC và giới hạn RAM sau lỗi heap OOM
+
+Log production xác nhận Node hết heap, còn Helius/Solana HTTP429 và PublicNode
+403 làm nguồn dữ liệu không khả dụng. Không có heap snapshot production nên
+không quy kết một cache duy nhất là toàn bộ nguyên nhân.
+
+- Giá vị thế đang mở vẫn ưu tiên exit, chu kỳ 1 giây. Token chưa mua chỉ đọc
+  RPC cho tối đa 12 ứng viên / 10 giây, quay vòng. Không dùng giá RPC cũ làm
+  giá mới; quote/simulation và số dư ngay trước ký vẫn xác minh độc lập.
+- LIVE không lấy M1/receipt flow phụ khi DATASET_ENABLED chưa bật. Nếu bật
+  dataset vẫn thu, nhưng M1 tối đa một lần / 5 giây, flow / 10 giây. Khi 429
+  backoff toàn nguồn, không quay sang token khác để lặp cùng lỗi.
+- Metadata SDK pool tối đa 128, TTL 5 phút; attempts tối đa 512; cache đọc
+  provider tối đa 256; giá bỏ mint đã rời feed, tối đa 256. Hồ sơ holder
+  scanner tối đa 128, bắt đầu full scan tối đa mỗi 10 giây. Signer vẫn đọc
+  holder/dev lại trước lệnh. Không đụng ledger, pending signature hay receipt.
+- Flow rolling tối đa 512 signature/pool và 16 cursor. Giao dịch lỗi -32015
+  được giữ là **incomplete**, backoff 10 phút, không chứng nhận flow sạch.
+  Vẫn yêu cầu maxSupportedTransactionVersion=0, không tự giải mã phiên bản
+  chưa được SDK hỗ trợ.
+- Bootstrap pool mới tối đa mỗi 5 giây; RPC_UNAVAILABLE hoãn ít nhất 30 giây
+  hoặc theo retryAt. Các dữ liệu thiếu vẫn null/không đủ coverage.
+
+Không cần tăng NODE_OPTIONS hay thêm key. Các thay đổi không hoàn lại Helius
+credits đã tiêu và không đảm bảo một số credits/ngày cố định; số credit còn
+phụ thuộc method, vị thế, nhà cung cấp và dataset đang bật hay tắt.

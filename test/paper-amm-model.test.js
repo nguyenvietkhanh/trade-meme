@@ -16,3 +16,9 @@ test('model refuses wrong pool owner, missing fee accounts, unsupported token pr
  f.map.get(f.poolKey.toBase58()).owner=SystemProgram.programId;await assert.rejects(new PaperPoolReader(f.rpc,{clock:()=>1000}).quote(request,m),/ownership/);
  const f2=await pumpFixture(),m2={...m,mint:f2.mint.toBase58(),pairAddress:f2.poolKey.toBase58()};f2.map.get(f2.mint.toBase58()).owner=new PublicKey('TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb');await assert.rejects(new PaperPoolReader(f2.rpc,{clock:()=>1000}).quote({...request,mint:m2.mint},m2),/token programs/);
 });
+
+test('RPC bootstrap overload backs off across pools without fabricating fresh reserve prices',async()=>{
+ let now=100000,calls=0;const reader=new PaperPoolReader({}, {clock:()=>now,bootstrapIntervalMs:5000}),rows=[{mint:'one',pairAddress:'one',dexId:'pumpswap'},{mint:'two',pairAddress:'two',dexId:'pumpswap'}];
+ reader.ensure=async()=>{calls++;throw Object.assign(Error('RPC_UNAVAILABLE'),{code:'RPC_UNAVAILABLE',retryAt:now+60000});};
+ assert.deepEqual(await reader.refresh(rows),[]);assert.equal(calls,1);now+=5001;assert.deepEqual(await reader.refresh(rows),[]);assert.equal(calls,1);now+=55000;await reader.refresh(rows);assert.equal(calls,2);
+});

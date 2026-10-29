@@ -27,8 +27,8 @@ export class RulesEvidence{
   if(prior?.accountKey===accountKey&&(!c.probeSol||prior.probeSol===c.probeSol)&&now-prior.checkedAt<=2500)return prior;
   let factsRow=this.factsCache.get(key);
   if(!factsRow||now-factsRow.at>30000){
-   if(now<this.nextReadAt)return {error:'RULES_FACTS_READ_SCHEDULED',missing:['waiting for RPC holder scan']};this.nextReadAt=now+2500;
-   try{const facts=await withRpcPriority('background',()=>m.dexId==='pumpfun'?this.execution.inspectCurveMarket(m,undefined,{includeQuote:false}):this.execution.inspectMarketFacts(m));factsRow={facts,at:this.clock()};this.factsCache.set(key,factsRow);}
+   if(now<this.nextReadAt)return {error:'RULES_FACTS_READ_SCHEDULED',missing:['waiting for RPC holder scan']};this.nextReadAt=now+10000;
+   try{const facts=await withRpcPriority('background',()=>m.dexId==='pumpfun'?this.execution.inspectCurveMarket(m,undefined,{includeQuote:false}):this.execution.inspectMarketFacts(m));factsRow={facts,at:this.clock()};this.factsCache.set(key,factsRow);while(this.factsCache.size>128)this.factsCache.delete(this.factsCache.keys().next().value);}
    catch{return {error:'RULES_ONCHAIN_FACTS_UNAVAILABLE',missing:['verified mint/pool, complete holders and creator balance']};}
   }
   const {facts}=factsRow;
