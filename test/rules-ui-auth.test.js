@@ -17,7 +17,7 @@ test('rules UI mutations supply the authentication headers required by the serve
    return {ok:true,json:async()=>({ok:true})};
   },
  });
- for(const [url,data] of [['/api/auth/challenge',{address:'fixture'}],['/api/auth/login',{nonce:'fixture'}],['/api/live/pause',{paused:true}],['/api/rules/ack',{fingerprint:'fixture'}],['/api/paper/telegram-test',{}]])await post(url,data);
- assert.equal(requests.length,5);
+ for(const [url,data] of [['/api/auth/challenge',{address:'fixture'}],['/api/auth/login',{nonce:'fixture'}],['/api/live/pause',{paused:true}],['/api/rules/ack',{fingerprint:'fixture'}],['/api/paper/telegram-test',{}],['/api/rules/wallets',{text:'# allow-empty'}]])await post(url,data);
+ assert.equal(requests.length,6);
  for(const request of requests){assert.equal(request.method,'POST');assert.equal(request.credentials,'same-origin');assert.doesNotThrow(()=>JSON.parse(request.body));}
 });

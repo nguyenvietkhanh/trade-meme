@@ -5,3 +5,5 @@
 @media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important;transition:none!important}}
 
 .arrow-icon{width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;vertical-align:middle}.ticker-icon .arrow-icon{width:16px;height:16px}.report-emblem .arrow-icon{width:34px;height:34px}.text-button .arrow-icon{margin-left:6px;color:var(--green)}
+
+textarea{width:100%;display:block;background:#0c100e;border:1px solid #303a37;color:#e6f1eb;border-radius:8px;padding:11px;margin-top:6px;font:13px/1.6 ui-monospace,monospace;resize:vertical}code{overflow-wrap:anywhere}#wallets-empty{width:auto;display:inline;margin-right:7px}#wallets-form button{background:#2edb96;color:#072418;padding:10px 14px;border:0;border-radius:8px;font-size:11px}#wallets-form{border-top:1px solid #252a30;margin-top:14px;padding-top:9px}

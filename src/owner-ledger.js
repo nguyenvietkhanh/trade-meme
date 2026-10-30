@@ -1,7 +1,7 @@
 import {freshState,recordBuy,recordSell,riskCheck,exitPlan,event} from './engine.js';
 import {rankMarket} from './strategy.js';
 import {profitOrder,PROFIT_RECIPIENT} from './profit.js';
-import {STRATEGY_VERSION,clearLegacyDrawdownHalt,positionLimitReached,canFundBuy,BUY_LAMPORTS,walletOrderSol,WALLET_SIZING_VERSION,WALLET_ORDER_FRACTION,CURVE_RULES} from './desk-rules.js';
+import {HISTORICAL_PROFIT_RECIPIENTS,STRATEGY_VERSION,clearLegacyDrawdownHalt,positionLimitReached,canFundBuy,BUY_LAMPORTS,walletOrderSol,WALLET_SIZING_VERSION,WALLET_ORDER_FRACTION,CURVE_RULES} from './desk-rules.js';
 import {isPumpCurve} from './venues.js';
 import {enqueueTrainingRecord} from './training-records.js';
 
@@ -57,9 +57,9 @@ export function applyOwnerReceipt(s,pending,result){
  if(s.recordedSignatures.includes(result.signature)){s.pending=null;return false;}
  const {intent}=pending;let trainingPosition=null;
  if(result.status==='confirmed'&&intent.side==='PROFIT'){
-  if(result.recipient!==PROFIT_RECIPIENT||result.amountLamports!==intent.amount||!Number.isFinite(result.feeSol)||result.feeSol<0||result.feeSol>.00001||!Number.isFinite(result.solDelta)||Math.abs(result.solDelta+Number(intent.amount)/1e9+result.feeSol)>1e-10)throw Error('Receipt chuyển lãi không khớp.');
+  if(!HISTORICAL_PROFIT_RECIPIENTS.includes(intent.recipient)||result.recipient!==intent.recipient||result.amountLamports!==intent.amount||!Number.isFinite(result.feeSol)||result.feeSol<0||result.feeSol>.00001||!Number.isFinite(result.solDelta)||Math.abs(result.solDelta+Number(intent.amount)/1e9+result.feeSol)>1e-10)throw Error('Receipt chuyển lãi không khớp.');
   const amount=Number(result.amountLamports)/1e9;s.cashSol+=result.solDelta;s.withdrawnSol=(s.withdrawnSol??0)+amount;s.payoutFeesSol=(s.payoutFeesSol??0)+result.feeSol;
-  s.payouts??=[];s.payouts.unshift({signature:result.signature,amountSol:amount,feeSol:result.feeSol,recipient:PROFIT_RECIPIENT,at:Date.now()});s.payouts=s.payouts.slice(0,500);event(s,'Đã xác nhận chuyển lãi '+amount.toFixed(6)+' SOL về '+PROFIT_RECIPIENT);
+  s.payouts??=[];s.payouts.unshift({signature:result.signature,amountSol:amount,feeSol:result.feeSol,recipient:result.recipient,at:Date.now()});s.payouts=s.payouts.slice(0,500);event(s,'Đã xác nhận chuyển lãi '+amount.toFixed(6)+' SOL về '+result.recipient);
  }else if(result.status==='confirmed'){
   const raw=BigInt(result.tokenDelta),quantity=Number(raw<0n?-raw:raw)/10**result.decimals,m={mint:intent.mint,symbol:intent.symbol,priceUsd:intent.priceUsd,liquidityUsd:intent.entryLiquidityUsd,volume5mUsd:intent.entryVolume5mUsd,pairAddress:intent.pairAddress};
   if(intent.side==='BUY'){

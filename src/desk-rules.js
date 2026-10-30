@@ -7,7 +7,9 @@ export const STRATEGY_VERSION='pumpswap-capped-06sol-reserve-01-v7';
 export const CURVE_RULES=Object.freeze({orderFraction:.05,minTokenAgeMs:180000,maxQuoteAgeMs:5000,minUniqueBuyers5m:8,minUniqueBuyerRatio:.3,minHolderCount:30,timeStopMs:900000,timeStopGainPct:20,maxHoldMs:3600000,earlyTakeProfitPct:35,earlySellFraction:.25,maxPriorityFraction:.02});
 export const SCREENER_RULES=Object.freeze({minMomentumPct:1,maxMomentumPct:12,minBuys:10,minBuySellRatio:1.3,minVolume5mUsd:1000,minAcceleration:1.2,maxHourGainPct:150,minSixHourChangePct:-30,maxDayGainPct:500,minScore:60});
 export const AUDIT_RULES=Object.freeze({minClosedTrades:40,minWinRate:.33,minExpectancyR:.4,maxDrawdownPct:15,stalePositionMs:72*3600000});
-export const PROFIT_RECIPIENT='5uYdJyFmZkvZT5S3A7iq1kLx2aLwcMgVXMfxjdGf5qVZ';
+export const PROFIT_RECIPIENT='9QixUMsk9gxCAHLoWuR1F6vcrSeXifWiTDs4wd8JDp7P';
+// Reconciliation only. Newly prepared transfers must use PROFIT_RECIPIENT.
+export const HISTORICAL_PROFIT_RECIPIENTS=Object.freeze([PROFIT_RECIPIENT,'5uYdJyFmZkvZT5S3A7iq1kLx2aLwcMgVXMfxjdGf5qVZ']);
 export const PROFIT_RULES=Object.freeze({minTransferLamports:1000000,feeBufferLamports:10000,maxTransferLamports:300000000,reserveLamports:100000000});
 
 // null means capital-limited entry: reserve, fees and account risk still apply.

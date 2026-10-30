@@ -13,7 +13,7 @@ import {LIVE_BUDGET_AUTHORITY} from './live-budget-authority.js';
 import {isPumpCurve} from './venues.js';
 import {curveState,curveRoundTrip,quoteCurve,decodeCurve,bondingCurvePda,canonicalPumpPoolPda,buildPumpCurve,CURVE_PROGRAM} from './pump-curve.js';
 import {keylessConnection,rpcConfiguration,MAINNET_GENESIS_HASH} from './rpc.js';
-import {PROFIT_RECIPIENT,PROFIT_RULES,TRADE_RULES,executionSlippageBps,walletOrderSol,validBuyLamports,WALLET_ORDER_FRACTION,CURVE_RULES,MAINNET_ORDER_SOL} from './desk-rules.js';
+import {PROFIT_RECIPIENT,HISTORICAL_PROFIT_RECIPIENTS,PROFIT_RULES,TRADE_RULES,executionSlippageBps,walletOrderSol,validBuyLamports,WALLET_ORDER_FRACTION,CURVE_RULES,MAINNET_ORDER_SOL} from './desk-rules.js';
 export const TOKEN=new PublicKey('TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA');
 export const TOKEN2022=new PublicKey('TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb');
 const ATA=new PublicKey('ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL');
@@ -121,7 +121,7 @@ export class SolanaExecution{
   if(supply<=0n||total!==supply)throw Error('Phân bổ holder không đầy đủ so với cung on-chain.');
   const distribution=[...owners.values()].sort((a,b)=>a>b?-1:a<b?1:0),percent=n=>Number(n*100000000n/supply)/1000000;
   const creator=creatorAddress?new PublicKey(creatorAddress).toBase58():null,devPct=creator&&!excluded.has(creator)&&creator!==PublicKey.default.toBase58()?percent(owners.get(creator)??0n):undefined;
-  return {holderCount:owners.size,top10ExcludesPool:true,top10Pct:percent(distribution.slice(0,10).reduce((a,b)=>a+b,0n)),largestHolderPct:percent(distribution[0]??0n),devPct};
+  return {holderCount:owners.size,top10Wallets:[...owners].sort((a,b)=>a[1]>b[1]?-1:a[1]<b[1]?1:0).slice(0,10).map(([address,amount])=>({address,pct:percent(amount)})),top10ExcludesPool:true,top10Pct:percent(distribution.slice(0,10).reduce((a,b)=>a+b,0n)),largestHolderPct:percent(distribution[0]??0n),devPct};
  }
  async curveMarketData(mints,solUsd){
   const keys=mints.map(m=>bondingCurvePda(new PublicKey(m))),infos=await this.rpc.getMultipleAccountsInfo(keys),now=Date.now(),out=[];
@@ -263,13 +263,14 @@ export class SolanaExecution{
   const sim=await this.rpc.simulateTransaction(tx,{sigVerify:false,replaceRecentBlockhash:true});if(sim.value.err)throw new TradePolicyError('LIVE_PROFIT_SIMULATION_FAILED');
   return {bytes:tx.serialize(),lastValidBlockHeight:block.lastValidBlockHeight};
  }
- async profitReceipt(signature,ownerAddress,amount){
+ async profitReceipt(signature,ownerAddress,amount,recipient=PROFIT_RECIPIENT){
+  if(!HISTORICAL_PROFIT_RECIPIENTS.includes(recipient))throw new TradePolicyError('PROFIT_RECIPIENT_UNRECOGNIZED');
   const tx=await this.rpc.getParsedTransaction(signature,{maxSupportedTransactionVersion:0,commitment:'confirmed'});if(!tx)return null;
-  const keys=tx.transaction.message.accountKeys,from=keys.findIndex(k=>k.pubkey.toBase58()===ownerAddress),to=keys.findIndex(k=>k.pubkey.toBase58()===PROFIT_RECIPIENT),instructions=tx.transaction.message.instructions;
+  const keys=tx.transaction.message.accountKeys,from=keys.findIndex(k=>k.pubkey.toBase58()===ownerAddress),to=keys.findIndex(k=>k.pubkey.toBase58()===recipient),instructions=tx.transaction.message.instructions;
   if(tx.meta?.err||from!==0||to<0||instructions.length!==1)throw new TradePolicyError('Receipt chuyển lãi không hợp lệ.');
   const ix=instructions[0],delta=tx.meta.postBalances[to]-tx.meta.preBalances[to],debit=tx.meta.preBalances[from]-tx.meta.postBalances[from];
-  if(ix.program!=='system'||ix.parsed?.type!=='transfer'||ix.parsed.info.source!==ownerAddress||ix.parsed.info.destination!==PROFIT_RECIPIENT||String(ix.parsed.info.lamports)!==String(amount)||delta!==Number(amount)||debit!==Number(amount)+tx.meta.fee)throw new TradePolicyError('Receipt chuyển lãi không khớp đích hoặc số SOL.');
-  return {slot:tx.slot,amountLamports:String(amount),feeSol:tx.meta.fee/1e9,solDelta:-debit/1e9,recipient:PROFIT_RECIPIENT};
+  if(ix.program!=='system'||ix.parsed?.type!=='transfer'||ix.parsed.info.source!==ownerAddress||ix.parsed.info.destination!==recipient||String(ix.parsed.info.lamports)!==String(amount)||delta!==Number(amount)||debit!==Number(amount)+tx.meta.fee)throw new TradePolicyError('Receipt chuyển lãi không khớp đích hoặc số SOL.');
+  return {slot:tx.slot,amountLamports:String(amount),feeSol:tx.meta.fee/1e9,solDelta:-debit/1e9,recipient};
  }
  async fundingTransaction(owner,recipient,lamports){
   if(!Number.isSafeInteger(lamports)||lamports<=0||lamports>300000000)throw new TradePolicyError('Số SOL nạp vượt giới hạn.');

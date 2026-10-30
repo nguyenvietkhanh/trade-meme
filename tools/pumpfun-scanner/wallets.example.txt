@@ -1,0 +1,5 @@
+# Copy to wallets.txt and enter public Solana addresses, one per line.
+# Optional label after a space: bundler, dev, etc.
+# An absent or unconfigured file is UNVERIFIED.
+# To deliberately use an empty list, the actual file must contain this marker:
+# Marker to enter deliberately: # allow-empty

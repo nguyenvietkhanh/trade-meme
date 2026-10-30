@@ -4,7 +4,7 @@ import bs58 from 'bs58';
 import {DEFAULT_OWNER} from './security.js';
 import {SOL,DEFAULTS} from './engine.js';
 import {rankMarket} from './strategy.js';
-import {walletOrderSol,validHistoricalBuy,WALLET_SIZING_VERSION,CURVE_RULES,WALLET_ORDER_FRACTION} from './desk-rules.js';
+import {HISTORICAL_PROFIT_RECIPIENTS,walletOrderSol,validHistoricalBuy,WALLET_SIZING_VERSION,CURVE_RULES,WALLET_ORDER_FRACTION} from './desk-rules.js';
 import {isPumpCurve} from './venues.js';
 import {entryFeatures} from './training-records.js';
 import {availableProfitLamports,PROFIT_RECIPIENT} from './profit.js';
@@ -83,7 +83,7 @@ export class DirectWallet{
  async reconcile({intent,transaction}){
   const signed=verifyOwnerTransaction(transaction,this.owner);
   if(!intent||intent.owner!==this.owner||intent.messageHash!==signed.messageHash||!['BUY','SELL','PROFIT'].includes(intent.side)||(intent.side!=='PROFIT'&&(!Number.isFinite(intent.solUsd)||intent.solUsd<=0))||!Number.isSafeInteger(intent.lastValidBlockHeight))throw Error('Nhật ký chờ không hợp lệ.');
-  if(intent.side!=='PROFIT')new PublicKey(intent.mint);else if(intent.recipient!==PROFIT_RECIPIENT||!/^\d{1,9}$/.test(intent.amount)||Number(intent.amount)<1000000||Number(intent.amount)>300000000)throw Error('Nhật ký chuyển lãi không hợp lệ.');
+  if(intent.side!=='PROFIT')new PublicKey(intent.mint);else if(!HISTORICAL_PROFIT_RECIPIENTS.includes(intent.recipient)||!/^\d{1,9}$/.test(intent.amount)||Number(intent.amount)<1000000||Number(intent.amount)>300000000)throw Error('Nhật ký chuyển lãi không hợp lệ.');
   const status=await this.execution.status(signed.signature);
   const clear=()=>{if(this.intent?.id===intent.id)this.intent=null;};
   if(status?.err){const tx=await this.execution.rpc.getParsedTransaction(signed.signature,{maxSupportedTransactionVersion:0,commitment:'confirmed'});if(!tx)return {status:'pending'};clear();return {status:'failed',signature:signed.signature,feeSol:tx.meta.fee/1e9,slot:tx.slot};}
@@ -92,7 +92,7 @@ export class DirectWallet{
    return {status:'pending',signature:signed.signature};
   }
   if(intent.side==='PROFIT'){
-   const receipt=await this.execution.profitReceipt(signed.signature,this.owner,intent.amount);if(!receipt)return {status:'pending'};
+   const receipt=await this.execution.profitReceipt(signed.signature,this.owner,intent.amount,intent.recipient);if(!receipt)return {status:'pending'};
    clear();return {status:'confirmed',signature:signed.signature,...receipt};
   }
   const receipt=await this.execution.receipt(signed.signature,this.owner,intent.mint);if(!receipt)return {status:'pending'};

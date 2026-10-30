@@ -1,3 +1,4 @@
+import {projectLossPause} from './project-risk.js';
 import {rulesConfig} from './rules-config.js';
 export function softRisk({lossStreak=0,dailyPnlSol=0,dayStartSol=0,peakSol=0,equitySol=0}={},p=rulesConfig()){
  const drawdown=peakSol>0?Math.max(0,1-equitySol/peakSol):0,factors=[],probeOnly=lossStreak>=p.lossStreakProbe||drawdown>p.drawdownProbe,minimal=drawdown>p.drawdownProbe;
@@ -6,6 +7,7 @@ export function softRisk({lossStreak=0,dailyPnlSol=0,dayStartSol=0,peakSol=0,equ
  return {factor:Math.max(.25,Math.min(1,...factors.map(r=>r.factor))),probeOnly,minimal,drawdown,factors,buyPaused:false};
 }
 export function riskSnapshot(state,equitySol,now,p=rulesConfig()){
+ if(p.projectRules)return {...projectLossPause(state,now),factor:1,probeOnly:false,minimal:false,factors:[]};
  const day=new Date(now).toISOString().slice(0,10),prior=state.rulesRisk??{},flows=state.netDepositsSol??0,delta=flows-(prior.netDepositsSol??flows),peak=Math.max(equitySol,(prior.peakSol??equitySol)+delta),start=prior.day===day?Math.max(0,prior.dayStartSol+delta):equitySol;
  const closed=(state.trades??[]).filter(t=>(t.group??'SCALP')==='SCALP'&&t.side==='SELL'&&t.closed&&Number.isFinite(t.positionPnlSol)).sort((a,b)=>b.at-a.at);let lossStreak=0;for(const t of closed){if(t.positionPnlSol>0)break;if(t.positionPnlSol<0)lossStreak++;}
  const knownDailyPnl=(state.trades??[]).filter(t=>(t.group??'SCALP')==='SCALP'&&t.at>=Date.parse(day+'T00:00:00Z')&&['SELL','FEE'].includes(t.side)).reduce((n,t)=>n+(Number.isFinite(t.pnlSol)?t.pnlSol:0),0);

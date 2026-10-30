@@ -17,11 +17,13 @@ test('real HTTP denies anonymous/expired logout and private reads, allows signed
   const status=await(await fetch(base+'/api/auth/status')).json();assert.equal(status.authenticated,false);assert.equal(status.signerAvailable,undefined);
   for(const cookie of [null,'mp_session=invalid','mp_session=expired-fixture']){
    for(const endpoint of ['/api/state','/api/activity','/api/export','/api/research','/api/research/candidates/status']){const r=await fetch(base+endpoint,{headers:cookie?{Cookie:cookie}:{}});assert.equal(r.status,401,endpoint);const body=await r.text();assert.doesNotMatch(body,/positions|balanceSol|signerAvailable|privateKey/);}
+   const blocked=await post('/api/rules/wallets',{text:'# allow-empty'},cookie);assert.equal(blocked.status,401);
    const r=await post('/api/auth/logout',{},cookie);assert.equal(r.status,401);assert.equal((await r.json()).code,'OWNER_AUTH_REQUIRED');
   }
   assert.doesNotMatch(output,/LOCAL_SECURITY_DISCONNECT/);
   const challenge=await(await post('/api/auth/challenge',{address:owner})).json(),signature=bs58.encode(sign(null,Buffer.from(challenge.message),keys.privateKey));const login=await post('/api/auth/login',{nonce:challenge.nonce,signature});assert.equal(login.status,200);const cookie=login.headers.get('set-cookie').split(';')[0];
   for(const endpoint of ['/api/state','/api/activity','/api/health']){const r=await fetch(base+endpoint,{headers:{Cookie:cookie}});assert.equal(r.status,200);assert.equal((await r.json()).code,undefined);}
+  const list=await post('/api/rules/wallets',{text:'# allow-empty\n'},cookie);assert.equal(list.status,200);assert.equal((await list.json()).research.walletsListAvailable,true);const badList=await post('/api/rules/wallets',{text:'not-a-public-address'},cookie);assert.equal(badList.status,400);
   const state=await(await fetch(base+'/api/state',{headers:{Cookie:cookie}})).json();assert.equal(state.ownerAuthenticated,true);assert.equal(state.cashSol,4.25);
   const cross=await fetch(base+'/api/auth/logout',{method:'POST',headers:{...headers,Origin:'https://other.invalid',Cookie:cookie},body:'{}'});assert.equal(cross.status,403);assert.doesNotMatch(output,/LOCAL_SECURITY_DISCONNECT/);
   const logout=await post('/api/auth/logout',{},cookie);assert.equal(logout.status,200);await delay(20);assert.equal((output.match(/LOCAL_SECURITY_DISCONNECT/g)??[]).length,1);assert.equal((await fetch(base+'/api/state',{headers:{Cookie:cookie}})).status,401);assert.equal((await post('/api/auth/logout',{},cookie)).status,401);

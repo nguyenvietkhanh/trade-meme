@@ -4,3 +4,10 @@ node_modules/
 public/wallet.js
 *.log
 public/paper-wallet.js
+
+# Standalone observer secrets, generated CSV and Python cache
+**/__pycache__/
+tools/pumpfun-scanner/scanner.env
+tools/pumpfun-scanner/scanner-data/
+tools/pumpfun-scanner/analysis.json
+wallets.txt
