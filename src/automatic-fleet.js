@@ -1,3 +1,4 @@
+import {withRpcPriority} from './rpc-priority.js';
 import {observeDatasetError} from './dataset-observe.js';
 import {tradingProduct} from './trading-product.js';
 import {LiveFleet} from './live-fleet.js';
@@ -7,9 +8,10 @@ export class AutomaticFleet extends LiveFleet{
  error(error){observeDatasetError(this.dataset,error);const now=Date.now(),message=(this.mode??'live').toUpperCase()+' · '+(error.bot??'data')+': '+(error.message??String(error)),prior=this.errors.find(e=>e.message===message&&now-e.at<30000);if(prior){prior.count=(prior.count??1)+1;prior.lastAt=now;return;}super.error(error);this.errors[0].count=1;this.errors[0].lastAt=now;}
  async prepareModelContext(context){if(!this.product.spotEntriesAllowed)return {...context,candidates:[],wallet:{...context.wallet,running:false},transition:{target:this.product.label,spotEntriesAllowed:false,perpsEnabled:false,task:'Manage existing spot holdings only. Do not propose new spot buys or derivatives orders.'}};const read=this.treasury.execution.readModelMintFacts;let facts={};if(typeof read==='function')try{facts=await read.call(this.treasury.execution,context.candidates.map(c=>c.mint));}catch{}return {...context,candidates:context.candidates.map(c=>({...c,mintSafety:facts[c.mint]??{status:'unknown',facts:null,reason:'MINT_FACTS_NOT_AVAILABLE'},otherSecurity:{holders:null,lpLock:null,rugCheck:null,note:'Not verified by the supplied data; never imply certified safety'}}))};}
  async load(){await super.load();await this.treasury.adoptPortfolio();this.publish();}
+ async refreshBalance(){if(this.balanceJob)return this.balanceJob;if(!this.treasury.balanceRestored&&this.treasury.balanceAt>0&&this.clock()-this.treasury.balanceAt<4000)return;this.balanceJob=withRpcPriority('background',()=>this.treasury.sync()).catch(e=>{this.treasury.balanceError=e.code==='RPC_UNAVAILABLE'?'RPC_UNAVAILABLE':'BALANCE_READ_FAILED';}).finally(()=>{this.balanceJob=null;this.publish();});return this.balanceJob;}
  async pulse(){
   try{
-   if(this.meta.walletAuthorized&&!this.treasury.signingReady()){
+   if(this.meta.walletAuthorized&&(!this.treasury.signingReady()||this.treasury.connectionError)){
     if(this.clock()<(this.reconnectAt??0))return;
     this.reconnectAt=this.clock()+15000;
     await this.connectWallet({resumeBuys:this.meta.buyEnabledWanted!==false});
