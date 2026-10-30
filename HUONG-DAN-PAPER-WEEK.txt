@@ -1,0 +1,115 @@
+MEME PILOT - PAPER WEEK - CHI SOL AO
+Ban LIVE tai commit 6dc5158 duoc giu nguyen. Nhanh nay: codex/paper-week.
+Khong ket noi vi, khong can private key, khong ky/gui giao dich.
+Khong chuyen lai ve vi that. So du, lenh, phi va PnL deu la mo phong.
+
+CHAY WINDOWS
+1. Cai Node.js 24 LTS neu chua co.
+2. Giai nen vao thu muc rieng; khong chep de len thu muc LIVE.
+3. Chay START-PAPER-WEEK.cmd. Lan dau no tao va mo paper-week.env.
+4. Dien key Helius da co, TELEGRAM_BOT_TOKEN va TELEGRAM_CHAT_ID.
+   Khong gui cac gia tri bi mat vao chat. Khong dien key vi.
+5. Luu file, chay lai START-PAPER-WEEK.cmd.
+6. Mo http://127.0.0.1:3100 tren may tinh. Muon xem bang iPhone trong
+   cung Wi-Fi, dat HOST=0.0.0.0 va mo http://IP-LAN-MAY-TINH:3100.
+   Khong mo port may tinh ra Internet.
+7. May phai bat, khong sleep; Telegram duoc gui tu may nay.
+   Tat/ngu may se dung quet. Restart giu so du/vi the ao da luu.
+
+MAC DINH
+- 0.5 SOL ao; doi PAPER_WEEK_INITIAL_SOL TRUOC lan chay dau.
+- PAPER_WEEK_DAYS=7. Sau 7 ngay ngung mo lenh moi; van theo doi
+  SELL ao cho vi the dang mo. Khong ep khop lenh khi thieu quote.
+- Bao cao 23:59 Asia/Ho_Chi_Minh moi ngay, gom caption PnL va file TXT.
+- Nhan file qua Telegram sendDocument, khong can bot nhan lenh.
+- Du lieu rieng trong .paper-week; khong doc/sua ledger LIVE.
+- Khong them API tra phi. Co the dung RPC cong khai khi khong co key,
+  nhung rate limit/degraded duoc ghi unavailable, khong gia lap du lieu.
+
+RULE VA DU LIEU THIEU
+Dung ham danh gia PROJECT RULES hien tai: risk 1.5%, max 4, top10<22,
+dev<4, curve15-75, <=3 creation-block buyers, socials, wallets.txt,
+stop-30%, chot40% tai2x, nghi BUY01-08 gio VN va60phut sau2vi the thua.
+Cac bang chung can thiet van phai xac minh. Khong bo chan an toan de
+lam cho bao cao dep. Neu socials/creation-block/blacklist chua co,
+co the KHONG CO LENH trong tuan; log van cho biet ly do WATCH/SKIP.
+Tao file .paper-week\wallets.txt (dia chi public, moi dong mot vi).
+Neu chu dong khong co dia chi chan, file phai co dong # allow-empty.
+PAPER_WEEK_WALLETS_FILE co the tro toi file public da co.
+PROJECT_RESEARCH_URL tuy chon dung contract trong docs/PROJECT-RULES-V6.md;
+khong co dich vu nay tu dong duoc dang ky/cap key. Thieu de unverified.
+
+MO PHONG KHOP LENH
+- Gia/du lieu/quote la doc that tu nguon cong khai va RPC.
+- Chi khop ao khi co quote moi SAU it nhat2giay tu quyet dinh.
+- Dung minimum output, tru phi mang gia dinh0.000025 SOL/leg.
+- Rent0.00203928 SOL/vi the: khoa ao, gia dinh hoan khi dong het.
+- Slippage la gia dinh bao thu: khong phai slippage da do tren chain.
+- Pump curve dung SDK quote read-only; sau migrate dung quote Jupiter
+  chi doc. 429/route loi khong tao fill, khong tao PnL gia.
+- Equity stale de null; khong diem lai gia lich su 23:59 de gia lap.
+- Khong co mo hinh cho priority auction, MEV, do tre fill thuc, failed
+  transaction fees hay thanh khoan bi rut giua quote va execute.
+Vi vay ket qua SOL ao khong chung minh bot LIVE se lai tuong tu.
+
+FILE TXT TRAINING
+Training records nam trong .paper-week\training-YYYY-MM-DD.txt:
+JSONL: schemaVersion, simulation, at, candidate, snapshot, decision,
+inputs/rule checks, missing evidence, virtual_fill, sampled_outcome.
+Bao cao report-YYYY-MM-DD.txt gom cau hinh/rule, phi/rent, PnL ao,
+counts, coverage/dropped, vi the con mo va records cua ky bao cao.
+Ngay file tinh theo cutoff23:59VN, khong phai ngayUTC.
+Day la du lieu de phan tich/training sau nay; KHONG tu train AI.
+Snapshot T0/1/5/15/30/60phut chi ghi khi token con trong feed;
+null/gap/onTime=false khong phai du lieu day du. Dinh/day chi sampled.
+Quyet dinh giong nhau duoc lay mau toi da1lan/10phut/token; counts
+van duoc cap nhat. Snapshot va fill co schema rieng.
+
+BO NHO/DIA
+Cache ung vien128, marks256, trade summaries500. Khong chay AI/worker.
+Training toi da2MiB/ngay; tong TXT32MiB, luu toi da9ngay va don file cu.
+Neu cham tran, dropped duoc ghi; PnL ngay dung bo dem trong ledger ao,
+khong cong rieng cac dong training bi thieu. Ban bao cao co the khong
+replay day du khi storage dropped. Can luu file Telegram tren may.
+Khong xoa .paper-week khi dang chay. Tat chuong trinh truoc khi reset.
+Muon reset: doi ten thu muc .paper-week va bat lai; se tao phien moi.
+Khong doi so du khoi tao giua phien: ledger hien co luon duoc giu.
+
+TELEGRAM
+HTTP429/tu choi ro rang: thu lai co backoff. Timeout khong ro da nhan
+thi khong tu gui lai de tranh trung lap.
+Neu status=unknown/sending sau timeout, chuong trinh KHONG tu gui lai
+vi Telegram co the da nhan. File TXT van tai duoc tu UI. Cac ky sau
+van gui rieng. Neu tat may luc23:59, khi bat lai se tao bao cao bu ky
+con luu du lieu; khong tai tao gia/cash chinh xac tai thoi diem da bo lo.
+
+RAILWAY (NEU CHON)
+Tao SERVICE RIENG tu nhanh codex/paper-week, khong sua service LIVE.
+Nhanh nay railway.json va npm start da tro ve paper-week/bootstrap.js.
+Dat HOST=0.0.0.0, PAPER_WEEK_INITIAL_SOL=0.5, PAPER_WEEK_DAYS=7,
+HELIUS_API_KEY, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID. KHONG copy signer.
+Gan Volume rieng /data de giu ledger ao; du lieu trong /data/paper-week.
+Khong dung chung Volume hay sua Variables cua LIVE. Khong co Volume,
+redeploy co the mat ket qua ao. Service them se tieu thu tai nguyen/credit.
+Ban nay chua tu tao/deploy service moi.
+
+KIEM TRA
+node --test paper-week/test/*.test.js
+npm start
+Sau1tuan: so sanh PnL sau phi, ty le win, ruleSKIP, so fill va gaps.
+Duoi200vi the dong: chua du ket luan. Khong tu dong noi long rule.
+
+PHAN TICH OFFLINE SAU TUAN
+node paper-week/analyze.js .paper-week > ket-qua-tuan.txt
+Chi doc TXT dang luu; duplicate fill ID duoc loai. Bao cao trung vi
+chi so cua vi the AO thang/thua; khong bien sampled_outcome thanh
+nhan WIN/RUG da xac minh. File bi don/drop thi replay chi la retained.
+
+KET QUA KIEM THU BAN GIAO
+- 11 test mo phong/bao cao/storage/capability: PASS.
+- Server da khoi dong that o moi truong kiem tra; health=PAPER_WEEK,
+  signing=false; endpoint dieu khien LIVE bi tu choi405.
+- Smoke test dung0.5SOLao,0ungvien,0lenh; nguoncongkhai unavailable
+  trong moi truong nay. Khong xem ket qua0lenh nay la hieu qua chien luoc.
+- Chua gui Telegram that (chua cau hinh credential o ban paper).
+- Chua chay du7ngay; chua chay thu tren mayWindows cua ban.

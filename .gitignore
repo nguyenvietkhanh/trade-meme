@@ -11,3 +11,7 @@ tools/pumpfun-scanner/scanner.env
 tools/pumpfun-scanner/scanner-data/
 tools/pumpfun-scanner/analysis.json
 wallets.txt
+
+# Isolated virtual experiment
+.paper-week/
+paper-week.env

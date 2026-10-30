@@ -1,0 +1,28 @@
+SCHEMA v1 - VIRTUAL EXPERIMENT ONLY
+
+Each TXT record: JSON object per line; schemaVersion=1, simulation=true,
+runId, type, UTC epoch-ms at. This is a research dataset, not trained model weights.
+
+session: rule configuration, baseline virtual SOL, fee/rent/fill assumptions.
+candidate: mint/pool, discovery source, firstSeenAt; absent fields stay null.
+snapshot: mint/pool, minute0/1/5/15/30/60, observedAt, onTime,
+priceSol/USD, mcap, liquidityUSD, volume5m, buys/sells, change5m, source.
+decision: input values, risk/account VIRTUAL state, rule checks/thresholds,
+score (coverage, not win probability), verdict, unavailable reasons.
+quote_unavailable / quote_unverified / fill_rejected: no virtual fill occurred.
+virtual_fill: unique order and position IDs; BUY/SELL, raw quantity,
+quote timestamp/provider, assumed minimum output, fee/rent, partial/full exit,
+net realized PnL, position PnL only when closed. No on-chain signature exists.
+sampled_outcome: sampled maximum gain / minimum return / return60m,
+anchor timestamp, sample count/max gap. Label=UNVERIFIED_SAMPLED_ONLY.
+These are not continuous extrema, executable exits or independently verified rugs.
+
+Daily report TXT: configuration, period/cutoff, virtual net realized PnL,
+fees, wins/closed, current virtual portfolio with reportObservedAt,
+coverage/drop counts and retained JSONL records. equityAtCutoff=null unless
+verified; current equity must not be read as historical cutoff equity.
+
+Analysis deduplicates order IDs and compares initial virtual-position features
+between virtual winners and losers. This is not a causal filter audit or evidence
+that skipped tokens would have been tradable. Under200closed: insufficient sample.
+Never mix simulation=true rows with LIVE receipts as real execution evidence.

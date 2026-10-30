@@ -4,3 +4,5 @@
 node_modules
 test
 *.log
+.paper-week/
+paper-week.env
