@@ -70,12 +70,15 @@ export class SolanaExecution{
  get provider(){return this.heliusConfigured?(this.rpc.rpcDiagnostics?.().activeHost==='mainnet.helius-rpc.com'?'Helius RPC':'Solana RPC công khai · dự phòng Helius'):'Solana RPC công khai';}
  async network(){if(await this.rpc.getGenesisHash()!==MAINNET_GENESIS_HASH)throw new TradePolicyError('RPC không phải Solana mainnet.');}
  async balance(address,minContextSlot){return (await this.rpc.getBalance(new PublicKey(address),minContextSlot?{commitment:'confirmed',minContextSlot}:'confirmed'))/1e9;}
+ pruneMintFacts(now=Date.now()){for(const [mint,at]of this.mintFactsAt)if(now-at>600000){this.mintFacts.delete(mint);this.mintFactsAt.delete(mint);}while(this.mintFacts.size>512){const mint=this.mintFacts.keys().next().value;this.mintFacts.delete(mint);this.mintFactsAt.delete(mint);}}
  async mintCheck(mint){
+  this.pruneMintFacts();
   if(this.mintFacts.has(mint))return this.mintFacts.get(mint);
   const info=await this.rpc.getParsedAccountInfo(new PublicKey(mint)),facts=checkedMintFacts(info.value);
-  this.mintFacts.set(mint,facts);this.mintFactsAt.set(mint,Date.now());return facts;
+  this.mintFacts.set(mint,facts);this.mintFactsAt.set(mint,Date.now());this.pruneMintFacts();return facts;
  }
  async readModelMintFacts(mints){
+  this.pruneMintFacts();
   const result={},missing=[];
   for(const mint of [...new Set(mints)].slice(0,100)){
    if(this.mintFacts.has(mint)){result[mint]={status:'verified',facts:this.mintFacts.get(mint),checkedAt:this.mintFactsAt.get(mint)??null};continue;}
@@ -86,7 +89,7 @@ export class SolanaExecution{
    if(!Array.isArray(r.value)||r.value.length!==missing.length||!Number.isSafeInteger(r.context?.slot))throw Error('Incomplete mint facts');
    for(const [i,{mint}]of missing.entries())try{const facts=checkedMintFacts(r.value[i]),checkedAt=Date.now();this.mintFacts.set(mint,facts);this.mintFactsAt.set(mint,checkedAt);result[mint]={status:'verified',facts,checkedAt,slot:r.context.slot};}catch(error){result[mint]={status:'rejected',facts:null,reason:error instanceof TradePolicyError?error.message:'UNVERIFIED_MINT',checkedAt:Date.now(),slot:r.context.slot};}
   }catch{for(const {mint}of missing)result[mint]={status:'unknown',facts:null,reason:'RPC_MINT_FACTS_UNAVAILABLE'};}
-  return result;
+  this.pruneMintFacts();return result;
  }
  async runnerPoolDepth(m){const state=await pumpAmmClient(this.rpc).swapSolanaState(new PublicKey(m.pairAddress),new PublicKey(DEFAULT_OWNER));if(state.pool.baseMint.toBase58()!==m.mint||state.pool.quoteMint.toBase58()!==SOL||!poolPda(state.pool.index,state.pool.creator,state.pool.baseMint,state.pool.quoteMint).equals(new PublicKey(m.pairAddress)))throw Error('RUNNER_POOL_IDENTITY_UNVERIFIED');return {at:Date.now(),baseReserveRaw:state.poolBaseAmount.toString(),quoteReserveSol:Number(state.poolQuoteAmount.toString())/1e9,lpMint:state.pool.lpMint.toBase58()};}
  async inspectRunnerFacts(m){const facts=await this.inspectMarketFacts(m),depth=await this.runnerPoolDepth(m),supply=await this.rpc.getTokenSupply(new PublicKey(depth.lpMint));return {...facts,...depth,lpLockedOrBurned:BigInt(supply.value.amount)===0n?true:null,lpProof:BigInt(supply.value.amount)===0n?'onchain_lp_supply_zero':'LP_LOCK_UNVERIFIED'};}

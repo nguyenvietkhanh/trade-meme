@@ -35,7 +35,7 @@ export class ProjectResearch{
  async read(m,facts){
   await this.list();const now=this.clock(),key=m.mint+':'+m.pairAddress,old=this.cache.get(key);
   if((!old||now-old.checkedAt>=60000)&&!this.busy&&now>=this.nextAt){this.busy=true;this.nextAt=now+this.interval;
-   this.job=withRpcPriority('research',()=>this.probe(m)).then(value=>{this.cache.set(key,value);while(this.cache.size>128)this.cache.delete(this.cache.keys().next().value);}).catch(()=>{this.cache.set(key,{checkedAt:this.clock(),status:'unavailable'});}).finally(()=>{this.busy=false;});
+   this.job=withRpcPriority('research',()=>this.probe(m)).then(value=>{this.cache.set(key,value);while(this.cache.size>128)this.cache.delete(this.cache.keys().next().value);}).catch(()=>{this.cache.set(key,{checkedAt:this.clock(),status:'unavailable'});}).finally(()=>{while(this.cache.size>128)this.cache.delete(this.cache.keys().next().value);this.busy=false;});
   }
   const evidence=old&&now-old.checkedAt<=60000?old:{checkedAt:now,status:'pending'},addresses=facts.top10Wallets;
   return {...evidence,top10Wallets:addresses??null,top10WalletsVerified:facts.top10ExcludesPool===true&&Array.isArray(addresses),walletsListAvailable:this.walletsAvailable,blockedWalletMatches:this.walletsAvailable&&Array.isArray(addresses)?addresses.filter(w=>this.wallets.has(w.address??w)).map(w=>w.address??w):null};

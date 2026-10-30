@@ -16,6 +16,14 @@ export function rpcConfiguration(apiKey=process.env.HELIUS_API_KEY){
 export const MAINNET_GENESIS_HASH='5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d';
 class RpcFailure extends Error{constructor(message,extra={}){super(message);Object.assign(this,extra);}}
 const WRITES=new Set(['sendTransaction','requestAirdrop']);
+async function boundedRpcJson(response,limit){
+ const tooLarge=()=>new RpcFailure('RPC_RESPONSE_TOO_LARGE');
+ if(Number(response.headers?.get?.('content-length'))>limit){await response.body?.cancel();throw tooLarge();}
+ const reader=response.body?.getReader();if(!reader)throw new RpcFailure('RPC_BODY_UNAVAILABLE');
+ const chunks=[];let bytes=0;try{for(;;){const r=await reader.read();if(r.done)break;bytes+=r.value.byteLength;if(bytes>limit){await reader.cancel();throw tooLarge();}chunks.push(Buffer.from(r.value));}}finally{reader.releaseLock();}
+ return JSON.parse(Buffer.concat(chunks,bytes).toString('utf8'));
+}
+
 
 // Reads may fail over/coalesce. Signed broadcasts are never replayed or coalesced.
 export function keylessConnection(endpoints=PUBLIC_RPC_ENDPOINTS,{clock=Date.now,random=Math.random,preferPrimary=false}={}){
@@ -23,7 +31,7 @@ export function keylessConnection(endpoints=PUBLIC_RPC_ENDPOINTS,{clock=Date.now
  let active=0,lastFailures=[];const verified=new Map(),checking=new Map(),pending=new Map(),methods=new Map();
  const health=endpoints.map(()=>({failures:0,retryAt:0,epoch:0,reason:null}));
  const lanes=endpoints.map(()=>rpcScheduler());
- const request=(url,options)=>lanes[endpoints.indexOf(url)](JSON.parse(options.body).method,()=>{if(health[endpoints.indexOf(url)].retryAt>clock())throw new RpcFailure('RPC tạm chờ hồi phục',{waiting:true});return fetch(url,{...options,redirect:'error',signal:AbortSignal.timeout(10000)});});
+ const request=(url,options)=>{const method=JSON.parse(options.body).method;return lanes[endpoints.indexOf(url)](method,async()=>{if(health[endpoints.indexOf(url)].retryAt>clock())throw new RpcFailure('RPC tạm chờ hồi phục',{waiting:true});const response=await fetch(url,{...options,redirect:'error',signal:AbortSignal.timeout(10000)});if(!response.ok){await response.body?.cancel();return response;}const data=await boundedRpcJson(response,method==='getGenesisHash'?65536:8*1024*1024);return {ok:true,json:async()=>data};});};
  const httpError=response=>new RpcFailure('HTTP '+response.status,{status:response.status,retryAfter:retryAfterMs(response.headers.get('retry-after'),clock())});
  const check=async url=>{
   if(verified.has(url)&&clock()-verified.get(url)<60000)return;

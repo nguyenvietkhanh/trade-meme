@@ -1,5 +1,5 @@
 import path from 'node:path';
-import {mkdir,readFile,readdir} from 'node:fs/promises';
+import {mkdir,readFile,readdir,open} from 'node:fs/promises';
 import {writeDurable} from './persistence.js';
 import {PaperReports} from './paper-reports.js';
 import {nextPaperReportEnd} from './paper-schedule.js';
@@ -8,8 +8,8 @@ export class FleetReports extends PaperReports{
  constructor(dir,research){super(dir,research);this.fleetDir=dir;}
  async document(ref){const content=await readFile(this.file(ref)),doc=JSON.parse(content);if(doc.reportEnd!==ref.end||doc.part!==ref.part||!['paper','live'].includes(doc.mode))throw Error('Invalid fleet report');return {filename:`meme-pilot-${doc.mode}-${ref.end}-${ref.part}.json`,content};}
  async records(end,from=end-86400000){
-  const rows=[];for(let t=Math.floor(from/86400000)*86400000;t<end;t+=86400000){const dir=path.join(this.fleetDir,'fills',new Date(t).toISOString().slice(0,10));let names;try{names=await readdir(dir);}catch(e){if(e.code==='ENOENT')continue;throw e;}
-   for(const name of names.filter(n=>/^[a-z]+\.jsonl$/.test(n))){const lines=(await readFile(path.join(dir,name),'utf8')).trim().split('\n');for(const line of lines){if(!line)continue;const f=JSON.parse(line);if(f.at>=from&&f.at<end)rows.push(f);}}
+  const rows=[];let retainedBytes=0;for(let t=Math.floor(from/86400000)*86400000;t<end;t+=86400000){const dir=path.join(this.fleetDir,'fills',new Date(t).toISOString().slice(0,10));let names;try{names=await readdir(dir);}catch(e){if(e.code==='ENOENT')continue;throw e;}
+   for(const name of names.filter(n=>/^[a-z]+\.jsonl$/.test(n))){const handle=await open(path.join(dir,name),'r');let text;try{const size=(await handle.stat()).size;if(size>8*1024*1024-retainedBytes)throw Error('REPORT_MEMORY_BUDGET_EXCEEDED');const buffer=Buffer.alloc(size);let offset=0;while(offset<size){const read=await handle.read(buffer,offset,size-offset,offset);if(!read.bytesRead)break;offset+=read.bytesRead;}retainedBytes+=offset;text=buffer.subarray(0,offset).toString('utf8');}finally{await handle.close();}const lines=text.trim().split('\n');for(const line of lines){if(!line)continue;const f=JSON.parse(line);if(f.at>=from&&f.at<end)rows.push(f);}}
   }
   return [...new Map(rows.map(f=>[f.id,f])).values()].sort((a,b)=>a.at-b.at);
  }
