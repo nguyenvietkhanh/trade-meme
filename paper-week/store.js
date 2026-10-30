@@ -1,6 +1,6 @@
 import path from 'node:path';
 import {mkdir,open,readdir,lstat,unlink,readFile} from 'node:fs/promises';
-import {writeDurable} from '../src/persistence.js';
+import {writePaperFile as writeDurable} from './persistence.js';
 import {paperReportEnd,nextPaperReportEnd} from '../src/paper-schedule.js';
 export const dayFor=at=>new Date(nextPaperReportEnd(paperReportEnd(at))+7*3600000).toISOString().slice(0,10);
 const NAME=/^(training|report)-\d{4}-\d{2}-\d{2}\.txt$/;

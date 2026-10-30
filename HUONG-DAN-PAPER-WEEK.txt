@@ -113,3 +113,10 @@ KET QUA KIEM THU BAN GIAO
   trong moi truong nay. Khong xem ket qua0lenh nay la hieu qua chien luoc.
 - Chua gui Telegram that (chua cau hinh credential o ban paper).
 - Chua chay du7ngay; chua chay thu tren mayWindows cua ban.
+
+VA WINDOWS EPERM FSYNC
+Ban va Windows dong bo noi dung file truoc atomic rename, nhung khong
+fsync thu muc (Node tren Windows khong ho tro thao tac do).
+Khong bo qua loi fsync cua file. Linux van fsync ca file va thu muc.
+16testPASS, gom mo phong nhanhwin32 va filesystemLinux; chua xac minh
+tren mayWindows cua ban. Cap nhat code khong can xoa .paper-week.

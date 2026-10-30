@@ -1,0 +1,12 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {mkdtemp,readFile,rm} from 'node:fs/promises';
+import path from 'node:path';
+import {tmpdir} from 'node:os';
+import {writePaperFile} from '../persistence.js';
+function fixture({fileError=false,directoryError=false}={}){const calls=[];return {calls,io:{open:async(file,mode)=>{const kind=mode==='w'?'file':'directory';calls.push('open:'+kind);return {writeFile:async()=>calls.push('write'),sync:async()=>{calls.push('sync:'+kind);if(kind==='file'&&fileError||kind==='directory'&&directoryError)throw Object.assign(Error('sync failed'),{code:'EPERM'});},close:async()=>calls.push('close:'+kind)};},rename:async()=>calls.push('rename')}};}
+test('Windows syncs file before rename and never attempts unsupported directory fsync',async()=>{const f=fixture({directoryError:true});await writePaperFile('/paper/state.json',{}, {platform:'win32',io:f.io});assert.deepEqual(f.calls,['open:file','write','sync:file','close:file','rename']);});
+test('Windows file fsync failure is never ignored and never replaces prior state',async()=>{const f=fixture({fileError:true});await assert.rejects(writePaperFile('/paper/state.json',{}, {platform:'win32',io:f.io}),{code:'EPERM'});assert.ok(!f.calls.includes('rename'));assert.ok(f.calls.includes('close:file'));});
+test('Linux retains directory fsync after atomic replacement',async()=>{const f=fixture();await writePaperFile('/paper/state.json',{}, {platform:'linux',io:f.io});assert.deepEqual(f.calls,['open:file','write','sync:file','close:file','rename','open:directory','sync:directory','close:directory']);});
+test('Linux directory failures propagate and the handle is closed',async()=>{const f=fixture({directoryError:true});await assert.rejects(writePaperFile('/paper/state.json',{}, {platform:'linux',io:f.io}),{code:'EPERM'});assert.equal(f.calls.at(-1),'close:directory');});
+test('real filesystem initial write and replacement preserve JSON across both platform paths',async()=>{const dir=await mkdtemp(path.join(tmpdir(),'paper-portable-'));try{const file=path.join(dir,'state.json');await writePaperFile(file,{cash:500000000},{platform:'win32'});assert.equal(JSON.parse(await readFile(file,'utf8')).cash,500000000);await writePaperFile(file,{cash:490000000});assert.equal(JSON.parse(await readFile(file,'utf8')).cash,490000000);}finally{await rm(dir,{recursive:true,force:true});}});
