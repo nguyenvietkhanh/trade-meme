@@ -59,16 +59,17 @@ test('failed refresh never relabels old data as fresh or creates an order',async
 });
 
 // The new strategy is tested with explicit synthetic quotes, never live transactions.
-const {momentumConfig,MOMENTUM_VERSION}=await import('../momentum.js');
-async function momentumSetup(t,{venue='pumpfun',cash=20}={}){
+const {momentumConfig,MOMENTUM_VERSION,MOMENTUM_V1}=await import('../momentum.js');
+const legacyMomentumConfig=()=>({...momentumConfig(),version:MOMENTUM_V1,guardedEntry:false});
+async function momentumSetup(t,{venue='pumpfun',cash=20,guarded=false}={}){
  const dir=await mkdtemp(path.join(tmpdir(),'paper-momentum-test-'));t.after(()=>rm(dir,{recursive:true,force:true}));
  let now=Date.parse('2026-10-30T19:30:00Z'),price=.01,change=10,quoteAvailable=true;let evidenceCalls=0;
  const market=(mint='fixture-momentum')=>({mint,pairAddress:'pool-'+mint,symbol:'TEST_FIXTURE',dexId:venue,solUsd:100,solUsdAt:now,spotPriceSol:price,priceUsd:price*100,updatedAt:now,priceAt:now,activityCheckedAt:now,change5mPct:change});
  const adapter={evidence:async()=>{evidenceCalls++;throw Error('strict evidence must not gate momentum');},quote:async order=>{
   if(!quoteAvailable)throw Error('TEST_FIXTURE_NO_ROUTE');
-  return {out:order.side==='BUY'?String(Math.floor(Number(order.amount)/1e9/price*1e6)):String(Math.floor(Number(order.amount)/1e6*price*1e9)),at:now,decimals:6,roundTripLossPct:null,impactPct:null,source:'TEST_FIXTURE'};
+  const out=order.side==='BUY'?String(Math.floor(Number(order.amount)/1e9/price*1e6)):String(Math.floor(Number(order.amount)/1e6*price*1e9));return {out,at:now,decimals:6,roundTripLossPct:null,impactPct:guarded?.5:null,source:'TEST_FIXTURE',...(guarded&&order.side==='BUY'?{roundTrip:{mint:order.mint,pool:order.pool,inAmount:order.amount,sellInput:out,sellOut:'990000000',at:now,impactPct:.5}}:{})};
  }};
- const store=new PaperStore(dir,{clock:()=>now}),engine=new PaperWeek(store,adapter,{initialSol:cash,policy:momentumConfig(),clock:()=>now});await engine.load();
+ const store=new PaperStore(dir,{clock:()=>now}),engine=new PaperWeek(store,adapter,{initialSol:cash,policy:guarded?momentumConfig():legacyMomentumConfig(),clock:()=>now});await engine.load();
  return {dir,store,engine,adapter,market,now:()=>now,advance:n=>now+=n,price:n=>price=n,change:n=>change=n,available:n=>quoteAvailable=n,evidenceCalls:()=>evidenceCalls};
 }
 async function momentumBuy(f,mint){f.advance(1000);await f.engine.step([f.market(mint)]);assert.equal(f.engine.state.pending?.side,'BUY');assert.equal(f.engine.state.pending.amount,'1000000000');f.advance(2000);await f.engine.step([f.market(mint)]);}
@@ -125,7 +126,7 @@ test('BUY is revalidated after delay; falling 5m change cancels it and missing q
 });
 test('restart keeps completed TP steps and cannot sell the first tranche twice',async t=>{
  const f=await momentumSetup(t);await momentumBuy(f);f.price(.02);f.advance(2000);await f.engine.step([f.market()]);f.advance(2000);await f.engine.step([f.market()]);
- const restored=new PaperWeek(new PaperStore(f.dir),f.adapter,{policy:momentumConfig(),clock:f.now});await restored.load();
+ const restored=new PaperWeek(new PaperStore(f.dir),f.adapter,{policy:legacyMomentumConfig(),clock:f.now});await restored.load();
  f.advance(2000);await restored.step([f.market()]);assert.equal(restored.state.positions[0].tpSoldSteps,1);assert.equal(restored.state.pending,null);
  f.price(.03);f.advance(2000);await restored.step([f.market()]);assert.equal(restored.state.pending.reason,'momentum-tp2');assert.equal(restored.state.pending.amount,'20000000');
 });
@@ -167,4 +168,94 @@ test('a newly triggered stop preempts a take-profit quote waiting on a different
  const rows=(a,b)=>[{...f.market('fixture-A'),spotPriceSol:a,priceUsd:a*100},{...f.market('fixture-B'),spotPriceSol:b,priceUsd:b*100}];
  f.advance(1000);await f.engine.step(rows(.02,.01));assert.equal(f.engine.state.pending.reason,'momentum-tp1');
  f.advance(1000);await f.engine.step(rows(.02,.006));assert.equal(f.engine.state.pending.reason,'stop-loss');assert.equal(f.engine.state.pending.mint,'fixture-B');
+});
+
+async function confirmMomentum(f,mint='fixture-momentum'){
+ for(const [i,price] of [.01,.01006,.01012].entries()){
+  if(i)f.advance(5000);f.price(price);await f.engine.step([f.market(mint)]);
+ }
+}
+test('v2 requires three distinct rising price observations, not just a positive 5m statistic',async t=>{
+ const f=await momentumSetup(t,{guarded:true});await f.engine.step([f.market()]);
+ assert.equal(f.engine.state.pending,null);await f.engine.step([f.market()]);assert.equal(f.engine.state.pending,null);
+ await confirmMomentum(f);assert.equal(f.engine.state.pending.side,'BUY');
+ f.advance(2000);await f.engine.step([f.market()]);assert.equal(f.engine.state.positions.length,1);assert.equal(f.engine.state.counts.virtualBuys,1);
+});
+test('v2 does not enter a currently falling price even if 5m change remains positive',async t=>{
+ const f=await momentumSetup(t,{guarded:true});
+ for(const price of [.01,.0099,.0098,.0097]){f.price(price);await f.engine.step([f.market()]);f.advance(5000);}
+ assert.equal(f.engine.state.pending,null);assert.equal(f.engine.state.counts.virtualBuys,0);
+});
+test('v2 refuses an unverified, expensive or high-impact reverse quote before spending virtual SOL',async t=>{
+ for(const mode of ['missing','cost','impact']){const f=await momentumSetup(t,{guarded:true}),quote=f.adapter.quote;
+  f.adapter.quote=async o=>{const q=await quote(o);if(mode==='missing')delete q.roundTrip;if(mode==='cost')q.roundTrip.sellOut='700000000';if(mode==='impact')q.impactPct=15;return q;};
+  await confirmMomentum(f);f.advance(2000);await f.engine.step([f.market()]);assert.equal(f.engine.state.counts.virtualBuys,0);assert.equal(f.engine.state.cash,20000000000);
+ }
+});
+test('v2 persists a consumed signal across a loss and restart; only a new negative-to-positive cycle rearms it',async t=>{
+ const f=await momentumSetup(t,{guarded:true});await confirmMomentum(f);f.advance(2000);await f.engine.step([f.market()]);
+ f.price(.006);f.advance(2000);await f.engine.step([f.market()]);f.advance(2000);await f.engine.step([f.market()]);assert.equal(f.engine.state.closed,1);
+ const restarted=new PaperWeek(new PaperStore(f.dir),f.adapter,{policy:momentumConfig(),clock:f.now});await restarted.load();f.engine=restarted;
+ await confirmMomentum(f);assert.equal(f.engine.state.pending,null);assert.equal(f.engine.state.counts.virtualBuys,1);
+ f.advance(2000);f.change(-1);await f.engine.step([f.market()]);assert.equal(f.engine.state.entryLocks['fixture-momentum'].armed,true);
+ f.change(10);f.advance(1000);await confirmMomentum(f);assert.equal(f.engine.state.pending.side,'BUY');
+});
+test('slow background BUY quote cannot block a held-position stop, and its late result cannot create a stale buy',async t=>{
+ const f=await momentumSetup(t);await momentumBuy(f,'fixture-A');f.advance(2000);await f.engine.step([f.market('fixture-A'),f.market('fixture-B')]);
+ let resolveBuy;const quote=f.adapter.quote;
+ f.adapter.quote=o=>o.side==='BUY'?new Promise(resolve=>{resolveBuy=resolve;}):quote(o);
+ f.advance(2000);await f.engine.step([f.market('fixture-A'),f.market('fixture-B')]);assert.equal(typeof resolveBuy,'function');
+ f.price(.006);f.advance(1000);await f.engine.step([f.market('fixture-A'),f.market('fixture-B')]);assert.equal(f.engine.state.pending.side,'SELL');
+ f.advance(2000);await f.engine.step([f.market('fixture-A'),f.market('fixture-B')]);assert.equal(f.engine.state.closed,1);
+ resolveBuy({out:'100000000',at:f.now(),decimals:6});await Promise.resolve();
+ f.change(-1);f.advance(1000);await f.engine.step([f.market('fixture-A'),f.market('fixture-B')]);assert.equal(f.engine.state.counts.virtualBuys,1);
+});
+test('v1 position keeps its four-tier exit after upgrading to v2; prior losses and cash are not reset',async t=>{
+ const f=await momentumSetup(t);await momentumBuy(f);f.engine.state.realized-=100000000;f.engine.state.cash-=100000000;await f.store.save(f.engine.state);
+ const upgraded=new PaperWeek(new PaperStore(f.dir),f.adapter,{policy:momentumConfig(),clock:f.now});await upgraded.load();
+ assert.equal(upgraded.state.realized,-100000000);assert.equal(upgraded.state.cash,f.engine.state.cash);assert.equal(upgraded.state.positions[0].exitPolicy.version,MOMENTUM_V1);
+ f.price(.02);f.advance(2000);await upgraded.step([f.market()]);assert.equal(upgraded.state.pending.reason,'momentum-tp1');assert.equal(upgraded.state.pending.amount,'50000000');
+});
+test('cash ledger identity is exact through partial exits; a corrupted ledger cannot silently buy or reset losses',async t=>{
+ const {paperLedgerCheck}=await import('../momentum.js');const f=await momentumSetup(t);await momentumBuy(f);
+ assert.equal(paperLedgerCheck(f.engine.state).verified,true);f.engine.state.cash-=1;
+ f.advance(2000);await f.engine.step([f.market('new-mint')]);assert.equal(f.engine.state.pending,null);assert.equal(f.engine.state.errors[0].code,'PAPER_LEDGER_MISMATCH');
+ assert.equal(paperLedgerCheck(f.engine.state).differenceLamports,1);
+});
+test('PumpSwap V2 mark includes virtual quote reserves in either pool orientation',async()=>{
+ const {poolReservePrice}=await import('../readonly.js');
+ const normal=poolReservePrice([1000000000000n,20000000000n],0,1,6,'80000000000');
+ assert.ok(Math.abs(normal-.0001)<1e-12);
+ // Reversed: quote-side virtual units are TOKEN, not SOL.
+ const reversed=poolReservePrice([100000000000n,500000000000n],1,0,6,'500000000000');
+ assert.ok(Math.abs(reversed-.0001)<1e-12);
+ assert.equal(poolReservePrice([1000000000000n,100000000000n],0,1,6,'0'),normal);
+});
+test('corrected PumpSwap virtual reserves avoid a false stop when effective price equals entry',async t=>{
+ const {poolReservePrice}=await import('../readonly.js');const f=await momentumSetup(t);await momentumBuy(f);
+ const actual=poolReservePrice([10000000000n,20000000000n],0,1,6,'80000000000');
+ assert.equal(actual,.01);assert.ok(.002<f.engine.state.positions[0].entry*.7);
+ f.advance(2000);await f.engine.step([{...f.market(),spotPriceSol:actual}]);assert.equal(f.engine.state.pending,null);assert.equal(f.engine.state.positions[0].memory.stopTriggered,false);
+});
+test('migration checkpoints the depleted ledger and never creates a new 20 SOL balance',async t=>{
+ const f=await momentumSetup(t);await momentumBuy(f);const s=f.engine.state,p=s.positions[0];
+ s.cash=800000000;s.realized=-18697948220;p.basis=500012500;p.rent=2039280;p.raw='50000000';p.tpSoldSteps=1;s.counts.virtualBuys=120;s.counts.virtualSells=135;
+ await f.store.save(s);const second=new PaperWeek(new PaperStore(f.dir),f.adapter,{initialSol:20,policy:momentumConfig(),clock:f.now});await second.load();
+ assert.equal(second.state.cash,800000000);assert.equal(second.state.realized,-18697948220);assert.equal(second.status().accounting.verified,true);
+ const backup=JSON.parse(await readFile(path.join(f.dir,'paper-week-state-before-v2.json'),'utf8'));assert.equal(backup.policyVersion,MOMENTUM_V1);assert.equal(backup.realized,-18697948220);
+ f.advance(2000);await second.step([f.market('new-token')]);assert.equal(second.state.pending,null);assert.equal(second.state.counts.virtualBuys,120);
+});
+test('a slow candidate RPC read does not prevent a held-position stop from being scheduled',async t=>{
+ const f=await momentumSetup(t);await momentumBuy(f,'fixture-A');
+ const second=new PaperWeek(new PaperStore(f.dir),f.adapter,{policy:momentumConfig(),clock:f.now});await second.load();f.engine=second;
+ let release;f.adapter.refreshCandidate=()=>new Promise(resolve=>{release=resolve;});f.advance(2000);
+ await f.engine.step([f.market('fixture-A'),f.market('fixture-B')]);assert.equal(typeof release,'function');
+ f.price(.006);f.advance(1000);await f.engine.step([f.market('fixture-A'),f.market('fixture-B')]);assert.equal(f.engine.state.pending.reason,'stop-loss');
+ release(null);
+});
+test('guarded stop records a real quoted loss beyond -30%, never clips it to improve paper PnL',async t=>{
+ const f=await momentumSetup(t,{guarded:true});await confirmMomentum(f);f.advance(2000);await f.engine.step([f.market()]);
+ f.price(.005);f.advance(2000);await f.engine.step([f.market()]);f.advance(2000);await f.engine.step([f.market()]);
+ assert.equal(f.engine.state.closed,1);assert.ok(f.engine.state.realized< -300000000);assert.equal(f.engine.state.cash-f.engine.state.initial,f.engine.state.realized);
+ const sell=f.engine.state.trades.find(t=>t.side==='SELL');assert.ok(sell.trigger.priceMultiple<.7);assert.ok(sell.decisionToQuoteMs>=2000);
 });

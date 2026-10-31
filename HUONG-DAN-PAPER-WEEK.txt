@@ -3,7 +3,7 @@ Nhanh codex/paper-week. Ban LIVE duoc giu nguyen.
 Khong ket noi vi, khong can private key, khong ky/gui giao dich.
 Khong chuyen lai ve vi that. Cash, lenh, phi va PnL deu la mo phong.
 
-RULE MOI: paper-momentum-5m-v1
+RULE MOI: paper-momentum-5m-v2
 - Gia tang trong khung5phut: change5mPct>0 tu nguon quan sat.
 - Ca pump.fun chua migrate va PumpSwap da migrate.
 - Moi lenh dung dung1SOL ao tien goc; phi/rent tru rieng.
@@ -12,7 +12,15 @@ RULE MOI: paper-momentum-5m-v1
 - Stoploss -30% gia vao BAN DAU, ban het phan con lai. Khong doi stop.
 - Xet lien tuc moi giay,24/7, khong nghi sau thua, khong cooldown.
 - Khong gioi han4vi the. Mo toi khi cash khong du1SOL+phi+rent.
-- Khong mo trung mint khi van con vi the. Dong xong co the vao lai.
+- Khong mo trung mint khi van con vi the. Sau khi dong, khoa cung mint
+  tren tin hieu5m cu. Chi mo lai khi5m da ve<=0 sau dong, roi duong lai.
+  Khoa duoc luu qua restart, ke ca khi doi pool/migrate.
+- Xac nhan3mau gia moi khac thoi diem trong it nhat10giay: tang>=0.5%,
+  mau cuoi khong giam so voi mau truoc, pullback tu dinh<=1.5%.
+- TruocBUY doc quoteSELL cho DUNG so tokenmin-output se mua ao.
+  Khong co routeSELL thi khongBUY. Impact moi leg<=3%; hao hut khoi hoi
+  min-output ke ca2phi gia dinh<=12%. Day la tham so nghien cuu chua
+  duoc chung minh toi uu, khong phai ket qua backtest loi nhuan.
 - Bo chan holder, dev, socials, creation-block, wallets.txt, curve15-75,
   min volume, buy/sell ratio va risk1.5% cua PROJECT RULES cu.
 - Khong chung nhan token an toan. Bang chung thieu van la unverified.
@@ -40,6 +48,7 @@ CAP NHAT BAN CU
 - Script tai/stage toan bo file code can thiet, kiem tra SHA256/syntax,
   tao .paper-code-backup-TIMESTAMP, sau do moi thay code.
 - KHONG XOA .paper-week, paper-week.env hay file bao cao.
+- Lan dau nangv2 luu paper-week-state-before-v2.json truoc khi doi rule.
 - Cash/vi the/ket qua/bao cao cu giu nguyen; pendingBUY rule cu bi huy.
 - Vi the rule cu giu exitPolicy cu. Lenh moi dung ladder50/20/20/10.
 - Bo dem skip cu duoc reset khi chuyen chien luoc; TXT cu van duoc giu.
@@ -79,3 +88,16 @@ TRAINING/TELEGRAM
 RAILWAY
 Neu dung, tao SERVICE vaVOLUME RIENG cho PAPER. Khong doiLIVE.
 Nhanh nay npmstart/Dockerfile chi chaypaper-week/bootstrap.js.
+
+BANV2: SUA GIA VA SO SACH
+- GiaPumpSwapV2 gom virtualQuoteReserves o PHIAQUOTE cua pool, khong
+  mac dinh virtual reserve luon laWSOL neu pool dao chieu.
+- BUY quote va RPC gia ung vien chay background co gioi han; SELL/stop
+  khong phai cho doc xong entry. Ket qua quote muon cuaBUY da huy bi bo.
+- Logthem gia/thoi diem kich hoat thoat va do tre decision-to-quote.
+- Doi soat: initial+realizedPnL = cash+costbasisconmo+rentdangkhoa.
+  Lech so sach thi dungfill de kiem tra, khong tu sua so du hay xoa lo.
+- Loi cu KHONG duoc bien thanh0. Khong tu nap lai20SOL. Cash<1SOL+phi
+  thi khong mo duoc lenh1SOL moi cho den khi co von ao du.
+- Khong thay doi1SOL/lenh, SL30%, ladder50/20/20/10, hay Telegram23:59.
+- Sua loi code khong phai bang chung chien luocv2 se co lai.

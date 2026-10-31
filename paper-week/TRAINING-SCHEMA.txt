@@ -37,3 +37,15 @@ Order principal=1SOL; stop price=0.7*initial entry; TP fractions of INITIAL raw
 quantity=50/20/20/final remainder at2x/3x/5x/10x. Final sale closes rounding dust.
 position.tpSoldSteps persists only after confirmed virtual sale; restart cannot
 repeat a completed tranche. Fees/rent and cash conservation remain unchanged.
+
+V2 correctness + research gates (not fitted to historical trades):
+entry_confirmation: samples/span/rise/pullback/lastAt from bounded fresh prices.
+entry_roundtrip: exact min-output tokens, reverse min-output SOL, two assumed
+network fees, impact per leg. No sell route -> no BUY. Min-output loss is a
+conservative scenario, not measured slippage or expected realized cost.
+entryLocks: persistent per-mint consumed signal, last exit and fresh negative
+reset timestamps. Changing pool or restarting does not clear a consumed cycle.
+SELL trigger: original entry price, trigger price/time/multiple and quote delay.
+accounting: exact lamport cash/basis/rent/realized-PnL conservation check.
+policyHistory keeps v1 results distinct from v2. No old trade is re-priced or
+loss erased by an upgrade. All claims remain simulation-only, not real receipts.

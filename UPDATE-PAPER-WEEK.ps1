@@ -10,7 +10,7 @@ $base = "https://raw.githubusercontent.com/nguyenvietkhanh/trade-meme/$Revision"
 $allowed = @('package.json', 'README.md', 'HUONG-DAN-PAPER-WEEK.txt', 'paper-week.env.example',
     'paper-week/engine.js', 'paper-week/momentum.js', 'paper-week/readonly.js', 'paper-week/market.js',
     'paper-week/server.js', 'paper-week/app.js', 'paper-week/index.html', 'paper-week/TRAINING-SCHEMA.txt',
-    'paper-week/analyze.js')
+    'paper-week/analyze.js', 'paper-week/store.js')
 $tag = (Get-Date -Format 'yyyyMMdd-HHmmss') + '-' + [guid]::NewGuid().ToString('N').Substring(0, 8)
 $stage = Join-Path (Get-Location) ".paper-code-stage-$tag"
 $backup = Join-Path (Get-Location) ".paper-code-backup-$tag"
@@ -19,7 +19,7 @@ try {
     $manifestPath = Join-Path $stage 'manifest.json'
     Invoke-WebRequest -UseBasicParsing "$base/paper-week/update-manifest.json" -OutFile $manifestPath
     $manifest = Get-Content -Raw -LiteralPath $manifestPath | ConvertFrom-Json
-    if ($manifest.strategy -ne 'paper-momentum-5m-v1' -or @($manifest.files).Count -ne $allowed.Count) {
+    if ($manifest.strategy -ne 'paper-momentum-5m-v2' -or @($manifest.files).Count -ne $allowed.Count) {
         throw 'Unexpected update manifest; no files have been replaced.'
     }
     $names = @{}
@@ -60,7 +60,7 @@ try {
         }
         throw
     }
-    Write-Host "Updated: paper-momentum-5m-v1. Code backup: $backup"
+    Write-Host "Updated: paper-momentum-5m-v2. Code backup: $backup"
     Write-Host 'Virtual balance, .paper-week, paper-week.env and Telegram settings were preserved.'
     Write-Host 'Run START-PAPER-WEEK.cmd to start. No new environment variables are required.'
 } finally {
