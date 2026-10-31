@@ -49,3 +49,14 @@ SELL trigger: original entry price, trigger price/time/multiple and quote delay.
 accounting: exact lamport cash/basis/rent/realized-PnL conservation check.
 policyHistory keeps v1 results distinct from v2. No old trade is re-priced or
 loss erased by an upgrade. All claims remain simulation-only, not real receipts.
+
+MEME-SCALP v1:
+Hourly scalp-YYYY-MM-DD-HH.jsonl.gz decompresses to JSONL. Every A admission
+is logged; async candidate_progress and execution rows carry the same cycle/
+signal identity, reached stage, reason, A/B/C/D/E measured metrics.
+D_INFRA rows explicitly quality_rejection=false; no token-bad inference.
+forward_outcome stores +1/+5/+15m sampled returns/extrema, null if missing.
+hourly_funnel counts observations/attempts; not unique-token win probabilities.
+AI context and output remain null. All rows simulation=true, never live receipts.
+Daily Telegram TXT includes the compressed-file index in currentStatus.scalp.
+Stream the gz archives with analyze.js; fill order IDs deduplicate across copies.

@@ -1,25 +1,25 @@
 {
-  "strategy": "paper-momentum-5m-v2",
+  "strategy": "paper-meme-scalp-entry-v1",
   "files": [
     {
       "path": "package.json",
-      "sha256": "1d21e0d32afc92d8aaa636683c4b872d1e975b847444241f9a4c9b59d2cc0c96"
+      "sha256": "159a070837ac34ec7eec8b32d402322906bdd4edf4013aa510b7bb3463cf03a9"
     },
     {
       "path": "README.md",
-      "sha256": "608e1b2984c7a94b3e0f327ae65aa64ca177fbc36d4031cbcef36a2b1de6e28c"
+      "sha256": "f194dc50fe1094720606c8de001f734476f2ee963a7dd830bbf641412a084c02"
     },
     {
       "path": "HUONG-DAN-PAPER-WEEK.txt",
-      "sha256": "15a35ce1dc4f0e75d25b342fdd2651afc180f7f739fe6f57474de92ea747274f"
+      "sha256": "ce67427da68c91628c03282192fe382fd76cf4e4d1c78920eb2946b75fb2fe78"
     },
     {
       "path": "paper-week.env.example",
-      "sha256": "d75222cfef59df2cce774417f54f2c0396cddd025e941e669de5614d5e3f09b4"
+      "sha256": "6a22e0267867aee719bfec4ed04e148e2ce3ee7fff18b545867ccb142cd75649"
     },
     {
       "path": "paper-week/engine.js",
-      "sha256": "cbd8e7d655d14bf42e99eb2d938006ca786c55001055bfb25ba6788e8a866cf4"
+      "sha256": "32a7d55f3d4494e6232a2d018a7c702f89b969d7bfc201ae5143da286016642d"
     },
     {
       "path": "paper-week/momentum.js",
@@ -27,7 +27,7 @@
     },
     {
       "path": "paper-week/readonly.js",
-      "sha256": "7a730ab0024350e7ca10ccc7ae7d5ca2fedbc3bc214df8880517fa850efa7e1d"
+      "sha256": "b188487eac480f59f413f2d36a6ce63eb85840ae24fd5f74b47e973f22a720a0"
     },
     {
       "path": "paper-week/market.js",
@@ -35,27 +35,63 @@
     },
     {
       "path": "paper-week/server.js",
-      "sha256": "88ec6616c6faf72da37605c519a725e67d58d14b0e7c426e096b256a2b50d0d6"
+      "sha256": "e63cad1e0b2b68bd6ed5a6671f91e047b9310f2bc1105d8e08182a8dffc9fdf6"
     },
     {
       "path": "paper-week/app.js",
-      "sha256": "01a0ee509bc820bd0b3f7bb5e7ef8c63b94ffd633fe51c2b982efef12b4bc266"
+      "sha256": "c7af5f0c8b9ecb77df263c76424d17f5e7622a9e99be97d49d25db536eb58648"
     },
     {
       "path": "paper-week/index.html",
-      "sha256": "278532356d41d627fb28c4027797a7f1c1efe20881106c3f6764095c4a8b0923"
+      "sha256": "d18ce0c4bebf2d9ad4eaa8ed7519f99c8301da26fc8de4539e46ffc07eb1237e"
     },
     {
       "path": "paper-week/TRAINING-SCHEMA.txt",
-      "sha256": "38a74f86ed6e2f6b36f94dda902fcf2861e7ac34a77b1f9330e2e390ca6f56b7"
+      "sha256": "e4cded087258b32a75d046678f3d0b863a8d3e104da14e3a87191ef37a978272"
     },
     {
       "path": "paper-week/analyze.js",
-      "sha256": "96600fe87501503d8ba6e2255c4bf513b79e113f356243464348f1d1822fee8a"
+      "sha256": "039ed44b8b1c2f8e6a99f614178e454d3ccbf844bdd6cc3c566f52bff32698e6"
     },
     {
       "path": "paper-week/store.js",
-      "sha256": "20f56d2e66ab09edcccaa8e1a8de7850d691abf18b962a92bd991b7d86c5c4ff"
+      "sha256": "482fd53cbbd4bd29238f066ae6c28ccf70ef2b19ed884c766ab410ada2b18ca4"
+    },
+    {
+      "path": "paper-week/scalp-config.json",
+      "sha256": "d6e3f543de54c59a8d737435d01c28f1f962fa1e5318a2aa4d0fffa40a0d2013"
+    },
+    {
+      "path": "paper-week/scalp-config.js",
+      "sha256": "65c17893f6325d80cfca26fc67b9e245cc9481a5b55f193e11e462e7589fe5d5"
+    },
+    {
+      "path": "paper-week/scalp-stages.js",
+      "sha256": "f041e5bf489a42826198b2d2637174fbb9801f14febf82fb8ce17750d0d1d6fa"
+    },
+    {
+      "path": "paper-week/scalp-engine.js",
+      "sha256": "88bf43e8e38e2681262124c760d73537a34439081eed7d4ebb03c446b0e8bf12"
+    },
+    {
+      "path": "paper-week/scalp-feed.js",
+      "sha256": "fb3e57deeafb2093593445e3cd92fb494343e094d2492a9046d22e037ede0494"
+    },
+    {
+      "path": "paper-week/scalp-log.js",
+      "sha256": "fd66a39b624fa2cfc4cd4e2b949ca87c76eac667b35441abacefed99768f015c"
+    },
+    {
+      "path": "paper-week/curve-feed.js",
+      "sha256": "96183f79d6762736cd80c5cc57eed3e83b349aa0410d8a482754853cd3669328"
+    },
+    {
+      "path": "paper-week/SCALP-SPEC.md",
+      "sha256": "020562ec406d7083b9a35f8d752ceff5d7d853ed1292fe85dc37320b7ab8e1dd"
+    },
+    {
+      "path": "paper-week/SCALP-REQUEST.txt",
+      "sha256": "29ecd50de1f603d362f3688c898736fbeaa0c4847bf6ee1672967cbdb6f21f36"
     }
   ]
 }

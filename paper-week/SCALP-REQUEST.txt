@@ -1,0 +1,94 @@
+# SPEC: MEME-SCALP ENTRY FILTER v1 (paper-trade, SOL ảo)
+# Mọi ngưỡng đọc từ config/env, KHÔNG hard-code. Bot thực thi theo đúng thứ tự stage;
+# fail ở stage nào thì dừng và ghi reason_code của stage đó.
+
+## 0. NGUỒN ỨNG VIÊN (mỗi chu kỳ quét 5 giây)
+- Pump.fun curve: tối đa 50 token chưa migrate, sắp theo giao dịch gần nhất.
+- PumpSwap: gộp 3 nguồn rồi dedupe theo mint:
+    a) DexScreener token-profiles mới nhất: tối đa 30 mint (cũ: 10)
+    b) GMGN Trending Solana khung 1h, API chính thức: top 50
+    c) DexScreener boosts mới nhất: tối đa 20
+- Mỗi mint chọn pool PumpSwap ghép SOL có thanh khoản cao nhất; không có pool thì bỏ (reason: NO_POOL).
+- Cache dữ liệu theo mint, TTL 3 giây cho giá, 10 phút cho dữ liệu an toàn.
+- Tổng ứng viên vào Stage A tối đa 100/chu kỳ. Nguồn nào lỗi thì bỏ qua nguồn đó, không dừng bot.
+
+## STAGE A - LỌC RẺ (chỉ dùng dữ liệu đã có, KHÔNG gọi quote/RPC)
+PumpSwap:
+  liquidity_usd        >= 8000
+  pool_age             >= 5 phút
+  price_change_5m      trong [+2%, +60%]
+  txns_5m              >= 12, buys_5m >= 6, buy/sell_5m >= 1.15
+  volume_5m_usd        >= 1000
+  price_change_1h      >= -30%      (chỉ loại token đang xả mạnh; H1/H4 còn lại chỉ lưu nhãn)
+Curve:
+  mcap_usd >= 5000, curve_age >= 3 phút
+  xu hướng mua M1 và M5 dương, buy/sell_5m >= 1.15, txns_5m >= 10
+Reason codes: A_LIQ, A_AGE, A_M5_RANGE, A_FLOW, A_VOL, A_H1_DUMP
+
+## STAGE B - AN TOÀN (cache 10 phút/mint)
+  token program thuộc danh sách hỗ trợ (Token, hoặc Token-2022 không có
+    transfer-fee / permanent-delegate / non-transferable)
+  mint_authority = null và freeze_authority = null
+  top10_holders (trừ pool/curve/burn) <= 30%
+  dev_holding <= 8%
+  holders >= 20 (curve: >= 15)
+  RugCheck (hoặc nguồn tương đương) không báo mức nguy hiểm
+Nếu không xác minh được (API lỗi/thiếu dữ liệu):
+  KHÔNG mua tự động; ghi reason B_UNVERIFIED và xếp vào hàng đợi thử lại sau 60 giây.
+
+## STAGE C - ĐỘNG LƯỢNG VI MÔ (3 mẫu giá)
+Giá lấy từ reserve pool / quote mid, KHÔNG dùng giá DexScreener cho stage này.
+  số mẫu = 3, khoảng cách giữa hai mẫu liên tiếp >= 5 giây, tổng span 15–45 giây
+  tuổi mẫu cuối <= 5 giây
+  tổng tăng (mẫu cuối so mẫu đầu) trong [+1.5%, +12%]
+  mỗi bước giảm tối đa -0.3%, mẫu cuối >= mẫu trước
+  giảm từ đỉnh quan sát <= 1.0%
+  liquidity mẫu cuối >= 90% liquidity mẫu đầu
+Reason codes: C_SPAN, C_STALE, C_RISE_LOW, C_RISE_HIGH, C_STEP_DOWN, C_DRAWDOWN, C_LIQ_DROP
+
+## STAGE D - CHI PHÍ THỰC THI (gọi quote)
+  Quote mua + quote bán ngược cho đúng cỡ lệnh dự định.
+  Thử cỡ 100% -> 50% -> 25% -> min khi quote lỗi (giữ cơ chế hiện có).
+  impact mỗi chiều        <= 2%
+  hao hụt khứ hồi (minimum-output) <= 6%
+  quote tuổi              <= 3 giây tại thời điểm khớp
+  lệch giá quote so tín hiệu (mẫu cuối) <= 2%
+  Điều kiện lợi thế: TP1 (+15%) >= 2.5 x hao hụt khứ hồi
+  Phân biệt rõ lỗi hạ tầng và lỗi chất lượng:
+    HTTP 429 / timeout -> reason D_INFRA (retry tối đa 3 lần, backoff 1s/2s/4s,
+    KHÔNG tính là SKIP chất lượng, không dùng làm dữ liệu "token xấu")
+    quote thành công nhưng vượt ngưỡng -> D_COST
+
+## STAGE E - DANH MỤC
+  còn đủ SOL ảo cho cỡ lệnh + phí 0.000025/chiều + rent 0.00203928 SOL/token
+  chưa giữ mint này; chưa dùng tín hiệu của chu kỳ hiện tại (signal_id = mint + cycle_id,
+    đánh dấu consumed ngay khi gửi lệnh mua, kể cả lệnh lỗi)
+  nghỉ mua lại cùng mint: 30 phút (paper), 24 giờ (khi chạy tiền thật)
+  cỡ lệnh = min(cỡ cố định paper, 1.5% thanh khoản pool)
+  tối đa 10 vị thế mở, tổng exposure <= 50% quỹ
+  KHÔNG có giờ nghỉ BUY và không tạm dừng sau chuỗi thua (giữ co cỡ lệnh theo spec V5.4)
+
+## EXIT (giữ nguyên Gainers 5M, chỉ đưa vào config)
+  stop -10%; TP1 +15% bán 50% rồi stop dời về giá vào +2%;
+  trailing 8% sau TP1; TP2 +30% bán hết;
+  sau 3 phút chưa đạt +5% thì thoát; giữ tối đa 10 phút.
+  Khớp mô phỏng: quote mới sau 2 giây, trượt giá 1.5% (khẩn cấp 10%).
+
+## GHI LOG BẮT BUỘC (lưu trên Railway Volume, không mất khi redeploy)
+Với MỌI ứng viên đi vào Stage A, ghi 1 bản ghi JSONL:
+  ts, mint, source, stage_reached, reason_code, các số liệu đo được ở từng stage
+  (liquidity, m5, txns, buy/sell, 3 mẫu giá, impact, round_trip_loss, holder metrics)
+Với ứng viên bị loại ở Stage B trở đi (đã có tín hiệu động lượng) và với mọi lệnh đã mua:
+  job nền ghi giá sau +1, +5, +15 phút để gắn nhãn kết quả (forward return, max drawup, max drawdown).
+Ghi cả context đầy đủ và output thô của model nếu có AI tham gia quyết định.
+Báo cáo mỗi giờ: số ứng viên còn lại sau từng stage (funnel) + top reason_code.
+
+## CHỈNH NGƯỠNG (thứ tự khi bot quá ít lệnh)
+Mục tiêu khởi đầu: ~10–40 tín hiệu/ngày. Nếu < 5 lệnh/ngày trong 24 giờ, nới theo thứ tự:
+  1) A: buy/sell 1.15 -> 1.1, txns_5m 12 -> 8
+  2) C: tổng tăng 1.5% -> 1.0%
+  3) A: liquidity 8000 -> 5000
+  4) B: top10 30% -> 35%
+KHÔNG nới: hao hụt khứ hồi, impact, mint/freeze authority, token program.
+Chỉ đánh giá hiệu quả sau >= 300 lệnh paper; không chỉnh ngưỡng dựa trên < 50 lệnh.
+Lưu ý: paper chưa mô phỏng MEV/front-running, nên kết quả tiền thật sẽ kém hơn.

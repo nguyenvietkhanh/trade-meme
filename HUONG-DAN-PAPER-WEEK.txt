@@ -1,114 +1,51 @@
-MEME PILOT - PAPER WEEK - MOMENTUM 5M - CHI SOL AO
-Nhanh codex/paper-week. Ban LIVE duoc giu nguyen.
-Khong ket noi vi, khong can private key, khong ky/gui giao dich.
-Khong chuyen lai ve vi that. Cash, lenh, phi va PnL deu la mo phong.
+MEME PILOT - PAPER ONLY - MEME-SCALP ENTRY FILTER v1
+Rule hien tai: paper-meme-scalp-entry-v1. Khong AI, vi, private key hay ky/gui tx.
+Mac dinh phien moi50SOL ao. Cap nhat khong reset cash, lo, vi the hay bao cao.
 
-RULE MOI: paper-momentum-5m-v2
-- Gia tang trong khung5phut: change5mPct>0 tu nguon quan sat.
-- Ca pump.fun chua migrate va PumpSwap da migrate.
-- Moi lenh dung dung1SOL ao tien goc; phi/rent tru rieng.
-- Chot50% tai2x,20% tai3x,20% tai5x,10% cuoi tai10x.
-  Ty le tinh tren so token mua BAN DAU, khong tren phan con lai.
-- Stoploss -30% gia vao BAN DAU, ban het phan con lai. Khong doi stop.
-- Xet lien tuc moi giay,24/7, khong nghi sau thua, khong cooldown.
-- Khong gioi han4vi the. Mo toi khi cash khong du1SOL+phi+rent.
-- Khong mo trung mint khi van con vi the. Sau khi dong, khoa cung mint
-  tren tin hieu5m cu. Chi mo lai khi5m da ve<=0 sau dong, roi duong lai.
-  Khoa duoc luu qua restart, ke ca khi doi pool/migrate.
-- Xac nhan3mau gia moi khac thoi diem trong it nhat10giay: tang>=0.5%,
-  mau cuoi khong giam so voi mau truoc, pullback tu dinh<=1.5%.
-- TruocBUY doc quoteSELL cho DUNG so tokenmin-output se mua ao.
-  Khong co routeSELL thi khongBUY. Impact moi leg<=3%; hao hut khoi hoi
-  min-output ke ca2phi gia dinh<=12%. Day la tham so nghien cuu chua
-  duoc chung minh toi uu, khong phai ket qua backtest loi nhuan.
-- Bo chan holder, dev, socials, creation-block, wallets.txt, curve15-75,
-  min volume, buy/sell ratio va risk1.5% cua PROJECT RULES cu.
-- Khong chung nhan token an toan. Bang chung thieu van la unverified.
-- Khong bia up5m khi thieu du lieu, khong khop ao khi khong co quote.
-- Curve SDK van kiem tra owner/reserve that, khong mua xuyen migration.
-- Khong tu nap them SOL ao. Khong du tien thi cho SELL thu hoi von.
+CAN DOC
+paper-week/SCALP-SPEC.md: rule, config/env, log, retry va gioi han.
+paper-week/SCALP-REQUEST.txt: nguyen van SPEC da yeu cau.
+Moi nguong trong paper-week/scalp-config.json; envSCALP_UPPER_SNAKE_CASE.
+PAPER_SCALP_CONFIG co the tro denJSON override rieng khong bi update ghi de.
 
-CHAY WINDOWS
-1. Cai Node.js24 hoac moi hon. Giai nen vao thu muc PAPER rieng.
-2. Chay START-PAPER-WEEK.cmd. Dien HELIUS_API_KEY va Telegram da co
-   trong paper-week.env. Khong gui cac gia tri bi mat vao chat.
-3. Khong can them bien moi cho chien luoc momentum.
-4. Vao http://127.0.0.1:3100. May phai bat va khong sleep.
-5. PAPER_WEEK_INITIAL_SOL chi ap dung lan chay DAU. Mac dinh moi50SOL,
-   nhung neu env cu dat0.5 thi lan chay dau van la0.5. Sua truoc khi tao
-   phien moi. Ledger20SOL hien co se duoc giu nguyen khi restart/update.
-6. PAPER_WEEK_DAYS=7: het endsAt ngung BUY, van theo doi SELL ao.
-7. Telegram gui PnL va report-YYYY-MM-DD.txt luc23:59Asia/Ho_Chi_Minh.
-8. iPhone cungWi-Fi: dat HOST=0.0.0.0, mo IP-LAN-MAY-TINH:3100.
-   Khong mo port nay raInternet.
+QUAN TRONG: HIEN CHUA COAPI GMGN VA NGUONRUG
+- GMGNNOT_CONFIGURED: bo nguon nay, van quetprofiles/boosts/curve.
+- RugChuaCo: StageB =B_UNVERIFIED, retry60giay, KHONG mua ao tu dong.
+- Khong tu tao endpoint, APIkey, nhanPASS hay du lieu an toan.
+- PAPER_SCALP_RISK_URL canadapterHTTPS theo contract trongSCALP-SPEC.md.
+- PAPER_SCALP_GMGN_URL tuy chon, chi adapter ket noiAPI GMGN chinh thuc.
+- Khong gui bat kyAPIkey/Telegramtoken/privatekey vao chat.
 
-CAP NHAT BAN CU
-- Ctrl+C dung chuong trinh truoc. Mo PowerShell DUNG thu muc du an.
-- Chay UPDATE-PAPER-WEEK.ps1 theo link/revision duoc cung cap.
-- Script tai/stage toan bo file code can thiet, kiem tra SHA256/syntax,
-  tao .paper-code-backup-TIMESTAMP, sau do moi thay code.
-- KHONG XOA .paper-week, paper-week.env hay file bao cao.
-- Lan dau nangv2 luu paper-week-state-before-v2.json truoc khi doi rule.
-- Cash/vi the/ket qua/bao cao cu giu nguyen; pendingBUY rule cu bi huy.
-- Vi the rule cu giu exitPolicy cu. Lenh moi dung ladder50/20/20/10.
-- Bo dem skip cu duoc reset khi chuyen chien luoc; TXT cu van duoc giu.
-- strategy_change va strategyVersion tren fill giup tach ket qua cu/moi.
+CHAY/CAP NHAT WINDOWS
+1. Node.js24+. DungCtrl+C tatbot truoc khi cap nhat.
+2. PowerShell trong thu muc coSTART-PAPER-WEEK.cmd.
+3. ChayUPDATE-PAPER-WEEK.ps1 dungrevision duoc cung cap. Script kiemtraSHA256,
+   syntaxJS va sao luu code. Khong xoa .paper-week haypaper-week.env.
+4. ChaySTART-PAPER-WEEK.cmd. Xac nhanrulepaper-meme-scalp-entry-v1.
+5. Mohttp://127.0.0.1:3100. Maycanbat/khongsleep dequet va guiTelegram.
+6. Helius/Telegram cu giu nguyen. DiennguonRugtheocontract neu muonquaB.
+7. TelegramPnL+TXT23:59Asia/Ho_Chi_Minh. Funnelbaocao console/JSONLmoi gio.
+8. Lenhcu giuexitPolicycu. Lenhmoi dungstop10%,TP1+15%/50%,stop+2%,
+   trailing8%,TP2+30%,time-stop3phut/max10phut. Stopkhongbaodamgia khop.
 
-KHOP LENH AO
-- Chi doc nguon cong khai/RPC, quoteSDK curve va quoteJupiter.
-- Khong goi API tao swap transaction, khong ky/gui bat ky giao dich nao.
-- Doi it nhat2giay sau quyet dinh, lay quote moi, dung minimum output.
-- Phi mang gia dinh0.000025SOL/lanBUY/SELL; rent0.00203928SOL/vi the,
-  gia dinh hoan khi ban het. Min-output haircut curve4%BUY/3%SELL.
-- PumpSwap quote Jupiter da bao gom min-output theo slippage request.
-- Stop -30% la moc KICH HOAT. Do tre, quote va chi phi co the lam
-  thua thuc hien ao nhieu hon30%. Khong co bao dam thoat dung gia.
-- Quote khong co/429/stale: khong tao fill, khong tao PnL gia.
-- Lenh thoat duoc uu tien truoc lenh mua moi. SELL quote tre qua10giay
-  se duoc thu lai, khong khoa vinh vien vong cho mot vi the.
-- LenhBUY duoc xet lai up5m va cash truoc khi khop ao.
-- Gia5m cua token rat moi co the dua tren cua so ngan hon5phut;
-  TXT ghi source-window coverage, khong tu chung nhan candle5m day du.
-- Ket qua SOL ao khong chung minh botLIVE se lai tuong tu.
+DU LIEU
+Hourlyscalp-YYYY-MM-DD-HH.jsonl.gz: gunzipraJSONL, khong phaimodel weights.
+Co linktai trongUI. ToanboatrongRailwayVolumePAPERneu deploy rieng.
++1/+5/+15phutla sampled; missinggia deNULL, khong bietdinhdaylientuc.
+Quota512MiB/9ngay: gandaylog sechanadmitA/BUY, van uu tienSELL bao ve.
+Bao caoTXT nho gomPnL/config/fill vaindexfileauditgzip daydu.
+node paper-week/analyze.js .paper-week: streamgzip va dedupfill, tachversion.
 
-TRAINING/TELEGRAM
-- .paper-week/training-YYYY-MM-DD.txt: JSONL cho decision,snapshot,fill.
-- Report23:59 gom cau hinh, fee/rent, PnL ngay, portfolio, coverage vaTXT.
-- Toan bo la simulation=true, khong phai receipt giao dich on-chain.
-- JSONL co strategyVersion; phan tich khong gop mo ho ket qua chien luoc.
-- Export ghi gia tri null/unverified neu khong du bang chung.
-- So skip la LUOT XET, khong phai so token duy nhat.
-- Cache128ung vien,256marks,500trade summaries; filetraining2MiB/ngay,
-  tongTXT32MiB/9ngay. Dropped duoc ghi; ledgercash khong bi xoa theoTXT.
-- Telegram timeout khong ro ket qua deunknown, khong tu gui trung lap.
-- Tat may luc23:59: khi bat lai tao bao cao bu, khong tai tao equitycutoff.
-- Luon luu fileTelegram de phan tich du1tuan. Duoi200vi the dong chua
-  du ket luan ve chien luoc. He thong khong tu trainAI.
+50SOL/PHIENMOI
+Chi doiINITIAL_SOL khong thay so du ledgercu. Muonphienmoi:tatbot, archive
+.paper-week bangtenrieng, dat$env:PAPER_WEEK_INITIAL_SOL='50', chayCMD.
+Archivegiu lo/vi the/bao caocu nhungphienmoi khongtheodoivi thearchive.
+Khong ghi de ketqua cu thanh0 de lamdepbaocao.
 
-RAILWAY
-Neu dung, tao SERVICE vaVOLUME RIENG cho PAPER. Khong doiLIVE.
-Nhanh nay npmstart/Dockerfile chi chaypaper-week/bootstrap.js.
-
-BANV2: SUA GIA VA SO SACH
-- GiaPumpSwapV2 gom virtualQuoteReserves o PHIAQUOTE cua pool, khong
-  mac dinh virtual reserve luon laWSOL neu pool dao chieu.
-- BUY quote va RPC gia ung vien chay background co gioi han; SELL/stop
-  khong phai cho doc xong entry. Ket qua quote muon cuaBUY da huy bi bo.
-- Logthem gia/thoi diem kich hoat thoat va do tre decision-to-quote.
-- Doi soat: initial+realizedPnL = cash+costbasisconmo+rentdangkhoa.
-  Lech so sach thi dungfill de kiem tra, khong tu sua so du hay xoa lo.
-- Loi cu KHONG duoc bien thanh0. Khong tu nap lai20SOL. Cash<1SOL+phi
-  thi khong mo duoc lenh1SOL moi cho den khi co von ao du.
-- Khong thay doi1SOL/lenh, SL30%, ladder50/20/20/10, hay Telegram23:59.
-- Sua loi code khong phai bang chung chien luocv2 se co lai.
-
-MO PHIEN THU MOI50SOL AO (2026-11-01)
-- Dungbot bangCtrl+C, cap nhat code, moPowerShell trong thu muc du an.
-- Doi ten .paper-week thanh .paper-week-archive-TIMESTAMP de giu nguyen
-  toan bo lo/vi the/bao cao phien cu. Khong xoa archive.
-- Dat $env:PAPER_WEEK_INITIAL_SOL = '50', chay START-PAPER-WEEK.cmd.
-- Env cua process uu tien hon gia tri20 cu trong paper-week.env.
-- Phien moi50SOL ao, PnL rieng va7ngay moi; khong boi hoan lo cu.
-- Phien archive khong con duoc server moi theo doi vi the hay gui report.
-- Restart tiep theo giu ledger50SOL da tao, khong nap lai50 moi lan.
-- Thuat toanvanpaper-momentum-5m-v2;1SOL/lenh, SL30%, TPcu giu nguyen.
+CO HA/CANHBAO
+Quet24/7, khongnghibuysauchuoi thua. CocothetheoV5.4 duocconfig.
+Chuam50lệnhdongSCALP thikhongtunoi. >=50va<5lenh/24hmoixetlanluot;
+impact/cost/authority/program khongn oi. >=300lenhdongmoi danhgiachienluoc.
+10-40tin hieu/ngaylamuctieu,khong phailoihua. Chua nguonBthi0BUYladungSPEC.
+Paperkhongmo phongMEV/front-running, auction/fillthat; ketquatienthatcothekemhon.
+Khong chonnhanh naycho serviceLIVE. RailwayPAPERcanservicerieng+Volume rieng.
