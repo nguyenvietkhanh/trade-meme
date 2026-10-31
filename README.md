@@ -36,7 +36,7 @@ SDK curve math still requires genuine reserves and will not buy through migratio
 ## Windows
 
 Run `START-PAPER-WEEK.cmd`. Existing `paper-week.env` supplies Helius/Telegram;
-**no new environment variable is required**. Fresh sessions default to 20 virtual
+**no new environment variable is required**. Fresh sessions default to 50 virtual
 SOL; an existing ledger's balance always takes precedence over initial settings.
 
 Stop with Ctrl+C before updating. `UPDATE-PAPER-WEEK.ps1` downloads the known
@@ -74,3 +74,24 @@ Cash reconciliation must satisfy initial + realized PnL = cash + remaining
 entry cost basis + locked rent. Broken ledgers pause fills for inspection.
 Tests verify mechanics and accounting, not profitability. No profitable backtest
 or forward result is claimed for V2.
+
+## Start a separate 50-SOL virtual session on Windows
+
+Stop the running PAPER process with Ctrl+C. Update the code first. In PowerShell
+inside the project folder, archive the old `.paper-week` directory, then override
+the initial allocation for this launch. The environment override takes precedence
+over a previous `PAPER_WEEK_INITIAL_SOL=20` in `paper-week.env`.
+
+```powershell
+if (Test-Path -LiteralPath '.paper-week') {
+    Move-Item -LiteralPath '.paper-week' -Destination ('.paper-week-archive-' + (Get-Date -Format 'yyyyMMdd-HHmmss')) -ErrorAction Stop
+}
+$env:PAPER_WEEK_INITIAL_SOL = '50'
+.\START-PAPER-WEEK.cmd
+```
+
+This creates a new seven-day simulation with 50 virtual SOL and new session PnL.
+Old losses, positions and reports remain in the archive, separate from this run.
+Archived positions are not actively monitored by the new session. Restarting the
+new session preserves its ledger; it does not allocate another 50 SOL. The v2
+algorithm, 1-SOL orders, stop and profit tiers are unchanged.

@@ -11,7 +11,7 @@ import {PaperTelegram} from './telegram.js';
 import {startPaperLoop} from '../src/paper-loop.js';
 import {momentumConfig} from './momentum.js';
 const root=fileURLToPath(new URL('../',import.meta.url)),dir=process.env.RAILWAY_VOLUME_MOUNT_PATH?path.join(process.env.RAILWAY_VOLUME_MOUNT_PATH,'paper-week'):path.join(root,'.paper-week');
-const policy=momentumConfig(),store=new PaperStore(dir),adapter=createPaperAdapter(dir,{policy}),engine=new PaperWeek(store,adapter,{policy,initialSol:Number(process.env.PAPER_WEEK_INITIAL_SOL??20),days:Number(process.env.PAPER_WEEK_DAYS??7)});await engine.load();
+const policy=momentumConfig(),store=new PaperStore(dir),adapter=createPaperAdapter(dir,{policy}),engine=new PaperWeek(store,adapter,{policy,initialSol:Number(process.env.PAPER_WEEK_INITIAL_SOL??50),days:Number(process.env.PAPER_WEEK_DAYS??7)});await engine.load();
 const telegram=new PaperTelegram();let serial=Promise.resolve(),closing=false,latest=[],refreshJob=null,marksJob=null,cycleJob=null,reportJob=null,marksCursor=0,loopError=null;const run=fn=>{const task=serial.then(fn);serial=task.catch(()=>{loopError='PAPER_OPERATION_UNAVAILABLE';});return task;};
 const feed=new PaperFeed(adapter,{seen:(rows,source)=>run(()=>engine.seen(rows,source))});
 const assets=new Map(await Promise.all([['/','index.html','text/html'],['/app.js','app.js','text/javascript'],['/app.css','app.css','text/css']].map(async([url,name,type])=>[url,{type,body:await readFile(new URL(name,import.meta.url))}])));

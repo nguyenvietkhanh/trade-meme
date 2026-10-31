@@ -7,15 +7,15 @@
     },
     {
       "path": "README.md",
-      "sha256": "cfabad7739bb76f20d526179a4d1e8e43ba9421597fc731be4bbe3c447b7215c"
+      "sha256": "608e1b2984c7a94b3e0f327ae65aa64ca177fbc36d4031cbcef36a2b1de6e28c"
     },
     {
       "path": "HUONG-DAN-PAPER-WEEK.txt",
-      "sha256": "575d944f0a8e153c4134137846f27cd68aada6636a861f2bde044935e73ee835"
+      "sha256": "15a35ce1dc4f0e75d25b342fdd2651afc180f7f739fe6f57474de92ea747274f"
     },
     {
       "path": "paper-week.env.example",
-      "sha256": "f84920fe8a37769f23cdadc3c80509c21386b938eda64d362edc4c8dc174b310"
+      "sha256": "d75222cfef59df2cce774417f54f2c0396cddd025e941e669de5614d5e3f09b4"
     },
     {
       "path": "paper-week/engine.js",
@@ -35,7 +35,7 @@
     },
     {
       "path": "paper-week/server.js",
-      "sha256": "11ec92d911e4f755d4011482d20dbeaea3057c755eff31c643794c159f5549b3"
+      "sha256": "88ec6616c6faf72da37605c519a725e67d58d14b0e7c426e096b256a2b50d0d6"
     },
     {
       "path": "paper-week/app.js",

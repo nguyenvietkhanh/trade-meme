@@ -34,7 +34,7 @@ CHAY WINDOWS
    trong paper-week.env. Khong gui cac gia tri bi mat vao chat.
 3. Khong can them bien moi cho chien luoc momentum.
 4. Vao http://127.0.0.1:3100. May phai bat va khong sleep.
-5. PAPER_WEEK_INITIAL_SOL chi ap dung lan chay DAU. Mac dinh moi20SOL,
+5. PAPER_WEEK_INITIAL_SOL chi ap dung lan chay DAU. Mac dinh moi50SOL,
    nhung neu env cu dat0.5 thi lan chay dau van la0.5. Sua truoc khi tao
    phien moi. Ledger20SOL hien co se duoc giu nguyen khi restart/update.
 6. PAPER_WEEK_DAYS=7: het endsAt ngung BUY, van theo doi SELL ao.
@@ -101,3 +101,14 @@ BANV2: SUA GIA VA SO SACH
   thi khong mo duoc lenh1SOL moi cho den khi co von ao du.
 - Khong thay doi1SOL/lenh, SL30%, ladder50/20/20/10, hay Telegram23:59.
 - Sua loi code khong phai bang chung chien luocv2 se co lai.
+
+MO PHIEN THU MOI50SOL AO (2026-11-01)
+- Dungbot bangCtrl+C, cap nhat code, moPowerShell trong thu muc du an.
+- Doi ten .paper-week thanh .paper-week-archive-TIMESTAMP de giu nguyen
+  toan bo lo/vi the/bao cao phien cu. Khong xoa archive.
+- Dat $env:PAPER_WEEK_INITIAL_SOL = '50', chay START-PAPER-WEEK.cmd.
+- Env cua process uu tien hon gia tri20 cu trong paper-week.env.
+- Phien moi50SOL ao, PnL rieng va7ngay moi; khong boi hoan lo cu.
+- Phien archive khong con duoc server moi theo doi vi the hay gui report.
+- Restart tiep theo giu ledger50SOL da tao, khong nap lai50 moi lan.
+- Thuat toanvanpaper-momentum-5m-v2;1SOL/lenh, SL30%, TPcu giu nguyen.
