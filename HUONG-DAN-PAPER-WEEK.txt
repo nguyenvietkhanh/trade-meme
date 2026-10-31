@@ -120,3 +120,15 @@ fsync thu muc (Node tren Windows khong ho tro thao tac do).
 Khong bo qua loi fsync cua file. Linux van fsync ca file va thu muc.
 16testPASS, gom mo phong nhanhwin32 va filesystemLinux; chua xac minh
 tren mayWindows cua ban. Cap nhat code khong can xoa .paper-week.
+
+BAN VA FEED / LUAN PHIEN UNG VIEN (2026-10-31)
+- Truoc khi xet ung vien, gia cu hon1.5giay duoc doc lai qua RPC;
+  khong doi timestamp gia neu RPC loi. Activity van can moi<=30giay,
+  SOL/USD<=60giay. Khong tang nguong chap nhan gia cu5giay.
+- Xet luan phien toi da2ung vien/10giay, khong lap mai2token dau.
+- TXT bo sung missing/failed/thresholds de phan biet thieu nguon va fail.
+- Khong bo cac rule chua xac minh. Pumpswap da migrate khong co curve
+ 15-75% nen khong the dat strict rule curve. Mac dinh khong chung nhan
+ an toan tu viec token da migrate.
+- Khong xoa .paper-week, paper-week.env hay wallets.txt khi cap nhat.
+  Dung Ctrl+C truoc khi thay file code; giu nguyen ledger/so du/bao cao.

@@ -16,6 +16,13 @@ export function createPaperAdapter(dir,{env=process.env,policy=projectRulesConfi
  // The public owner address may be used by SDK readers; no account secret is read.
  async function poolPrice(m,poolAddress){const account=await raw.rpc.getAccountInfo(new PublicKey(poolAddress),'confirmed');if(!account?.owner.equals(PUMP_AMM_PROGRAM_ID))throw Error('PAPER_POOL_OWNER_UNVERIFIED');const p=PUMP_AMM_SDK.decodePool(account),mints=[p.baseMint.toBase58(),p.quoteMint.toBase58()];if(!mints.includes(m.mint)||!mints.includes(SOL))throw Error('PAPER_POOL_MINT_MISMATCH');const accounts=await raw.rpc.getMultipleAccountsInfo([p.poolBaseTokenAccount,p.poolQuoteTokenAccount],'confirmed');const amounts=accounts.map((a,i)=>{if(!a||!TOKENS.has(a.owner.toBase58())||a.data.length<165||new PublicKey(a.data.subarray(0,32)).toBase58()!==mints[i])throw Error('PAPER_RESERVE_UNVERIFIED');return Number(a.data.readBigUInt64LE(64));});const decimals=(await raw.rpc.getTokenSupply(new PublicKey(m.mint),'confirmed')).value.decimals,tokenIndex=mints.indexOf(m.mint),quoteIndex=mints.indexOf(SOL);return amounts[tokenIndex]>0?amounts[quoteIndex]/1e9/(amounts[tokenIndex]/10**decimals):null;}
  return Object.freeze({execution,
+  async refreshCandidate(m){
+   const now=Date.now(),activityAt=m.activityCheckedAt??m.marketObservedAt??m.updatedAt;
+   if(!Number.isFinite(activityAt)||activityAt>now||now-activityAt>30000||!(m.solUsd>0)||!Number.isFinite(m.solUsdAt)||m.solUsdAt>now||now-m.solUsdAt>60000)return null;
+   const rows=await this.refreshHeld([{mint:m.mint,pool:m.pairAddress,symbol:m.symbol}],[m],m.solUsd);
+   // A new reserve read refreshes price only; it cannot refresh old flow/social evidence.
+   return rows[0]?{...rows[0],activityCheckedAt:activityAt}:null;
+  },
   evidence:m=>facts.read({mint:m.mint,pool:m.pairAddress,solUsd:m.solUsd,rawMarket:m}),
   async quote(order,m){return withRpcPriority(order.side==='SELL'?'exit':'background',async()=>{let q;if(m.dexId==='pumpfun'&&!m.migratedPool){const rows=await raw.paperCurveQuotes([{id:order.id,mint:m.mint,poolAddress:m.pairAddress,side:order.side,amount:order.amount,reason:order.reason}]);q=rows[0];if(q&&!q.failed)q={...q,minOut:(BigInt(q.outAmount)*BigInt(order.side==='BUY'?9600:9700)/10000n).toString()};}else q=await paperMarketQuote({mint:m.mint,side:order.side,amount:order.amount,slippageBps:order.side==='BUY'?400:300,minObservedAt:order.readyAt},raw.quoteFetch);
    if(q?.failed)throw Error('PAPER_QUOTE_UNAVAILABLE');const decimals=(await raw.rpc.getTokenSupply(new PublicKey(m.mint),'confirmed')).value.decimals;

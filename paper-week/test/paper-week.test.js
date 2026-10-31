@@ -31,3 +31,29 @@ test('training cap drops observer rows without touching the virtual state',async
 test('RPC capability rejects writes/subscriptions/private methods while exposing read methods',()=>{let sends=0;const r=readOnlyRpc({getSlot:()=>99,sendTransaction:()=>sends++,sendRawTransaction:()=>sends++});assert.equal(r.getSlot(),99);assert.throws(()=>r.sendTransaction,/READ_ONLY/);assert.throws(()=>r.sendRawTransaction,/READ_ONLY/);assert.throws(()=>r._rpcRequest,/READ_ONLY/);assert.equal(sends,0);});
 test('offline analysis deduplicates exported fills and does not treat partial exits as wins',async()=>{const {summarize}=await import('../analyze.js');const buy={type:'virtual_fill',simulation:true,id:'b',side:'BUY',positionId:'p',inputs:{top10_pct:10},feeSol:.000025},partial={type:'virtual_fill',simulation:true,id:'s1',side:'SELL',positionId:'p',closed:false,pnlSol:.01},closed={type:'virtual_fill',simulation:true,id:'s2',side:'SELL',positionId:'p',closed:true,positionPnlSol:.02,pnlSol:.01};const r=summarize([buy,partial,closed,buy,closed]);assert.equal(r.uniqueVirtualFills,3);assert.equal(r.closed,1);assert.equal(r.wins,1);assert.equal(r.features.top10_pct.virtualWinMedian,10);assert.match(r.warning,/UNDER_200/);});
 test('known Telegram refusal retries with backoff; successful retry remains idempotent',async t=>{const f=await setup(t);let calls=0;f.setNow(nextPaperReportEnd(paperReportEnd(f.now())));const telegram={configured:true,document:async()=>{calls++;if(calls===1)throw Object.assign(Error('known not sent'),{code:'PAPER_TELEGRAM_NOT_SENT',retryMs:60000});return 9;}};await f.engine.reportTick(telegram);assert.equal(f.engine.state.outbox[0].status,'queued');await f.engine.reportTick(telegram);assert.equal(calls,1);f.advance(60000);await f.engine.reportTick(telegram);assert.equal(calls,2);assert.equal(f.engine.state.outbox[0].status,'sent');});
+
+test('candidate rotation visits later tokens instead of repeating the first two',async t=>{
+ const f=await setup(t);f.setUnknown(true);const visited=[],evidence=f.engine.adapter.evidence;
+ f.engine.adapter.evidence=async m=>{visited.push(m.mint);return evidence(m);};
+ const markets=()=>Array.from({length:6},(_,i)=>({...f.market(),mint:'fixture-'+i}));
+ for(let i=0;i<3;i++){await f.engine.step(markets());f.advance(10000);}
+ assert.deepEqual(visited,Array.from({length:6},(_,i)=>'fixture-'+i));
+ assert.equal(f.engine.state.counts.virtualBuys,0);
+});
+test('old candidate price gets a real refresh before evidence; source timestamp is preserved',async t=>{
+ const f=await setup(t),m=f.market();f.advance(10000);let refreshed=0;
+ f.engine.adapter.refreshCandidate=async old=>{refreshed++;assert.equal(old.priceAt,initial);return {...old,spotPriceSol:.006,priceAt:f.now()};};
+ const evidence=f.engine.adapter.evidence;f.engine.adapter.evidence=async market=>{
+ assert.equal(market.priceAt,f.now());assert.equal(market.updatedAt,initial);
+ return evidence(market);
+ };
+ await f.engine.step([m]);assert.equal(refreshed,1);assert.equal(f.engine.state.pending.side,'BUY');
+ assert.equal(f.engine.prices.get(m.mint+':'+m.pairAddress).price,.006);
+});
+test('failed refresh never relabels old data as fresh or creates an order',async t=>{
+ const f=await setup(t),m=f.market();f.advance(10000);
+ f.engine.adapter.refreshCandidate=async()=>null;
+ f.engine.adapter.evidence=async market=>({error:f.now()-market.priceAt>5000?'RULES_MARKET_STALE':null,inputs:{}});
+ await f.engine.step([m]);assert.equal(m.priceAt,initial);assert.equal(f.engine.state.pending,null);
+ assert.equal(f.engine.state.skips.RULES_MARKET_STALE,1);
+});
