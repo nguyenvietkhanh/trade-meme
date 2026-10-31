@@ -26,3 +26,14 @@ Analysis deduplicates order IDs and compares initial virtual-position features
 between virtual winners and losers. This is not a causal filter audit or evidence
 that skipped tokens would have been tradable. Under200closed: insufficient sample.
 Never mix simulation=true rows with LIVE receipts as real execution evidence.
+
+MOMENTUM5M v1 (2026-10-31):
+strategy_change: from/to versions, configuration, policy history timestamp.
+virtual_fill.strategyVersion and position.strategyVersion partition old/new runs.
+New input signal: change_5m_pct, signal_at, source_venue, migrated_pool,
+signal_window_coverage. Provider-reported changes are not reconstructed candles.
+No holder/dev/social evidence is required or certified in momentum mode.
+Order principal=1SOL; stop price=0.7*initial entry; TP fractions of INITIAL raw
+quantity=50/20/20/final remainder at2x/3x/5x/10x. Final sale closes rounding dust.
+position.tpSoldSteps persists only after confirmed virtual sale; restart cannot
+repeat a completed tranche. Fees/rent and cash conservation remain unchanged.

@@ -9,7 +9,7 @@
   "scripts": {
     "start": "node --use-env-proxy --env-file-if-exists=paper-week.env paper-week/bootstrap.js",
     "test": "node --test paper-week/test/*.test.js",
-    "check": "node --check paper-week/bootstrap.js && node --check paper-week/server.js && node --check paper-week/engine.js && node --check paper-week/store.js && node --check paper-week/persistence.js && node --check paper-week/readonly.js && node --check paper-week/market.js && node --check paper-week/telegram.js && node --check paper-week/app.js && node --check paper-week/analyze.js",
+    "check": "node --check paper-week/bootstrap.js && node --check paper-week/server.js && node --check paper-week/engine.js && node --check paper-week/momentum.js && node --check paper-week/store.js && node --check paper-week/persistence.js && node --check paper-week/readonly.js && node --check paper-week/market.js && node --check paper-week/telegram.js && node --check paper-week/app.js && node --check paper-week/analyze.js",
     "build": "esbuild src/wallet-browser.js --bundle --platform=browser --format=esm --outfile=public/wallet.js && esbuild src/paper-browser.js --bundle --platform=browser --format=esm --outfile=public/paper-wallet.js",
     "test:offline": "node scripts/run-tests.js --offline",
     "test:isolation": "node test/paper-runtime-isolation.test.js && node test/paper-supervisor.test.js",

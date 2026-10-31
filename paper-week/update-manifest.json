@@ -1,0 +1,57 @@
+{
+  "strategy": "paper-momentum-5m-v1",
+  "files": [
+    {
+      "path": "package.json",
+      "sha256": "1d21e0d32afc92d8aaa636683c4b872d1e975b847444241f9a4c9b59d2cc0c96"
+    },
+    {
+      "path": "README.md",
+      "sha256": "7641c3a0d642cf72092ce654fd23cdde909fcf6e8372d28869555dae9b63493b"
+    },
+    {
+      "path": "HUONG-DAN-PAPER-WEEK.txt",
+      "sha256": "e4ee02e8696047f54ab22a190b9675bb3c6f5257c35b021d39608754fe865227"
+    },
+    {
+      "path": "paper-week.env.example",
+      "sha256": "522c9cd46d634ac1df4d96c6fbbefc08dc53c2d77e0992d8c3186a832cabadf7"
+    },
+    {
+      "path": "paper-week/engine.js",
+      "sha256": "8444eca8b49e7401d499a8bf773044d4cdbbce18cf7d724f628a8464a79ff8ae"
+    },
+    {
+      "path": "paper-week/momentum.js",
+      "sha256": "0122bc7df6a5071875b4ea7757075430d4afeb16273c635283140796cbfbde35"
+    },
+    {
+      "path": "paper-week/readonly.js",
+      "sha256": "361cb71fac98e6fe3a4ed7cdbcc09e1f108a28e35eb17991eaaa170d9df0b538"
+    },
+    {
+      "path": "paper-week/market.js",
+      "sha256": "ae585258af1106d61b3469118c65a2ce9e030e3fff9d3b97458b9eb5db87fa23"
+    },
+    {
+      "path": "paper-week/server.js",
+      "sha256": "11ec92d911e4f755d4011482d20dbeaea3057c755eff31c643794c159f5549b3"
+    },
+    {
+      "path": "paper-week/app.js",
+      "sha256": "ab904e25ee568ceae2c3884005b921cb1aeb08610e8f055daaee11459d563d46"
+    },
+    {
+      "path": "paper-week/index.html",
+      "sha256": "1cef48ec6434fd345b8bf1aa572d8732adceca08e25500f6a4a4e6d7864a3114"
+    },
+    {
+      "path": "paper-week/TRAINING-SCHEMA.txt",
+      "sha256": "cb8eec9dfadb4d8a488bec00df86fb38cb5c9aa0d4f2d8147e50f4511e498d07"
+    },
+    {
+      "path": "paper-week/analyze.js",
+      "sha256": "96600fe87501503d8ba6e2255c4bf513b79e113f356243464348f1d1822fee8a"
+    }
+  ]
+}
