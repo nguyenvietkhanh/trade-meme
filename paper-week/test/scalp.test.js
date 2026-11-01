@@ -75,3 +75,85 @@ test('adapter without rug provider still reads RPC and rejects a live mint autho
  const strict=createPaperAdapter('/tmp',{env:{},policy:{...c,rugRequired:true}});
  assert.deepEqual((await strict.scalpSafety(m)).missing,['RUG_SOURCE_NOT_CONFIGURED']);assert.equal(reads,1);
 });
+
+test('pending BUY waits for a fresh reserve read at the 5s boundary instead of cancelling',async t=>{
+ const f=await setup(t),m=market(f.now()),k=m.mint+':'+m.pairAddress;
+ f.engine.safety.set(m.mint,{facts:facts(m,f.now())});
+ f.engine.samples.set(k,[{at:f.now()-25044,price:1,liquiditySol:100},{at:f.now()-15044,price:1.01,liquiditySol:100},{at:f.now()-5044,price:1.02,liquiditySol:100}]);
+ const o={id:'refresh-fixture',side:'BUY',mint:m.mint,pool:m.pairAddress,amount:'1000000000',decidedAt:f.now()-3000,readyAt:f.now()-1000,signalId:'refresh-signal',referencePriceSol:1.02,scalpContext:f.engine.context(m,'refresh-signal')};f.engine.state.pending=o;
+ f.adapter.refreshCandidate=async()=>({...m,spotPriceSol:1.025,priceAt:f.now(),liquidityQuoteSol:100});
+ await f.engine.fill([m]);assert.equal(f.engine.state.pending?.id,o.id);await Promise.all(f.engine.reads.values());
+ assert.equal(f.engine.samples.get(k).at(-1).at,f.now());assert.equal(f.engine.state.counts.virtualBuys,0);
+ assert.equal(f.engine.state.scalp.consumed[m.mint],undefined);
+});
+test('raw reserve samples keep sub-gap observations while selected confirmation samples remain >=5s apart',async t=>{
+ const f=await setup(t),m=market(f.now()),k=m.mint+':'+m.pairAddress;
+ f.engine.samples.set(k,[{at:f.now()-20000,price:1,liquiditySol:100},{at:f.now()-10000,price:1.01,liquiditySol:100},{at:f.now()-3000,price:1.02,liquiditySol:100}]);
+ f.adapter.refreshCandidate=async()=>({...m,spotPriceSol:1.025,priceAt:f.now(),liquidityQuoteSol:100});
+ f.engine.sampleRead(m);await Promise.all(f.engine.reads.values());
+ const rows=f.engine.samples.get(k);assert.equal(rows.at(-1).at,f.now());const check=stageC(rows,c,f.now());assert.equal(check.pass,true);assert.ok(check.metrics.samples.slice(1).every((r,i)=>r.at-check.metrics.samples[i].at>=c.cGapMs));
+});
+
+test('expired quote after an RPC refresh is retried without relaxing freshness or consuming the signal',async t=>{
+ const f=await setup(t),m=market(f.now()),k=m.mint+':'+m.pairAddress;
+ f.engine.safety.set(m.mint,{facts:facts(m,f.now())});
+ f.engine.samples.set(k,[{at:f.now()-20000,price:1,liquiditySol:100},{at:f.now()-10000,price:1.01,liquiditySol:100},{at:f.now(),price:1.02,liquiditySol:100}]);
+ const o={id:'expired-fixture',side:'BUY',mint:m.mint,pool:m.pairAddress,amount:'1000000000',decidedAt:f.now()-10000,readyAt:f.now()-8000,signalId:'expired',referencePriceSol:1.02,infraRetries:0,scalpContext:f.engine.context(m,'expired')};f.engine.state.pending=o;
+ f.engine.quoteJobs.set(o.id,{done:true,value:{at:f.now()-4000,out:'1000000',impactPct:.1,roundTrip:{mint:m.mint,pool:m.pairAddress,inAmount:o.amount,sellInput:'1000000',sellOut:'970000000',at:f.now()-3500,impactPct:.1}},task:Promise.resolve()});
+ await f.engine.fill([m]);assert.equal(f.engine.state.pending.id,o.id);assert.equal(o.infraRetries,1);assert.equal(o.nextAttemptAt,f.now()+c.dBackoffMs[0]);assert.equal(f.engine.state.counts.virtualBuys,0);assert.equal(f.engine.state.scalp.consumed[m.mint],undefined);
+});
+
+test('PumpSwap missing coinCreator uses only the verified mint-derived pump curve, not a profile creator',async t=>{
+ const {Connection,PublicKey,Keypair}=await import('@solana/web3.js');
+ const {PUMP_AMM_SDK,PUMP_AMM_PROGRAM_ID}=await import('@pump-fun/pump-swap-sdk');
+ const {PUMP_SDK,PUMP_PROGRAM_ID,bondingCurvePda}=await import('@pump-fun/pump-sdk');
+ const {SolanaExecution}=await import('../../src/solana.js');const {createPaperAdapter}=await import('../readonly.js');
+ const mint=Keypair.generate().publicKey,pool=Keypair.generate().publicKey,creator=Keypair.generate().publicKey,curve=bondingCurvePda(mint);let derivedRead=false,holderCreator;
+ t.mock.method(Connection.prototype,'getParsedAccountInfo',async()=>({value:{owner:new PublicKey('TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA'),data:{parsed:{info:{decimals:6,mintAuthority:null,freezeAuthority:null}}}}}));
+ t.mock.method(Connection.prototype,'getAccountInfo',async key=>{if(key.equals(curve)){derivedRead=true;return {owner:PUMP_PROGRAM_ID,data:Buffer.alloc(100),executable:false};}assert.equal(key.toBase58(),pool.toBase58());return {owner:PUMP_AMM_PROGRAM_ID,data:Buffer.alloc(100)};});
+ t.mock.method(PUMP_AMM_SDK,'decodePool',()=>({baseMint:mint,quoteMint:new PublicKey('So11111111111111111111111111111111111111112'),coinCreator:PublicKey.default,poolBaseTokenAccount:Keypair.generate().publicKey}));
+ t.mock.method(PUMP_SDK,'decodeBondingCurve',()=>({creator,quoteMint:PublicKey.default,depth:0,isMayhemMode:false,isCashbackCoin:false}));
+ t.mock.method(SolanaExecution.prototype,'holderFacts',async(_mint,_program,_excluded,_vaults,dev)=>{holderCreator=dev;return {top10Pct:10,devPct:2,holderCount:100};});
+ const adapter=createPaperAdapter('/tmp',{env:{},policy:c}),m={...market(),mint:mint.toBase58(),pairAddress:pool.toBase58(),creatorAddress:'UNTRUSTED_PROFILE'};
+ const f=await adapter.scalpSafety(m);assert.equal(derivedRead,true);assert.equal(holderCreator,creator.toBase58());assert.equal(f.creatorSource,'mint-derived-pump-curve');assert.equal(stageB(f,m,c,Date.now()).pass,true);
+ t.mock.method(Connection.prototype,'getAccountInfo',async key=>key.equals(curve)?{owner:PublicKey.default,data:Buffer.alloc(100),executable:false}:{owner:PUMP_AMM_PROGRAM_ID,data:Buffer.alloc(100)});
+ assert.deepEqual((await adapter.scalpSafety(m)).missing,['DEV_IDENTITY_UNVERIFIED']);
+});
+
+test('single preview TXT and 23:59 Telegram TXT include grouped audit and all observed executions without resetting the ledger',async t=>{
+ const {nextPaperReportEnd,paperReportEnd}=await import('../../src/paper-schedule.js');
+ const f=await setup(t),s=f.engine.state,m=market(f.now());
+ const raw={...f.engine.context(m,'first'),stage_reached:'A',reason_code:'A_LIQ',metrics:{A:{liquidity:100}}};
+ await f.engine.logs.append([raw,{...raw,ts:f.now()+10,signal_id:'second'},{...raw,ts:f.now()+20,type:'execution',reason_code:'D_COST',metrics:{D:{detail:'FRICTION'}}}]);f.advance(100);
+ const balance=s.cash,filesBefore=await readdir(f.dir);const name=await f.engine.reportPreview();assert.equal(name,'paper-week-report.txt');
+ const {stream}=await f.engine.store.documentStream(name);let text='';for await(const chunk of stream)text+=chunk;
+ assert.match(text,/TRAINING EXPORT/);assert.match(text,/SCALP AUDIT/);assert.match(text,/"observationCount":2/);assert.match(text,/"reason_code":"D_COST"/);assert.match(text,/"auditObservations": 3/);assert.equal(s.cash,balance);assert.equal(s.outbox.length,0);
+ assert.ok(filesBefore.some(n=>n.endsWith('.jsonl.gz')));assert.ok((await readdir(f.dir)).some(n=>n.endsWith('.jsonl.gz')));
+ const end=nextPaperReportEnd(paperReportEnd(f.now()));f.advance(end-f.now());let sent=0;
+ await f.engine.reportTick({configured:true,document:async(name,_caption,bytes)=>{sent++;assert.match(name,/\.txt$/);assert.match(bytes.toString(),/"observationCount":2/);assert.match(bytes.toString(),/"reason_code":"D_COST"/);return 15;}});
+ assert.equal(sent,1);assert.equal(s.cash,balance);await f.engine.reportTick({configured:true,document:async()=>{throw Error('DUPLICATE');}});assert.equal(s.outbox[0].status,'sent');
+});
+
+test('bundle reports corrupted sources and bounded export omissions explicitly',async t=>{
+ const {writeFile}=await import('node:fs/promises');const {writeReportBundle}=await import('../report-bundle.js');const f=await setup(t);
+ const r={...f.engine.context(market(),'s'),reason_code:'A_LIQ',metrics:{A:{liquidity:1}}};
+ await f.engine.logs.append([r]);f.advance(100);const stamp=new Date(f.now()).toISOString().slice(0,13).replace('T','-');
+ // Corrupt a different retained hour within the requested range.
+ const nextHour=new Date(f.now()+3600000).toISOString().slice(0,13).replace('T','-');await writeFile(path.join(f.dir,'scalp-'+nextHour+'.jsonl.gz'),'not gzip');
+ await writeReportBundle(f.dir,'paper-week-report.txt','SIMULATION',{from:f.now()-1000,to:f.now()+7200000,maxBytes:70000});
+ const text=await readFile(path.join(f.dir,'paper-week-report.txt'),'utf8'),coverage=JSON.parse(text.split('EXPORT COVERAGE\n')[1]);
+ assert.equal(coverage.auditObservations,1);assert.equal(coverage.omittedObservations,1);assert.equal(coverage.sourceErrors[0].code,'LOG_READ_INCOMPLETE');
+ assert.ok((await readdir(f.dir)).includes('scalp-'+stamp+'.jsonl.gz'));
+ await assert.rejects(writeReportBundle(f.dir,'../secret.txt','',{from:0,to:1}),/INVALID_REPORT_RANGE/);
+});
+
+test('one TXT alone remains analyzable with fill-id deduplication across training and audit',async t=>{
+ const {mkdir,copyFile}=await import('node:fs/promises');const {execFileSync}=await import('node:child_process');const f=await setup(t);
+ const buy={simulation:true,type:'virtual_fill',id:'bundle-buy',positionId:'bundle-position',side:'BUY',at:f.now(),ts:f.now(),principalSol:1,strategyVersion:c.version};
+ const sell={...buy,id:'bundle-sell',side:'SELL',closed:true,pnlSol:.05,positionPnlSol:.05};
+ await f.engine.store.record(buy);await f.engine.logs.append([buy,sell]);f.advance(100);
+ const name=await f.engine.reportPreview(),text=await readFile(path.join(f.dir,name),'utf8');assert.match(text,/bundle-sell/);
+ const standalone=path.join(f.dir,'standalone');await mkdir(standalone);await copyFile(path.join(f.dir,name),path.join(standalone,name));
+ const result=JSON.parse(execFileSync(process.execPath,['paper-week/analyze.js',standalone],{encoding:'utf8'}));
+ assert.equal(result.uniqueVirtualFills,2);assert.equal(result.closed,1);assert.equal(result.wins,1);assert.equal(result.observedSellPnlSol,.05);
+});

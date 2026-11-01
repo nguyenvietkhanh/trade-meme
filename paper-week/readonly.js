@@ -7,10 +7,11 @@ import {boundedProjectText} from '../src/project-research.js';
 import {paperMarketQuote} from '../src/sell-quote.js';
 import {withRpcPriority} from '../src/rpc-priority.js';
 import {projectRulesConfig} from '../src/project-risk.js';
-import {curveState,quoteCurve} from '../src/pump-curve.js';
+import {curveState,quoteCurve,decodeCurve} from '../src/pump-curve.js';
 import {bondingCurvePda} from '@pump-fun/pump-sdk';
 import {getAssociatedTokenAddressSync} from '@solana/spl-token';
 const SOL='So11111111111111111111111111111111111111112';
+const usableCreator=value=>{try{const key=new PublicKey(value);return !key.equals(PublicKey.default)&&PublicKey.isOnCurve(key.toBuffer());}catch{return false;}};
 const TOKENS=new Set(['TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA','TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb']);
 export function poolReservePrice(amounts, tokenIndex, solIndex, decimals, virtualQuoteReserves = '0') {
  if(![tokenIndex,solIndex].every(i=>i===0||i===1)||tokenIndex===solIndex||!Number.isInteger(decimals)||decimals<0||decimals>18)throw Error('PAPER_RESERVE_PRICE_INVALID');
@@ -59,10 +60,16 @@ let q;if(m.dexId==='pumpfun'&&!m.migratedPool){
    if(program!=='TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA'&&(!Array.isArray(extensions)||extensions.some(e=>['transferfeeconfig','transferfeeamount','permanentdelegate','nontransferable','nontransferableaccount'].includes(String(e.extension).toLowerCase())||!policy.safeToken2022Extensions.includes(String(e.extension).toLowerCase()))))return reject('B_TOKEN');
    const curve=bondingCurvePda(key),excluded=new Set([m.pairAddress,curve.toBase58(),...policy.burnOwners]),vaults=new Set();let creator;
    if(m.dexId==='pumpfun'){const state=await curveState(raw.rpc,m.mint,m.pairAddress);creator=state.curve.creator.toBase58();vaults.add(getAssociatedTokenAddressSync(key,curve,true,account.owner).toBase58());}
-   else{const poolAccount=await raw.rpc.getAccountInfo(new PublicKey(m.pairAddress),'confirmed');if(!poolAccount?.owner.equals(PUMP_AMM_PROGRAM_ID))return {...identity,coverage:{}};const p=PUMP_AMM_SDK.decodePool(poolAccount),mints=[String(p.baseMint),String(p.quoteMint)];if(!mints.includes(m.mint)||!mints.includes(SOL))return {...identity,coverage:{}};creator=String(p.coinCreator);vaults.add(String(mints[0]===m.mint?p.poolBaseTokenAccount:p.poolQuoteTokenAccount));}
-   if(!creator||creator===PublicKey.default.toBase58()||!PublicKey.isOnCurve(new PublicKey(creator).toBuffer()))return {...identity,coverage:{},missing:['DEV_IDENTITY_UNVERIFIED']};
+   else{const poolAccount=await raw.rpc.getAccountInfo(new PublicKey(m.pairAddress),'confirmed');if(!poolAccount?.owner.equals(PUMP_AMM_PROGRAM_ID))return {...identity,coverage:{}};const p=PUMP_AMM_SDK.decodePool(poolAccount),mints=[String(p.baseMint),String(p.quoteMint)];if(!mints.includes(m.mint)||!mints.includes(SOL))return {...identity,coverage:{}};creator=p.coinCreator?.toBase58?.()??null;vaults.add(String(mints[0]===m.mint?p.poolBaseTokenAccount:p.poolQuoteTokenAccount));}
+   let creatorSource='pool-or-curve';
+   if(m.dexId==='pumpswap'&&(!usableCreator(creator))){
+    // A zero/shared pool fee recipient is not proof of the original mint creator.
+    // Read only the mint-derived, program-owned bonding curve; never trust a profile.
+    try{const original=decodeCurve(await raw.rpc.getAccountInfo(curve,'confirmed'));creator=original.creator.toBase58();creatorSource='mint-derived-pump-curve';}catch{return {...identity,coverage:{},missing:['DEV_IDENTITY_UNVERIFIED']};}
+   }
+   if(!usableCreator(creator))return {...identity,coverage:{},missing:['DEV_IDENTITY_UNVERIFIED']};
    const holders=await raw.holderFacts(key,account.owner,excluded,vaults,creator);
-   return {...identity,checkedAt:Date.now(),...holders,tokenProgram:program==='TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA'?'spl-token':'spl-token-2022',mintRevoked:true,freezeRevoked:true,extensionsSafe:true,rugDanger:risk?.danger??null,rugSource:risk?.source??null,rugRequired:!!policy.rugRequired,coverage:{program:true,authorities:true,holders:true,exclusions:true,rug:risk!==null}};
+   return {...identity,checkedAt:Date.now(),...holders,creatorAddress:creator,creatorSource,tokenProgram:program==='TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA'?'spl-token':'spl-token-2022',mintRevoked:true,freezeRevoked:true,extensionsSafe:true,rugDanger:risk?.danger??null,rugSource:risk?.source??null,rugRequired:!!policy.rugRequired,coverage:{program:true,authorities:true,holders:true,exclusions:true,rug:risk!==null}};
   });},
   async refreshCandidate(m){return withRpcPriority('background',async()=>{
    const now=Date.now(),activityAt=m.activityCheckedAt??m.marketObservedAt??m.updatedAt;

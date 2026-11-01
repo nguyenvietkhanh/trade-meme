@@ -88,7 +88,7 @@
   "maxHoldMs": 600000,
   "fillDelayMs": 2000,
   "slippageBps": 150,
-  "emergencySlippageBps": 1000,
+  "emergencySlippageBps": 300,
   "forwardMinutes": [
     1,
     5,
@@ -122,6 +122,8 @@
   "orderTimeoutMs": 60000,
   "exitOrderTimeoutMs": 10000,
   "sourceMaxBytes": 2097152,
-  "cMaxStoredSamples": 12,
-  "rugRequired": false
+  "cMaxStoredSamples": 24,
+  "rugRequired": false,
+  "cReadEveryMs": 2500,
+  "algorithmRevision": "scalp-sampling-v2"
 }

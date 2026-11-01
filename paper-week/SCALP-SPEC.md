@@ -155,3 +155,34 @@ invent rug evidence. Missing on-chain evidence still blocks entries.
 Displayed multiples use four decimals without rounding up into a TP threshold:
 1.995x is shown as1.9950x, not2.00x. Price-return percentages are truncated toward
 zero to avoid suggesting a threshold crossing that has not actually occurred.
+
+## Operator log fix: scalp-sampling-v2
+
+The observed pending-BUY freshness race is fixed by sampling raw reserves every
+2.5s (up to24 stored samples). C still selects three observations with >=5s gaps,
+15–45s span and a <=5s last sample. A pending intent waits for a fresh reserve
+read instead of cancelling at5.04s; it still expires at the configured order
+timeout. Expired quotes are re-requested with bounded infrastructure backoff;
+no stale observation or quote may create a BUY. Market/authority/holder checks
+still apply. E position cap stays disabled and external rug remains optional.
+
+When a PumpSwap pool lacks a usable coinCreator, read the mint-derived bonding
+curve PDA with official pump program ownership/decoding checks. Only a verified
+on-curve creator can reach holder checks; absent or wrong-owner accounts remain
+DEV_IDENTITY_UNVERIFIED. Profile/website creator strings are never substituted.
+
+Normal min-output quote slippage stays150bps. Emergency modeled min-output
+slippage is300bps instead of1000bps. This remains a conservative modeling input,
+not measured execution slippage; stop triggers do not guarantee a fixed maximum
+loss in a gap or unavailable route. Existing ledger results are not rewritten.
+
+A single TXT download covers the active reporting period. At23:59Vietnam one
+TXT is queued with summary, original training records and streamed scalp audit.
+Candidate observations are grouped by mint/pool/reason/5min: count, first/last
+timestamps, first/last signal and latest metrics. Executions, fills and forward
+observations stay separate. Internal hourly gzip logs remain for detailed replay;
+missing retained logs and size-limit omissions must not be treated as zero events.
+EXPORT COVERAGE states audit counts, reasons, explicit omissions and read errors.
+Exports cap24MiB; candidates reserve2MiB for execution rows, no unbounded inflation.
+The patch is not a profitability backtest; two observed closed positions do not
+justify fitting new thresholds. Entry/exit thresholds otherwise remain unchanged.

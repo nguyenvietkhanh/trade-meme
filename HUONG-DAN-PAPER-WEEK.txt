@@ -50,3 +50,16 @@ impact/cost/authority/program khongn oi. >=300lenhdongmoi danhgiachienluoc.
 10-40tin hieu/ngaylamuctieu,khong phailoihua. Chua nguonBthi0BUYladungSPEC.
 Paperkhongmo phongMEV/front-running, auction/fillthat; ketquatienthatcothekemhon.
 Khong chonnhanh naycho serviceLIVE. RailwayPAPERcanservicerieng+Volume rieng.
+
+CAP NHAT scalp-sampling-v2
+- Sua BUY bi huy khi mau gia vua qua5giay trong luc choquote.
+- Doc gia muc tieu2.5giay; van can3mau cach nhau>=5giay trong15-45giay.
+- ChoRPC lam moi, quote het han thi laylai; khongBUY bang gia cu.
+- CreatorPoolthieu: chi fallback curvePDA cua mint, kiemtra ownerprogram.
+- Gia dinh min-output SELLkhan cap3%, truoc10%; khong phai slippage do thuc te.
+- Giao dienchi1nutTXT. Telegram23:59VietNamgui1TXTgom baocao+trade+audit.
+- TXT hien tai la kybaocao dangchay; file23:59la kyngay da dong.
+- Scangiongnhau goptheomint/reason/5phut: giusolan,giomidau/cuoi,metriccuoi.
+- Execution/fill giuriengtungban. Loggz gocvangiu trongthu muc .paper-week.
+- TXTtoi da24MiB; catbot/loidoctap tin duocghiro oEXPORT COVERAGE.
+- Capnhatkhongreset50SOL,khongxoaP&L,khongdoilenhLIVE.

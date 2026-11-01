@@ -3,23 +3,23 @@
   "files": [
     {
       "path": "package.json",
-      "sha256": "36ab26702bc997a44d60d801b9c82ab17e4205b08adc4e03246e8106207f6b88"
+      "sha256": "d314faab3711ad6826beb4f55f4081d2932d6e21bd702dc630cbd1ad32fddf0e"
     },
     {
       "path": "README.md",
-      "sha256": "1d4d1437b7fda64b94dfc697c91369e4838c09984bd40903a929105541f7cdf3"
+      "sha256": "a8d72c1ecc5403ae18ad0cbb8dbe22f9500d3c90cd9a20f33956b323837d6a63"
     },
     {
       "path": "HUONG-DAN-PAPER-WEEK.txt",
-      "sha256": "d066b31c9824185a0957606c9d24795b0297479bdb36d01cf3a82794e65c6e46"
+      "sha256": "dc1bf8d0c8216dea90ff2d6bfd1f763877a490450c7b371b94e746c2f8b42bfe"
     },
     {
       "path": "paper-week.env.example",
-      "sha256": "269bd08eb44850fcc093c1142fe9ddce495b553ceb5e37fe77d15b248096560c"
+      "sha256": "0162783760dd5f5e895bdbf2921bee63420b4567b697e869cd0ed76a2cb25a84"
     },
     {
       "path": "paper-week/engine.js",
-      "sha256": "6e4c2d495eb5b482a1cbe0030bc6761b25f2805b3031ff80eeb6cc60a7cded05"
+      "sha256": "8784e41773d7f2c4fb38fad912d8acf0fe66fb3b7008fbe43a08b4de6fec4491"
     },
     {
       "path": "paper-week/momentum.js",
@@ -27,7 +27,7 @@
     },
     {
       "path": "paper-week/readonly.js",
-      "sha256": "6789b5fbe039a45358fba31a51a7a55bcc314221998264e506e74751e1d5a0e0"
+      "sha256": "b93a3b71ceca0209afe1c2f4c287aa878c9a170e0bbfde26e2b36652bd5a069a"
     },
     {
       "path": "paper-week/market.js",
@@ -35,11 +35,11 @@
     },
     {
       "path": "paper-week/server.js",
-      "sha256": "e63cad1e0b2b68bd6ed5a6671f91e047b9310f2bc1105d8e08182a8dffc9fdf6"
+      "sha256": "b17622c11eabacd05da617a385603ee1194d394e957fca6fdaa14d7ddd917e56"
     },
     {
       "path": "paper-week/app.js",
-      "sha256": "69dbac3def7132d62148e22d32ff8325844184d3c1aa80d992b54db2a0979ffe"
+      "sha256": "b2796017af5b3e2ed95913d4b14385ede17635ccbc05876610c5660200dce886"
     },
     {
       "path": "paper-week/index.html",
@@ -47,23 +47,23 @@
     },
     {
       "path": "paper-week/TRAINING-SCHEMA.txt",
-      "sha256": "a2eaea91145cbb81cdb764e7874b61fcdbe4513e9df3931613561cf2a20c6ad9"
+      "sha256": "4d42dd738a4d92f23f57513fc1c078dbef1a26dcd7c0057e10f518870a301a34"
     },
     {
       "path": "paper-week/analyze.js",
-      "sha256": "039ed44b8b1c2f8e6a99f614178e454d3ccbf844bdd6cc3c566f52bff32698e6"
+      "sha256": "59155745ebadf2cc5e998ee481d4c4a96ae14d09c166c015d31c895bdadb9ee4"
     },
     {
       "path": "paper-week/store.js",
-      "sha256": "482fd53cbbd4bd29238f066ae6c28ccf70ef2b19ed884c766ab410ada2b18ca4"
+      "sha256": "27c68f51086d3ec84b87220ba7f0b7b00ef79e241a5d78e50c81319a619f3531"
     },
     {
       "path": "paper-week/scalp-config.json",
-      "sha256": "701278ee03d9c6c6c9f2b4aa000817611db9a1a4e409b8ec5a2a96f67689578d"
+      "sha256": "3bdca03cc2722907a1a96773e0c8231073ec50bedde5561a7ab626754197d177"
     },
     {
       "path": "paper-week/scalp-config.js",
-      "sha256": "0c56225bd2b13fbff4ec1dc10f31b9327953ae2b5c5fbbd4aa87fb69911acaff"
+      "sha256": "5fcb92f8311d6cf05b317c8186485aceb56021b88230b51bf7ba847cc82e57e2"
     },
     {
       "path": "paper-week/scalp-stages.js",
@@ -71,7 +71,7 @@
     },
     {
       "path": "paper-week/scalp-engine.js",
-      "sha256": "88bf43e8e38e2681262124c760d73537a34439081eed7d4ebb03c446b0e8bf12"
+      "sha256": "1fd3cca9d281d2647b6ebf98a78da0f3113a5e95faa911b02344fb923ef62f4c"
     },
     {
       "path": "paper-week/scalp-feed.js",
@@ -87,7 +87,7 @@
     },
     {
       "path": "paper-week/SCALP-SPEC.md",
-      "sha256": "7817d044a4ead0c57f03575d34e8712259f27596400b746db2a0d11ea33f7a7f"
+      "sha256": "b915abc55f42d268932fbb4f45c31346632ee63556143ea4591db6993610022d"
     },
     {
       "path": "paper-week/SCALP-REQUEST.txt",
@@ -96,6 +96,10 @@
     {
       "path": "paper-week/position-entry.js",
       "sha256": "88a657a3ca0cd34f122acd52cb83061c30061fbd167a0e3c970ed0db9fba6e5e"
+    },
+    {
+      "path": "paper-week/report-bundle.js",
+      "sha256": "b1a0c7073eb0c2147b2566091351b49270410e5a51de718861453c676c07ff26"
     }
   ]
 }

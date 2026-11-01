@@ -18,6 +18,22 @@ Windows: Ctrl+C before updates; run the pinned `UPDATE-PAPER-WEEK.ps1`, then
 `START-PAPER-WEEK.cmd`. Keep `paper-week.env`, `.paper-week`, Helius/Telegram settings
 and the separate Railway PAPER Volume. No session reset is required for an update.
 
+Latest PAPER implementation revision: `scalp-sampling-v2`. Fixes the 5-second
+confirmation/quote timing race without accepting stale prices or quotes. Raw
+reserve reads target2.5s; selected confirmation samples still have >=5s gaps
+and a15–45s span. Missing Pool creator can fall back to the mint-derived,
+program-owned pump curve. No public profile is accepted as creator evidence.
+Emergency minimum-output slippage assumption is now3% (was10%); normal1.5%.
+This changes the simulation assumption, not an observed live execution cost.
+
+UI exposes one TXT download for the current reporting period. At23:59 Vietnam,
+Telegram receives one daily TXT including summary, trades, staged decisions and
+coverage. Repeated candidate scans are grouped per mint/pool/reason/5min with
+counts and first/last timestamps. Execution/fill rows are retained individually.
+The export streams internal gzip logs; they remain local for detailed replay.
+TXT size is capped24MiB; omissions/read failures are explicit in EXPORT COVERAGE.
+No balance reset or deletion of existing records occurs on update.
+
 Config: `paper-week/scalp-config.json`; env fields use SCALP_ + UPPER_SNAKE_CASE,
 e.g. `SCALP_A_SWAP_LIQUIDITY_USD=8000`. Optional private JSON override path:
 `PAPER_SCALP_CONFIG`. Existing entry size is capped by pool liquidity and V5.4
