@@ -30,7 +30,8 @@ M1/M5, ratio>=1.15, >=10 transactions. H4 is logged unverified without a source.
 
 B requires on-chain mint/program/extension/authority checks, complete owner-
 aggregated holder distribution excluding pool/curve/configured burn owners,
-top10<=30%, dev<=8%, holders>=20 (curve15), and verified non-danger rug evidence.
+top10<=30%, dev<=8%, holders>=20 (curve15). External rug evidence is no longer
+required by the PAPER defaults (`rugRequired=false`); it remains unverified.
 Safety cache10m per mint, invalidated on pool identity change. Unknown evidence
 is B_UNVERIFIED; retry60s. Token-2022 metadata extensions only by default;
 transfer-fee/delegate/nontransferable/unknown effects do not receive a safe PASS.
@@ -53,7 +54,8 @@ Successful but poor quotes are D_COST and are never downsized to hide that failu
 E runs after D. Size=min(fixed paper size,1.5% physical pool SOL reserve), with
 V5.4 configured loss-streak/drawdown/day-loss size factors (no timed pause).
 It requires cash for principal+two assumed fees+rent, no held mint, unused signal,
-30m same-mint cooldown, <=10 positions and <=50% verified current fund exposure.
+30m same-mint cooldown and <=50% verified current fund exposure. No position-count
+cap by default (`maxPositions=0`); available cash and exposure still limit entries.
 The signal is consumed and persisted immediately before virtual BUY submission,
 even if that submission later fails. The cooldown starts at attempted BUY and
 is refreshed at the final SELL. Current insufficient/future-stale equity is not
@@ -84,13 +86,14 @@ RugCheck/equivalent normalized adapter, queried with `?mint=...`, returning:
 `{mint,checkedAt,verified:true,danger:false,source:"verifiable public source"}`.
 `PAPER_SCALP_RISK_KEY` optionally authenticates to this configured adapter only.
 This service must actually verify its upstream result; JSON shape alone is not
-proof of provenance. Missing/unverified/old/mismatched evidence never passes B.
+proof of provenance. When `rugRequired=true`, missing/unverified/old/mismatched
+rug evidence blocks B. When false, no external rug request is made and rug
+coverage is false with null result; on-chain verification still runs.
 On-chain safety is still checked locally; a risk-provider result cannot override
 mint authority, freeze authority, program or excluded holder requirements.
 
-Because the operator currently has neither service, **GMGN is skipped and
-candidates reaching B stay B_UNVERIFIED; automatic BUY is blocked there**.
-This is required by this SPEC, not an unexplained zero-order success claim.
+Operator update: **GMGN is skipped; missing external rug evidence no longer
+blocks PAPER BUY**. Other missing on-chain evidence still yields B_UNVERIFIED.
 The software is tested with explicit synthetic provider/quote fixtures.
 
 ## Durable research and tuning
@@ -147,7 +150,7 @@ UI shows entry SOL/token and price return since this position BUY. The API field
 `entryReferenceVersion` is `buy-fill-v1`. A price multiple is not net realized PnL;
 fees, partial exits and executable sell quotes still determine realized results.
 This does not change scalp TP1+15%, TP2+30% to momentum2x/3x. It also does not
-bypass B_UNVERIFIED or invent a missing rug source.
+invent rug evidence. Missing on-chain evidence still blocks entries.
 
 Displayed multiples use four decimals without rounding up into a TP threshold:
 1.995x is shown as1.9950x, not2.00x. Price-return percentages are truncated toward

@@ -13,7 +13,7 @@ const market=(now=at)=>({mint:'TEST_FIXTURE',pairAddress:'POOL_FIXTURE',dexId:'p
 const facts=(m,now=at)=>({mint:m.mint,pool:m.pairAddress,checkedAt:now,coverage:{program:true,authorities:true,holders:true,exclusions:true,rug:true},tokenProgram:'spl-token',mintRevoked:true,freezeRevoked:true,extensionsSafe:true,top10Pct:25,devPct:3,holderCount:100,rugDanger:false});
 test('stage A uses cached fields only and emits its first failing rule in order',()=>{const m=market();assert.equal(stageA(m,c,at).pass,true);assert.equal(stageA({...m,liquidityUsd:1,pairCreatedAt:at},c,at).reason_code,'A_LIQ');assert.equal(stageA({...m,liquidityUsd:8000,pairCreatedAt:at},c,at).reason_code,'A_AGE');assert.equal(stageA({...m,change5mPct:61},c,at).reason_code,'A_M5_RANGE');assert.equal(stageA({...m,buys5m:1},c,at).reason_code,'A_FLOW');assert.equal(stageA({...m,volume5mUsd:1},c,at).reason_code,'A_VOL');assert.equal(stageA({...m,change1hPct:-31},c,at).reason_code,'A_H1_DUMP');});
 test('curve A has its own capitalization, age and positive M1/M5 rules',()=>{const m={...market(),dexId:'pumpfun',marketCapUsd:6000};assert.equal(stageA(m,c,at).pass,true);assert.equal(stageA({...m,change1mPct:-1},c,at).reason_code,'A_M5_RANGE');assert.equal(stageA({...m,marketCapUsd:4999},c,at).reason_code,'A_LIQ');});
-test('stage B fails closed on unavailable exclusions or rug evidence, accepts exact thresholds',()=>{const m=market();assert.equal(stageB(null,m,c,at).reason_code,'B_UNVERIFIED');const f=facts(m);assert.equal(stageB({...f,coverage:{...f.coverage,rug:false}},m,c,at).reason_code,'B_UNVERIFIED');assert.equal(stageB({...f,top10Pct:30,devPct:8},m,c,at).pass,true);assert.equal(stageB({...f,rugDanger:true},m,c,at).reason_code,'B_RUG');assert.equal(stageB({...f,mintRevoked:false},m,c,at).reason_code,'B_AUTHORITY');});
+test('stage B fails closed on unavailable exclusions or rug evidence, accepts exact thresholds',()=>{const m=market();assert.equal(stageB(null,m,c,at).reason_code,'B_UNVERIFIED');const f=facts(m);assert.equal(stageB({...f,coverage:{...f.coverage,rug:false}},m,{...c,rugRequired:true},at).reason_code,'B_UNVERIFIED');assert.equal(stageB({...f,top10Pct:30,devPct:8},m,c,at).pass,true);assert.equal(stageB({...f,rugDanger:true},m,c,at).reason_code,'B_RUG');assert.equal(stageB({...f,mintRevoked:false},m,c,at).reason_code,'B_AUTHORITY');});
 test('stage C enforces exact three samples, span, rising range, steps, and liquidity retention',()=>{const rows=[{at:at-20000,price:1,liquiditySol:100},{at:at-10000,price:1.01,liquiditySol:99},{at,price:1.02,liquiditySol:95}];assert.equal(stageC(rows,c,at).pass,true);assert.equal(stageC(rows.slice(1),c,at).reason_code,'C_SPAN');assert.equal(stageC(rows,c,at+5001).reason_code,'C_STALE');assert.equal(stageC([...rows.slice(0,2),{at,price:1.13,liquiditySol:100}],c,at).reason_code,'C_RISE_HIGH');assert.equal(stageC([...rows.slice(0,2),{at,price:1.02,liquiditySol:89}],c,at).reason_code,'C_LIQ_DROP');});
 test('stage D binds reverse amount, drift, quote age, impact and actual intended size',()=>{const o={mint:'M',pool:'P',amount:'1000000000',readyAt:at-2000,referencePriceSol:.01},q={out:'98500000',expectedOut:'100000000',at:at-1000,decimals:6,impactPct:1,roundTrip:{mint:'M',pool:'P',inAmount:o.amount,sellInput:'98500000',sellOut:'960000000',at,impactPct:1}};assert.equal(stageD(q,o,c,at).pass,true);assert.equal(stageD({...q,impactPct:3},o,c,at).reason_code,'D_COST');assert.equal(stageD({...q,expectedOut:'80000000'},o,c,at).detail,'DRIFT');assert.equal(stageD(q,o,c,at+3001).detail,'STALE');});
 test('stage E applies fixed/pool sizing, exposure, slots, consumed signals and 30m reentry',()=>{const m=market(),s={cash:50e9,initial:50e9,positions:[],trades:[],scalp:{consumed:{}}};assert.equal(plannedSize({...m,liquidityQuoteSol:10},s,c),.15);assert.equal(stageE(m,s,c,at,1,'signal').pass,true);s.scalp.consumed[m.mint]={signalId:'signal',at};assert.equal(stageE(m,s,c,at,1,'signal').reason_code,'E_CONSUMED');assert.equal(stageE(m,s,c,at+1,1,'other').reason_code,'E_REENTRY');assert.equal(stageE(m,s,c,at+c.reentryMs,1,'other').pass,true);});
@@ -48,4 +48,30 @@ test('upgrading a funded v2 session checkpoints its ledger and preserves old-pos
 test('scalp +15/+30 and moved stop are relative to the locked BUY, never 5m or discovery prices',async()=>{
  const {lockPositionEntry}=await import('../position-entry.js');const p={id:'anchor-fixture',mint:'M',openedAt:at,entry:.01,initialRaw:'100000000',decimals:6,peak:.01,tpDone:false,memory:{},marketChange5mPct:300,discoveryPriceSol:.001,exitPolicy:scalpExitPolicy(c)};lockPositionEntry(p,{principalLamports:1000000000});p.entry=99;
  assert.equal(scalpExit(p,.0114,at),null);assert.equal(scalpExit(p,.0116,at).reason,'scalp-tp1');p.tpDone=true;p.peak=.0116;p.memory={};assert.equal(scalpExit(p,.0101,at).reason,'stop-loss');
+});
+
+test('paper defaults remove slot cap and external rug gate while preserving on-chain and capital checks',()=>{
+ assert.equal(c.maxPositions,0);assert.equal(c.rugRequired,false);
+ const m=market(),f={...facts(m),rugDanger:null,coverage:{...facts(m).coverage,rug:false}};
+ assert.equal(stageB(f,m,c,at).pass,true);
+ assert.equal(stageB({...f,coverage:{...f.coverage,holders:false}},m,c,at).reason_code,'B_UNVERIFIED');
+ assert.equal(stageB({...f,mintRevoked:false},m,c,at).reason_code,'B_AUTHORITY');
+ assert.equal(stageB({...f,top10Pct:99},m,c,at).reason_code,'B_TOP10');
+ const s={cash:39e9,initial:50e9,positions:Array.from({length:11},(_,i)=>({mint:'OTHER'+i,basis:1e9})),trades:[],scalp:{consumed:{},fundSol:50}};
+ assert.equal(stageE(m,s,c,at,1,'new').pass,true);
+ assert.equal(stageE(m,s,{...c,maxPositions:10},at,1,'new').reason_code,'E_POSITIONS');
+ assert.equal(stageE(m,{...s,cash:0},c,at,1,'new').reason_code,'E_CASH');
+ assert.equal(stageE(m,{...s,scalp:{...s.scalp,fundSol:20}},c,at,1,'new').reason_code,'E_EXPOSURE');
+});
+
+test('adapter without rug provider still reads RPC and rejects a live mint authority',async t=>{
+ const {Connection,PublicKey}=await import('@solana/web3.js');
+ const {createPaperAdapter}=await import('../readonly.js');let reads=0;
+ t.mock.method(Connection.prototype,'getParsedAccountInfo',async()=>{reads++;return {value:{owner:new PublicKey('TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA'),data:{parsed:{info:{decimals:6,mintAuthority:'TEST_AUTHORITY',freezeAuthority:null}}}}};});
+ const m={...market(),mint:'So11111111111111111111111111111111111111112'};
+ const adapter=createPaperAdapter('/tmp',{env:{},policy:c});
+ const result=await adapter.scalpSafety(m);
+ assert.equal(reads,1);assert.equal(result.reason_code,'B_AUTHORITY');
+ const strict=createPaperAdapter('/tmp',{env:{},policy:{...c,rugRequired:true}});
+ assert.deepEqual((await strict.scalpSafety(m)).missing,['RUG_SOURCE_NOT_CONFIGURED']);assert.equal(reads,1);
 });

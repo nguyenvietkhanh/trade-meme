@@ -9,10 +9,10 @@ Read [SCALP-SPEC.md](paper-week/SCALP-SPEC.md) for thresholds, missing-provider
 contracts, logging, retry semantics and actual limitations. Original request:
 [SCALP-REQUEST.txt](paper-week/SCALP-REQUEST.txt).
 
-**Current external blockers:** no authorized GMGN adapter and no RugCheck/equivalent
-risk source have been configured. GMGN is skipped. Missing rug evidence blocks
-BUY with B_UNVERIFIED/retry60s, exactly as the requested strict safety stage requires.
-Successful fixture tests do not prove live provider connectivity or profitability.
+**PAPER policy update:** no position-count cap (`maxPositions=0`) and no external
+rug-source requirement (`rugRequired=false`). Rug status remains unverified;
+it is not a safety certification. On-chain program/authority/holder checks and
+cash/50% exposure checks remain active. GMGN remains optional and unconfigured.
 
 Windows: Ctrl+C before updates; run the pinned `UPDATE-PAPER-WEEK.ps1`, then
 `START-PAPER-WEEK.cmd`. Keep `paper-week.env`, `.paper-week`, Helius/Telegram settings

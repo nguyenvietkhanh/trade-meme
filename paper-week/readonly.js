@@ -41,12 +41,15 @@ let q;if(m.dexId==='pumpfun'&&!m.migratedPool){
  return Object.freeze({execution,
   async scalpSafety(m){return withRpcPriority('research',async()=>{
    const identity={mint:m.mint,pool:m.pairAddress,checkedAt:Date.now()};
+   let risk=null;
+   if(policy.rugRequired){
    if(!env.PAPER_SCALP_RISK_URL)return {...identity,coverage:{},missing:['RUG_SOURCE_NOT_CONFIGURED']};
    const u=new URL(env.PAPER_SCALP_RISK_URL);if(u.protocol!=='https:'||u.username||u.password)throw Error('RISK_SOURCE_HTTPS_REQUIRED');u.searchParams.set('mint',m.mint);
    const response=await fetch(u,{headers:env.PAPER_SCALP_RISK_KEY?{Authorization:'Bearer '+env.PAPER_SCALP_RISK_KEY}:{},redirect:'error',signal:AbortSignal.timeout(policy.sourceTimeoutMs)});if(!response.ok)throw Error('RISK_SOURCE_UNAVAILABLE');
-   const text=await boundedProjectText(response,policy.sourceMaxBytes);if(text.length>policy.sourceMaxBytes)throw Error('RISK_SOURCE_TOO_LARGE');const risk=JSON.parse(text);
+   const text=await boundedProjectText(response,policy.sourceMaxBytes);if(text.length>policy.sourceMaxBytes)throw Error('RISK_SOURCE_TOO_LARGE');risk=JSON.parse(text);
    if(risk.mint!==m.mint||risk.verified!==true||typeof risk.danger!=='boolean'||!Number.isFinite(risk.checkedAt)||risk.checkedAt>Date.now()||Date.now()-risk.checkedAt>policy.safetyTtlMs||(typeof risk.source!=='string'||risk.source.length>256))return {...identity,coverage:{},missing:['RUG_SOURCE_UNVERIFIED']};
    if(risk.danger)return {...identity,rejected:true,reason_code:'B_RUG',rugDanger:true,rugSource:risk.source};
+   }
    const key=new PublicKey(m.mint),account=(await raw.rpc.getParsedAccountInfo(key,'confirmed')).value,parsed=account?.data?.parsed?.info,program=account?.owner?.toBase58();
    const reject=reason_code=>({...identity,rejected:true,reason_code});
    if(!account||!program)return {...identity,coverage:{}};if(!TOKENS.has(program))return reject('B_TOKEN');if(!parsed||!('mintAuthority'in parsed)||!('freezeAuthority'in parsed))return {...identity,coverage:{}};
@@ -59,7 +62,7 @@ let q;if(m.dexId==='pumpfun'&&!m.migratedPool){
    else{const poolAccount=await raw.rpc.getAccountInfo(new PublicKey(m.pairAddress),'confirmed');if(!poolAccount?.owner.equals(PUMP_AMM_PROGRAM_ID))return {...identity,coverage:{}};const p=PUMP_AMM_SDK.decodePool(poolAccount),mints=[String(p.baseMint),String(p.quoteMint)];if(!mints.includes(m.mint)||!mints.includes(SOL))return {...identity,coverage:{}};creator=String(p.coinCreator);vaults.add(String(mints[0]===m.mint?p.poolBaseTokenAccount:p.poolQuoteTokenAccount));}
    if(!creator||creator===PublicKey.default.toBase58()||!PublicKey.isOnCurve(new PublicKey(creator).toBuffer()))return {...identity,coverage:{},missing:['DEV_IDENTITY_UNVERIFIED']};
    const holders=await raw.holderFacts(key,account.owner,excluded,vaults,creator);
-   return {...identity,checkedAt:Date.now(),...holders,tokenProgram:program==='TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA'?'spl-token':'spl-token-2022',mintRevoked:true,freezeRevoked:true,extensionsSafe:true,rugDanger:risk.danger,rugSource:risk.source,coverage:{program:true,authorities:true,holders:true,exclusions:true,rug:true}};
+   return {...identity,checkedAt:Date.now(),...holders,tokenProgram:program==='TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA'?'spl-token':'spl-token-2022',mintRevoked:true,freezeRevoked:true,extensionsSafe:true,rugDanger:risk?.danger??null,rugSource:risk?.source??null,rugRequired:!!policy.rugRequired,coverage:{program:true,authorities:true,holders:true,exclusions:true,rug:risk!==null}};
   });},
   async refreshCandidate(m){return withRpcPriority('background',async()=>{
    const now=Date.now(),activityAt=m.activityCheckedAt??m.marketObservedAt??m.updatedAt;
@@ -79,6 +82,6 @@ let q;if(m.dexId==='pumpfun'&&!m.migratedPool){
    return q;
   });},
   async refreshHeld(positions,markets,solUsd){const out=[];await Promise.all(positions.slice(0,4).map(async p=>{let m=markets.find(m=>m.mint===p.mint&&m.pairAddress===p.pool)??{mint:p.mint,pairAddress:p.pool,dexId:p.venue??'pumpfun',symbol:p.symbol,solUsd};try{if(m.dexId==='pumpfun'){const route=await raw.curveRoute(p.mint,'SELL',p.pool);if(route.venue==='pumpfun'){const curves=await raw.curveMarketData([p.mint],solUsd);if(!curves[0])return;m={...m,...curves[0],spotPriceSol:curves[0].priceUsd/solUsd,priceAt:curves[0].updatedAt};}else{const price=await poolPrice(m,route.poolAddress);m={...m,...price,migratedPool:route.poolAddress};}}else m={...m,...await poolPrice(m,m.pairAddress)};out.push(m);}catch{/* Missing marks remain unavailable; never synthesize an exit. */}}));return out;},
-  status:()=>({mode:'read-only',heliusConfigured:raw.heliusConfigured,rpcMode:raw.rpcMode,scalpRiskConfigured:!!env.PAPER_SCALP_RISK_URL,research:facts?.projectResearch?.status()??{enabled:false,reason:'momentum strategy: holder/dev/socials do not gate paper orders'}})
+  status:()=>({mode:'read-only',heliusConfigured:raw.heliusConfigured,rpcMode:raw.rpcMode,scalpRiskConfigured:!!env.PAPER_SCALP_RISK_URL,scalpRiskRequired:!!policy.rugRequired,research:facts?.projectResearch?.status()??{enabled:false,reason:'momentum strategy: holder/dev/socials do not gate paper orders'}})
  });
 }

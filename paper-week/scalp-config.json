@@ -74,7 +74,7 @@
   "poolFraction": 0.015,
   "feeSol": 2.5e-05,
   "rentSol": 0.00203928,
-  "maxPositions": 10,
+  "maxPositions": 0,
   "maxExposureFraction": 0.5,
   "reentryMs": 1800000,
   "stopPct": 10,
@@ -122,5 +122,6 @@
   "orderTimeoutMs": 60000,
   "exitOrderTimeoutMs": 10000,
   "sourceMaxBytes": 2097152,
-  "cMaxStoredSamples": 12
+  "cMaxStoredSamples": 12,
+  "rugRequired": false
 }

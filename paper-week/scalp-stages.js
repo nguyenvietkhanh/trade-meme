@@ -28,10 +28,10 @@ export function stageB(f,m,c,now){
  const fail=code=>result('B',code,f??{});
  if(!f||f.mint!==m.mint||f.pool!==m.pairAddress||!num(f.checkedAt)||f.checkedAt>now||now-f.checkedAt>c.safetyTtlMs)return fail('B_UNVERIFIED');
  if(f.rejected)return fail(f.reason_code??'B_TOKEN');
- if(f.coverage?.program!==true||f.coverage?.authorities!==true||f.coverage?.holders!==true||f.coverage?.exclusions!==true||f.coverage?.rug!==true)return fail('B_UNVERIFIED');
+ if(f.coverage?.program!==true||f.coverage?.authorities!==true||f.coverage?.holders!==true||f.coverage?.exclusions!==true||(c.rugRequired&&f.coverage?.rug!==true))return fail('B_UNVERIFIED');
  if(!['spl-token','spl-token-2022'].includes(f.tokenProgram)||f.extensionsSafe!==true)return fail('B_TOKEN');
  if(f.mintRevoked!==true||f.freezeRevoked!==true)return fail('B_AUTHORITY');
- if(!num(f.top10Pct)||!num(f.devPct)||!num(f.holderCount)||typeof f.rugDanger!=='boolean')return fail('B_UNVERIFIED');
+ if(!num(f.top10Pct)||!num(f.devPct)||!num(f.holderCount)||(c.rugRequired&&typeof f.rugDanger!=='boolean'))return fail('B_UNVERIFIED');
  if(f.top10Pct>c.bTop10Pct)return fail('B_TOP10');if(f.devPct>c.bDevPct)return fail('B_DEV');
  if(f.holderCount<(m.dexId==='pumpfun'?c.bCurveHolders:c.bSwapHolders))return fail('B_HOLDERS');
  if(f.rugDanger)return fail('B_RUG');return result('B','B_PASS',f);
@@ -68,7 +68,7 @@ export function stageE(m,state,c,now,size,signalId){
  const lock=state.scalp?.consumed?.[m.mint];
  if(lock?.signalId===signalId)return fail('E_CONSUMED');
  if(lock&&now-lock.at<c.reentryMs)return fail('E_REENTRY');
- if(state.positions.length>=c.maxPositions)return fail('E_POSITIONS');
+ if(c.maxPositions>0&&state.positions.length>=c.maxPositions)return fail('E_POSITIONS');
  const fund=Object.hasOwn(state.scalp??{},'fundSol')?state.scalp.fundSol:state.initial/1e9;if(!num(fund))return fail('E_EXPOSURE_UNVERIFIED');
  if(v.exposureSol+size>fund*c.maxExposureFraction)return fail('E_EXPOSURE');
  return result('E','E_PASS',v);

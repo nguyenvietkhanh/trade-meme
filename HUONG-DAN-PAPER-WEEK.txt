@@ -10,9 +10,10 @@ PAPER_SCALP_CONFIG co the tro denJSON override rieng khong bi update ghi de.
 
 QUAN TRONG: HIEN CHUA COAPI GMGN VA NGUONRUG
 - GMGNNOT_CONFIGURED: bo nguon nay, van quetprofiles/boosts/curve.
-- RugChuaCo: StageB =B_UNVERIFIED, retry60giay, KHONG mua ao tu dong.
+- Rug khong bat buoc: SCALP_RUG_REQUIRED=false; chua kiem tra rug, khong gia PASS.
+- Bo gioi han so vi the: SCALP_MAX_POSITIONS=0. Van giu cash/exposure va on-chain.
 - Khong tu tao endpoint, APIkey, nhanPASS hay du lieu an toan.
-- PAPER_SCALP_RISK_URL canadapterHTTPS theo contract trongSCALP-SPEC.md.
+- Chi khi bat lai SCALP_RUG_REQUIRED=true moi canadapterRUG HTTPS.
 - PAPER_SCALP_GMGN_URL tuy chon, chi adapter ket noiAPI GMGN chinh thuc.
 - Khong gui bat kyAPIkey/Telegramtoken/privatekey vao chat.
 
