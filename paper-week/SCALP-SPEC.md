@@ -128,3 +128,27 @@ once per24h; if <5 entries, apply one ordered step: ratio/trades, C rise, liquid
 top10. Impact, roundtrip cost, authority and program checks are never auto-relaxed.
 Do not judge strategy effectiveness before>=300 scalp closed trades. 10–40 daily
 signals is a target, not a throughput/profit guarantee, especially with B unconfigured.
+
+## BUY-relative return reference (buy-fill-v1 patch)
+
+Every position locks its own immutable `entryAnchor` at the confirmed virtual
+BUY fill: principal SOL / modeled tokens received. It is not a discovery price,
+scanner price, historical high, market5m return, or average recalculated after TP.
+Network fees and refundable rent are booked separately from this price anchor.
+
+All stops, TP percentages, x multiples and post-TP moved stops use that anchor.
+New positions initialize their peak at the BUY entry; cached marks observed before
+BUY cannot trigger exits, portfolio marks or displayed position returns. Partial
+SELL and restarts preserve the anchor; a later BUY has a new position identity
+and a separate entry. Existing saved BUY entries are preserved, not re-priced.
+Historical exits/PnL are not retroactively changed by this patch.
+
+UI shows entry SOL/token and price return since this position BUY. The API field
+`entryReferenceVersion` is `buy-fill-v1`. A price multiple is not net realized PnL;
+fees, partial exits and executable sell quotes still determine realized results.
+This does not change scalp TP1+15%, TP2+30% to momentum2x/3x. It also does not
+bypass B_UNVERIFIED or invent a missing rug source.
+
+Displayed multiples use four decimals without rounding up into a TP threshold:
+1.995x is shown as1.9950x, not2.00x. Price-return percentages are truncated toward
+zero to avoid suggesting a threshold crossing that has not actually occurred.

@@ -1,3 +1,4 @@
+import {entryPrice} from './position-entry.js';
 export const SOL='So11111111111111111111111111111111111111112';
 const num=Number.isFinite;
 const result=(stage,reason,metrics)=>({stage_reached:stage,reason_code:reason,pass:reason===stage+'_PASS',metrics});
@@ -85,8 +86,8 @@ export function stageD(q,order,c,now){
 }
 export function scalpExitPolicy(c){return {version:c.version,stopPct:c.stopPct,tp1Pct:c.tp1Pct,tp1Fraction:c.tp1Fraction,postTp1StopPct:c.postTp1StopPct,trailingPct:c.trailingPct,tp2Pct:c.tp2Pct,timeStopMs:c.timeStopMs,timeStopGainPct:c.timeStopGainPct,maxHoldMs:c.maxHoldMs};}
 export function scalpExit(p,price,now){
- const c=p.exitPolicy,change=(price/p.entry-1)*100;if(!(price>0&&p.entry>0))return null;
- p.memory??={};const stop=p.tpDone?p.entry*(1+c.postTp1StopPct/100):p.entry*(1-c.stopPct/100);
+ const entry=entryPrice(p),c=p.exitPolicy,change=(price/entry-1)*100;if(!(price>0&&entry>0))return null;
+ p.memory??={};const stop=p.tpDone?entry*(1+c.postTp1StopPct/100):entry*(1-c.stopPct/100);
  p.memory.stopTriggered ||= price<=stop;
  if(p.memory.stopTriggered)return {reason:'stop-loss',fraction:1};
  p.memory.trailingTriggered ||= p.tpDone&&price<=p.peak*(1-c.trailingPct/100);

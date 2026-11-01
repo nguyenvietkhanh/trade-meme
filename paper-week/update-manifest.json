@@ -3,7 +3,7 @@
   "files": [
     {
       "path": "package.json",
-      "sha256": "159a070837ac34ec7eec8b32d402322906bdd4edf4013aa510b7bb3463cf03a9"
+      "sha256": "36ab26702bc997a44d60d801b9c82ab17e4205b08adc4e03246e8106207f6b88"
     },
     {
       "path": "README.md",
@@ -19,11 +19,11 @@
     },
     {
       "path": "paper-week/engine.js",
-      "sha256": "32a7d55f3d4494e6232a2d018a7c702f89b969d7bfc201ae5143da286016642d"
+      "sha256": "6e4c2d495eb5b482a1cbe0030bc6761b25f2805b3031ff80eeb6cc60a7cded05"
     },
     {
       "path": "paper-week/momentum.js",
-      "sha256": "6ad2f184bb524eb60e51ec5e4209b238763ce9f05758f141086ceb322823c9fa"
+      "sha256": "4d3823773b98094ef90cf5334db648ff95ad34bd8c9203a42f6ab65e0370f37d"
     },
     {
       "path": "paper-week/readonly.js",
@@ -39,7 +39,7 @@
     },
     {
       "path": "paper-week/app.js",
-      "sha256": "c7af5f0c8b9ecb77df263c76424d17f5e7622a9e99be97d49d25db536eb58648"
+      "sha256": "47b14fd9e1e54b552a8266297cf7b2df1224fd65b5bed6a9bd4030672dfc5b32"
     },
     {
       "path": "paper-week/index.html",
@@ -47,7 +47,7 @@
     },
     {
       "path": "paper-week/TRAINING-SCHEMA.txt",
-      "sha256": "e4cded087258b32a75d046678f3d0b863a8d3e104da14e3a87191ef37a978272"
+      "sha256": "a2eaea91145cbb81cdb764e7874b61fcdbe4513e9df3931613561cf2a20c6ad9"
     },
     {
       "path": "paper-week/analyze.js",
@@ -67,7 +67,7 @@
     },
     {
       "path": "paper-week/scalp-stages.js",
-      "sha256": "f041e5bf489a42826198b2d2637174fbb9801f14febf82fb8ce17750d0d1d6fa"
+      "sha256": "87fd74f0ccac8e2aa34d6e4375d439dde4341c2d42077c5ce49a6b03d20c9e2e"
     },
     {
       "path": "paper-week/scalp-engine.js",
@@ -87,11 +87,15 @@
     },
     {
       "path": "paper-week/SCALP-SPEC.md",
-      "sha256": "020562ec406d7083b9a35f8d752ceff5d7d853ed1292fe85dc37320b7ab8e1dd"
+      "sha256": "da3ebaad9f5ce598b01b4f38192fdf1c7c6459e3267a4402fae94eacdca3eb83"
     },
     {
       "path": "paper-week/SCALP-REQUEST.txt",
       "sha256": "29ecd50de1f603d362f3688c898736fbeaa0c4847bf6ee1672967cbdb6f21f36"
+    },
+    {
+      "path": "paper-week/position-entry.js",
+      "sha256": "88a657a3ca0cd34f122acd52cb83061c30061fbd167a0e3c970ed0db9fba6e5e"
     }
   ]
 }

@@ -1,3 +1,4 @@
+import {entryPrice} from './position-entry.js';
 // PAPER strategy only. This module has no wallet, network or execution capability.
 export const MOMENTUM_VERSION = 'paper-momentum-5m-v2';
 export const MOMENTUM_V1 = 'paper-momentum-5m-v1';
@@ -96,15 +97,15 @@ export function momentumExitPolicy(policy = momentumConfig()) {
 }
 
 export function momentumExit(p, price) {
-  const policy = p.exitPolicy;
-  if (!(price > 0) || !(p.entry > 0)) return null;
+  const policy = p.exitPolicy, entry = entryPrice(p);
+  if (!(price > 0) || !(entry > 0)) return null;
   p.memory ??= {};
-  p.memory.stopTriggered ||= price <= p.entry * 0.7;
+  p.memory.stopTriggered ||= price <= entry * 0.7;
   if (p.memory.stopTriggered) return { reason: 'stop-loss', fraction: 1 };
   // A crossed target remains due until its sale is recorded successfully.
   const step = p.tpSoldSteps ?? 0;
   if (step >= policy.tpMultiples.length) return null;
-  if (Math.max(p.peak ?? price, price) < p.entry * policy.tpMultiples[step]) return null;
+  if (Math.max(p.peak ?? price, price) < entry * policy.tpMultiples[step]) return null;
   return { reason: 'momentum-tp' + (step + 1), fraction: policy.tpFractions[step], step, final: step === policy.tpMultiples.length - 1 };
 }
 

@@ -259,3 +259,29 @@ test('guarded stop records a real quoted loss beyond -30%, never clips it to imp
  assert.equal(f.engine.state.closed,1);assert.ok(f.engine.state.realized< -300000000);assert.equal(f.engine.state.cash-f.engine.state.initial,f.engine.state.realized);
  const sell=f.engine.state.trades.find(t=>t.side==='SELL');assert.ok(sell.trigger.priceMultiple<.7);assert.ok(sell.decisionToQuoteMs>=2000);
 });
+
+test('a token already up 3x before BUY starts this position at approximately 1x, not a TP',async t=>{
+ const f=await momentumSetup(t);f.price(.03);f.change(200);await momentumBuy(f);
+ const p=f.engine.state.positions[0];assert.ok(Math.abs(p.entry-.03)<1e-8);assert.equal(f.engine.state.pending,null);
+ assert.ok(Math.abs(f.engine.status().positions[0].currentMultiple-1)<1e-6);
+ assert.equal(p.peak,p.entry);assert.equal(p.entryAnchor.priceSol,p.entry);
+});
+test('pre-BUY price marks cannot trigger a stop or TP or be shown as position profit',async t=>{
+ const f=await momentumSetup(t);await momentumBuy(f);const p=f.engine.state.positions[0],k=p.mint+':'+p.pool;
+ f.engine.prices.set(k,{price:p.entry*3,at:p.openedAt-1});await f.engine.monitor();assert.equal(f.engine.state.pending,null);assert.equal(f.engine.status().positions[0].currentMultiple,null);assert.equal(f.engine.equity(),null);
+ f.advance(1000);f.engine.prices.set(k,{price:p.entry*1.99,at:f.now()});await f.engine.monitor();assert.equal(f.engine.state.pending,null);
+ f.engine.prices.set(k,{price:p.entry*2,at:f.now()});await f.engine.monitor();assert.equal(f.engine.state.pending.reason,'momentum-tp1');assert.equal(f.engine.state.pending.trigger.entryAt,p.openedAt);
+});
+test('entry anchor is immutable and survives partial sale and restart without rebasing to remaining cost',async t=>{
+ const f=await momentumSetup(t);await momentumBuy(f);const entry=f.engine.state.positions[0].entry;
+ f.price(.02);f.advance(2000);await f.engine.step([f.market()]);f.advance(2000);await f.engine.step([f.market()]);
+ const p=f.engine.state.positions[0];assert.equal(p.raw,'50000000');assert.equal(p.entryAnchor.priceSol,entry);assert.throws(()=>{p.entryAnchor.priceSol=99;},TypeError);
+ const restored=new PaperWeek(new PaperStore(f.dir),f.adapter,{policy:legacyMomentumConfig(),clock:f.now});await restored.load();assert.equal(restored.state.positions[0].entryAnchor.priceSol,entry);assert.throws(()=>{restored.state.positions[0].entryAnchor={priceSol:99};},TypeError);
+ f.price(.015);f.advance(1000);await restored.step([f.market()]);assert.equal(restored.status().positions[0].currentMultiple,1.5);
+});
+test('a second BUY of the same mint has its own anchor and never inherits the first entry or peak',async t=>{
+ const f=await momentumSetup(t);await momentumBuy(f);const first=f.engine.state.positions[0];f.price(.006);f.advance(2000);await f.engine.step([f.market()]);f.advance(2000);await f.engine.step([f.market()]);
+ // Legacy fixture intentionally has no cooldown; cancel a queued re-entry and begin a distinct fill.
+ f.engine.state.pending=null;f.price(.02);f.advance(2000);await momentumBuy(f);const second=f.engine.state.positions[0];
+ assert.notEqual(first.id,second.id);assert.equal(first.entryAnchor.priceSol,.01);assert.equal(second.entryAnchor.priceSol,.02);assert.equal(second.peak,.02);
+});
