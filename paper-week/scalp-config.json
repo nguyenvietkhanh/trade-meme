@@ -54,7 +54,7 @@
   "cDrawdownMax": 1,
   "cLiquidityRetention": 0.9,
   "dImpactMax": 2,
-  "dLossMax": 6,
+  "dLossMax": 4.5,
   "dQuoteAgeMs": 3000,
   "dDriftMax": 2,
   "dEdgeMultiple": 2.5,
@@ -125,5 +125,13 @@
   "cMaxStoredSamples": 24,
   "rugRequired": false,
   "cReadEveryMs": 2500,
-  "algorithmRevision": "scalp-sampling-v2"
+  "algorithmRevision": "scalp-risk-v3",
+  "mintLossLimit": 2,
+  "mintLossCooldownMs": 86400000,
+  "quoteRateBackoffMs": 5000,
+  "sellRetryBaseMs": 2000,
+  "sellRetryMaxMs": 60000,
+  "timeStopConfirmMs": 60000,
+  "timeStopPullbackPct": 1.5,
+  "timeStopMaxMs": 360000
 }

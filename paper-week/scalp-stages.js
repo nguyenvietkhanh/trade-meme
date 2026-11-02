@@ -1,3 +1,4 @@
+import {entryGuard} from './scalp-risk.js';
 import {entryPrice} from './position-entry.js';
 export const SOL='So11111111111111111111111111111111111111112';
 const num=Number.isFinite;
@@ -60,6 +61,7 @@ export function plannedSize(m,state,c){
  return Math.floor(Math.min(c.fixedOrderSol*factor,reserve*c.poolFraction)*1e9)/1e9;
 }
 export function stageE(m,state,c,now,size,signalId){
+ const gate=entryGuard(m,state,c,now,signalId);if(!gate.pass)return gate;
  const v={sizeSol:size,cashSol:state.cash/1e9,positions:state.positions.length,exposureSol:state.positions.reduce((n,p)=>n+p.basis,0)/1e9,signalId};
  const fail=code=>result('E',code,v);
  if(!(size>=c.minOrderSol)||state.cash<Math.round((size+c.feeSol*2+c.rentSol)*1e9))return fail('E_CASH');
@@ -84,7 +86,7 @@ export function stageD(q,order,c,now){
  if(c.tp1Pct<c.dEdgeMultiple*v.roundTripLoss)return fail('EDGE');
  return result('D','D_PASS',v);
 }
-export function scalpExitPolicy(c){return {version:c.version,stopPct:c.stopPct,tp1Pct:c.tp1Pct,tp1Fraction:c.tp1Fraction,postTp1StopPct:c.postTp1StopPct,trailingPct:c.trailingPct,tp2Pct:c.tp2Pct,timeStopMs:c.timeStopMs,timeStopGainPct:c.timeStopGainPct,maxHoldMs:c.maxHoldMs};}
+export function scalpExitPolicy(c){return {version:c.version,algorithmRevision:c.algorithmRevision,stopPct:c.stopPct,tp1Pct:c.tp1Pct,tp1Fraction:c.tp1Fraction,postTp1StopPct:c.postTp1StopPct,trailingPct:c.trailingPct,tp2Pct:c.tp2Pct,timeStopMs:c.timeStopMs,timeStopGainPct:c.timeStopGainPct,timeStopConfirmMs:c.timeStopConfirmMs,timeStopPullbackPct:c.timeStopPullbackPct,timeStopMaxMs:c.timeStopMaxMs,maxHoldMs:c.maxHoldMs};}
 export function scalpExit(p,price,now){
  const entry=entryPrice(p),c=p.exitPolicy,change=(price/entry-1)*100;if(!(price>0&&entry>0))return null;
  p.memory??={};const stop=p.tpDone?entry*(1+c.postTp1StopPct/100):entry*(1-c.stopPct/100);
@@ -93,7 +95,11 @@ export function scalpExit(p,price,now){
  p.memory.trailingTriggered ||= p.tpDone&&price<=p.peak*(1-c.trailingPct/100);
  if(p.memory.trailingTriggered)return {reason:'scalp-trailing',fraction:1};
  if(now-p.openedAt>=c.maxHoldMs)return {reason:'scalp-max-hold',fraction:1};
- p.memory.timeStopTriggered ||= now-p.openedAt>=c.timeStopMs&&change<c.timeStopGainPct;
+ if(!Number.isFinite(c.timeStopConfirmMs))p.memory.timeStopTriggered ||= now-p.openedAt>=c.timeStopMs&&change<c.timeStopGainPct;
+ else if(!p.tpDone&&now-p.openedAt>=c.timeStopMs&&change<c.timeStopGainPct){
+  p.memory.stallWatch??={at:now,price};const watch=p.memory.stallWatch;
+  p.memory.timeStopTriggered ||= now-p.openedAt>=c.timeStopMaxMs||now-watch.at>=c.timeStopConfirmMs&&price<=watch.price*(1-c.timeStopPullbackPct/100);
+ }else delete p.memory.stallWatch;
  if(p.memory.timeStopTriggered)return {reason:'scalp-time-stop',fraction:1};
  p.memory.tp2Triggered ||= change>=c.tp2Pct;
  if(p.memory.tp2Triggered)return {reason:'scalp-tp2',fraction:1};

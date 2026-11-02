@@ -17,8 +17,8 @@ test('stage B fails closed on unavailable exclusions or rug evidence, accepts ex
 test('stage C enforces exact three samples, span, rising range, steps, and liquidity retention',()=>{const rows=[{at:at-20000,price:1,liquiditySol:100},{at:at-10000,price:1.01,liquiditySol:99},{at,price:1.02,liquiditySol:95}];assert.equal(stageC(rows,c,at).pass,true);assert.equal(stageC(rows.slice(1),c,at).reason_code,'C_SPAN');assert.equal(stageC(rows,c,at+5001).reason_code,'C_STALE');assert.equal(stageC([...rows.slice(0,2),{at,price:1.13,liquiditySol:100}],c,at).reason_code,'C_RISE_HIGH');assert.equal(stageC([...rows.slice(0,2),{at,price:1.02,liquiditySol:89}],c,at).reason_code,'C_LIQ_DROP');});
 test('stage D binds reverse amount, drift, quote age, impact and actual intended size',()=>{const o={mint:'M',pool:'P',amount:'1000000000',readyAt:at-2000,referencePriceSol:.01},q={out:'98500000',expectedOut:'100000000',at:at-1000,decimals:6,impactPct:1,roundTrip:{mint:'M',pool:'P',inAmount:o.amount,sellInput:'98500000',sellOut:'960000000',at,impactPct:1}};assert.equal(stageD(q,o,c,at).pass,true);assert.equal(stageD({...q,impactPct:3},o,c,at).reason_code,'D_COST');assert.equal(stageD({...q,expectedOut:'80000000'},o,c,at).detail,'DRIFT');assert.equal(stageD(q,o,c,at+3001).detail,'STALE');});
 test('stage E applies fixed/pool sizing, exposure, slots, consumed signals and 30m reentry',()=>{const m=market(),s={cash:50e9,initial:50e9,positions:[],trades:[],scalp:{consumed:{}}};assert.equal(plannedSize({...m,liquidityQuoteSol:10},s,c),.15);assert.equal(stageE(m,s,c,at,1,'signal').pass,true);s.scalp.consumed[m.mint]={signalId:'signal',at};assert.equal(stageE(m,s,c,at,1,'signal').reason_code,'E_CONSUMED');assert.equal(stageE(m,s,c,at+1,1,'other').reason_code,'E_REENTRY');assert.equal(stageE(m,s,c,at+c.reentryMs,1,'other').pass,true);});
-test('scalp exit follows -10, TP1, moved stop, trailing, TP2 and timed exits',()=>{const p={entry:1,openedAt:at,peak:1,tpDone:false,memory:{},exitPolicy:scalpExitPolicy(c)};assert.equal(scalpExit(p,.89,at).reason,'stop-loss');p.memory={};assert.equal(scalpExit(p,1.16,at).fraction,.5);p.tpDone=true;p.peak=1.25;assert.equal(scalpExit(p,1.01,at).reason,'stop-loss');p.memory={};assert.equal(scalpExit(p,1.14,at).reason,'scalp-trailing');p.memory={};assert.equal(scalpExit(p,1.31,at).reason,'scalp-tp2');p.memory={};p.tpDone=false;p.peak=1.04;assert.equal(scalpExit(p,1.04,at+c.timeStopMs).reason,'scalp-time-stop');assert.equal(scalpExit(p,1.06,at+c.maxHoldMs).reason,'scalp-max-hold');});
-test('all new scalar thresholds can be overridden from env, invalid bounds rejected',()=>{assert.equal(scalpConfig({SCALP_A_SWAP_LIQUIDITY_USD:'9000'}).aSwapLiquidityUsd,9000);assert.throws(()=>scalpConfig({SCALP_C_SPAN_MIN_MS:'1'}));});
+test('scalp exit follows -10, TP1, moved stop, trailing, TP2 and timed exits',()=>{const p={entry:1,openedAt:at,peak:1,tpDone:false,memory:{},exitPolicy:scalpExitPolicy(c)};assert.equal(scalpExit(p,.89,at).reason,'stop-loss');p.memory={};assert.equal(scalpExit(p,1.16,at).fraction,.5);p.tpDone=true;p.peak=1.25;assert.equal(scalpExit(p,1.01,at).reason,'stop-loss');p.memory={};assert.equal(scalpExit(p,1.14,at).reason,'scalp-trailing');p.memory={};assert.equal(scalpExit(p,1.31,at).reason,'scalp-tp2');p.memory={};p.tpDone=false;p.peak=1.04;assert.equal(scalpExit(p,1.04,at+c.timeStopMs),null);assert.equal(scalpExit(p,1.04,at+c.timeStopMaxMs).reason,'scalp-time-stop');assert.equal(scalpExit(p,1.06,at+c.maxHoldMs).reason,'scalp-max-hold');});
+test('all new scalar thresholds can be overridden from env, invalid bounds rejected',()=>{assert.equal(scalpConfig({SCALP_A_SWAP_LIQUIDITY_USD:'9000'}).aSwapLiquidityUsd,9000);assert.equal(scalpConfig({SCALP_ALGORITHM_REVISION:'old-config-label'}).algorithmRevision,'scalp-risk-v3');assert.throws(()=>scalpConfig({SCALP_C_SPAN_MIN_MS:'1'}));});
 async function setup(t){let now=at,calls=0;const dir=await mkdtemp(path.join(tmpdir(),'scalp-test-'));t.after(()=>rm(dir,{recursive:true,force:true}));const adapter={scalpSafety:async()=>{calls++;return null;},refreshCandidate:async m=>m,quote:async()=>{throw Error('NO_ROUTE');}};const store=new PaperStore(dir,{clock:()=>now}),engine=new ScalpWeek(store,adapter,{policy:{...c},initialSol:50,feeSol:c.feeSol,rentSol:c.rentSol,clock:()=>now});await engine.load();return {engine,adapter,dir,advance:n=>now+=n,now:()=>now,calls:()=>calls};}
 test('cheap rejection never calls RPC or quote and every A candidate is durably logged',async t=>{const f=await setup(t);await f.engine.step([{...market(f.now()),liquidityUsd:1}]);assert.equal(f.calls(),0);const file=(await readdir(f.dir)).find(n=>n.endsWith('.jsonl.gz'));const text=gunzipSync(await readFile(path.join(f.dir,file))).toString();assert.match(text,/A_LIQ/);assert.equal(f.engine.state.counts.virtualBuys,0);});
 test('missing rug/safety stays B_UNVERIFIED and retries only after 60s, not quality-bad',async t=>{const f=await setup(t);await f.engine.step([market(f.now())]);await Promise.all(f.engine.reads.values());f.advance(5000);await f.engine.step([market(f.now())]);assert.equal(f.calls(),1);assert.equal(f.engine.state.scalp.reasons.B_UNVERIFIED,2);f.advance(60000);await f.engine.step([market(f.now())]);await Promise.all(f.engine.reads.values());assert.equal(f.calls(),2);assert.equal(f.engine.state.counts.virtualBuys,0);});
@@ -31,7 +31,7 @@ test('full fixture passes A through E, consumes the signal and trades using the 
  assert.equal(f.engine.state.counts.virtualBuys,1,JSON.stringify(f.engine.state.errors));assert.equal(f.engine.state.positions[0].exitPolicy.stopPct,10);assert.equal(f.engine.state.positions[0].exitPolicy.tp1Pct,15);assert.equal(f.engine.state.scalp.consumed.TEST_FIXTURE.orderId,f.engine.state.positions[0].id);
 });
 test('D_INFRA retries at 1s/2s/4s, never consumes a signal or labels the token bad',async t=>{
- const f=await setup(t),m=market(f.now());let calls=0;f.adapter.quote=async()=>{calls++;throw Object.assign(Error('HTTP 429'),{code:'429'});};const o={id:'infra-fixture',side:'BUY',mint:m.mint,pool:m.pairAddress,amount:'1000000000',decidedAt:f.now(),readyAt:f.now(),sizeBase:1,sizeIndex:0,infraRetries:0,signalId:'infra-signal',scalpContext:f.engine.context(m,'infra-signal')};f.engine.state.pending=o;
+ const f=await setup(t),m=market(f.now());let calls=0;f.adapter.quote=async()=>{calls++;throw Object.assign(Error('timeout'),{name:'TimeoutError'});};const o={id:'infra-fixture',side:'BUY',mint:m.mint,pool:m.pairAddress,amount:'1000000000',decidedAt:f.now(),readyAt:f.now(),sizeBase:1,sizeIndex:0,infraRetries:0,signalId:'infra-signal',scalpContext:f.engine.context(m,'infra-signal')};f.engine.state.pending=o;
  for(let i=0;i<4;i++){f.engine.safety.set(m.mint,{facts:facts(m,f.now())});f.engine.samples.set(m.mint+':'+m.pairAddress,[{at:f.now()-20000,price:1,liquiditySol:100},{at:f.now()-10000,price:1.01,liquiditySol:100},{at:f.now(),price:1.02,liquiditySol:100}]);await f.engine.fill([market(f.now())]);await Promise.all([...f.engine.quoteJobs.values()].map(j=>j.task));await f.engine.fill([market(f.now())]);if(i<3){assert.equal(f.engine.state.pending.nextAttemptAt,f.now()+c.dBackoffMs[i]);f.advance(c.dBackoffMs[i]);}}
  assert.equal(calls,4);assert.equal(f.engine.state.pending,null);assert.equal(f.engine.state.scalp.infra,4);assert.equal(f.engine.state.scalp.consumed.TEST_FIXTURE,undefined);const file=(await readdir(f.dir)).find(n=>n.endsWith('.jsonl.gz'));const rows=gunzipSync(await readFile(path.join(f.dir,file))).toString().trim().split('\n').map(JSON.parse);assert.ok(rows.every(r=>r.reason_code==='D_INFRA'&&r.quality_rejection===false));
 });
@@ -42,7 +42,7 @@ test('a failed boosts source does not stop profiles, SOL pricing or PumpSwap dis
 });
 test('max hold exits all even if a prior unfilled TP1 remains latched',()=>{const p={entry:1,peak:1.2,openedAt:at,tpDone:false,memory:{tp1Triggered:true},exitPolicy:scalpExitPolicy(c)};assert.equal(scalpExit(p,1.2,at+c.maxHoldMs).reason,'scalp-max-hold');assert.equal(scalpExit(p,1.2,at+c.maxHoldMs).fraction,1);});
 test('a scalp stop remains triggered through a price bounce until its exit is recorded',()=>{const p={entry:1,peak:1,openedAt:at,tpDone:false,memory:{},exitPolicy:scalpExitPolicy(c)};assert.equal(scalpExit(p,.89,at).reason,'stop-loss');assert.equal(scalpExit(p,1.1,at+1000).reason,'stop-loss');});
-test('non-infrastructure quote failures try 100/50/25/min without consuming a BUY signal',async t=>{const f=await setup(t),m=market(f.now()),sizes=[];f.adapter.quote=async o=>{sizes.push(o.amount);throw Error('NO_ROUTE');};f.engine.state.pending={id:'size-fixture',side:'BUY',mint:m.mint,pool:m.pairAddress,amount:'1000000000',sizeBase:1,sizeIndex:0,infraRetries:0,signalId:'size',decidedAt:f.now(),readyAt:f.now(),scalpContext:f.engine.context(m,'size')};for(let i=0;i<4;i++){f.engine.safety.set(m.mint,{facts:facts(m,f.now())});f.engine.samples.set(m.mint+':'+m.pairAddress,[{at:f.now()-20000,price:1,liquiditySol:100},{at:f.now()-10000,price:1.01,liquiditySol:100},{at:f.now(),price:1.02,liquiditySol:100}]);await f.engine.fill([m]);await Promise.all([...f.engine.quoteJobs.values()].map(j=>j.task));await f.engine.fill([m]);}assert.deepEqual(sizes,['1000000000','500000000','250000000','2500000']);assert.equal(f.engine.state.pending,null);assert.equal(f.engine.state.scalp.consumed.TEST_FIXTURE,undefined);});
+test('non-infrastructure quote failures try 100/50/25/min without consuming a BUY signal',async t=>{const f=await setup(t),m=market(f.now()),sizes=[];f.adapter.quote=async o=>{sizes.push(o.amount);throw Error('NO_ROUTE');};f.engine.state.pending={id:'size-fixture',side:'BUY',mint:m.mint,pool:m.pairAddress,amount:'1000000000',sizeBase:1,sizeIndex:0,infraRetries:0,signalId:'size',decidedAt:f.now(),readyAt:f.now(),scalpContext:f.engine.context(m,'size')};for(let i=0;i<4;i++){f.engine.safety.set(m.mint,{facts:facts(m,f.now())});f.engine.samples.set(m.mint+':'+m.pairAddress,[{at:f.now()-20000,price:1,liquiditySol:100},{at:f.now()-10000,price:1.01,liquiditySol:100},{at:f.now(),price:1.02,liquiditySol:100}]);await f.engine.fill([m]);await Promise.all([...f.engine.quoteJobs.values()].map(j=>j.task));await f.engine.fill([m]);f.advance(c.dBackoffMs[0]);}assert.deepEqual(sizes,['1000000000','500000000','250000000','2500000']);assert.equal(f.engine.state.pending,null);assert.equal(f.engine.state.scalp.consumed.TEST_FIXTURE,undefined);});
 test('compressed audit export is streamed and rejects traversal names',async t=>{const f=await setup(t);await f.engine.step([{...market(f.now()),liquidityUsd:1}]);const file=(await readdir(f.dir)).find(n=>n.endsWith('.jsonl.gz'));const {stream,size}=await f.engine.store.documentStream(file);const chunks=[];for await(const chunk of stream)chunks.push(chunk);assert.equal(Buffer.concat(chunks).length,size);assert.match(gunzipSync(Buffer.concat(chunks)).toString(),/A_LIQ/);await assert.rejects(f.engine.store.documentStream('../secret.jsonl.gz'));});
 test('upgrading a funded v2 session checkpoints its ledger and preserves old-position exit policy',async t=>{const f=await setup(t),s=f.engine.state;delete s.scalp;s.policyVersion='paper-momentum-5m-v2';s.cash-=1000025000+2039280;s.positions=[{id:'old-v2',mint:'OLD_FIXTURE',pool:'OLD_POOL',raw:'100000000',initialRaw:'100000000',decimals:6,entry:.01,basis:1000025000,rent:2039280,openedAt:at,memory:{},tpDone:false,exitPolicy:{version:'paper-momentum-5m-v2',stopLossPct:30,tpMultiples:[2,3,5,10],tpFractions:[.5,.2,.2,.1]}}];await f.engine.store.save(s);const second=new ScalpWeek(new PaperStore(f.dir),f.adapter,{policy:{...c},initialSol:50,feeSol:c.feeSol,rentSol:c.rentSol,clock:f.now});await second.load();assert.equal(second.state.cash,s.cash);assert.equal(second.state.positions[0].exitPolicy.version,'paper-momentum-5m-v2');assert.equal(second.exitPlan(second.state.positions[0],.0085),null);assert.ok((await readdir(f.dir)).includes('paper-week-state-before-paper-meme-scalp-entry-v1.json'));assert.equal(second.status().accounting.verified,true);});
 test('scalp +15/+30 and moved stop are relative to the locked BUY, never 5m or discovery prices',async()=>{
@@ -156,4 +156,119 @@ test('one TXT alone remains analyzable with fill-id deduplication across trainin
  const standalone=path.join(f.dir,'standalone');await mkdir(standalone);await copyFile(path.join(f.dir,name),path.join(standalone,name));
  const result=JSON.parse(execFileSync(process.execPath,['paper-week/analyze.js',standalone],{encoding:'utf8'}));
  assert.equal(result.uniqueVirtualFills,2);assert.equal(result.closed,1);assert.equal(result.wins,1);assert.equal(result.observedSellPnlSol,.05);
+});
+
+test('mint loss lock counts final position PnL, survives restart and blocks before RPC/quotes',async t=>{
+ const {recordMintOutcome}=await import('../scalp-risk.js');const f=await setup(t),s=f.engine.state;
+ const close=(id,at,pnl)=>({side:'SELL',closed:true,id,positionId:id,mint:'TEST_FIXTURE',at,positionPnlSol:pnl});
+ recordMintOutcome(s,close('loss-a',f.now()-1000,-.02),c);
+ recordMintOutcome(s,{...close('partial',f.now()-500,-.01),closed:false},c);assert.equal(s.scalp.mintRisk.TEST_FIXTURE.lossStreak,1);
+ recordMintOutcome(s,close('loss-b',f.now(),-.03),c);const until=f.now()+c.mintLossCooldownMs;
+ recordMintOutcome(s,close('loss-b',f.now(),-.03),c);assert.equal(s.scalp.mintRisk.TEST_FIXTURE.lossStreak,2);
+ await f.engine.store.save(s);const restored=new ScalpWeek(new PaperStore(f.dir),f.adapter,{policy:{...c},initialSol:50,feeSol:c.feeSol,rentSol:c.rentSol,clock:f.now});await restored.load();
+ assert.equal(restored.state.scalp.mintRisk.TEST_FIXTURE.blockedUntil,until);assert.equal(restored.state.cash,s.cash);
+ const result=await restored.evaluate(market(f.now()));assert.equal(result.reason_code,'E_MINT_LOSS_LOCK');assert.equal(f.calls(),0);
+ const other=await restored.evaluate({...market(f.now()),mint:'OTHER_FIXTURE'});assert.equal(other.reason_code,'B_UNVERIFIED');
+ f.advance(c.mintLossCooldownMs);const after=await restored.evaluate(market(f.now()));assert.equal(after.reason_code,'B_UNVERIFIED');
+ recordMintOutcome(restored.state,close('new-loss',f.now()+1,-.01),c);assert.equal(restored.state.scalp.mintRisk.TEST_FIXTURE.lossStreak,1);
+});
+
+test('existing trade history seeds per-mint locks on upgrade without resetting cash or old exits',async t=>{
+ const f=await setup(t),s=f.engine.state;s.scalp.algorithmRevision='scalp-sampling-v2';delete s.scalp.mintRisk;
+ s.trades=[{id:'old-loss-2',positionId:'old-2',side:'SELL',closed:true,mint:'TEST_FIXTURE',at:f.now()-1,positionPnlSol:-.03},{id:'old-loss-1',positionId:'old-1',side:'SELL',closed:true,mint:'TEST_FIXTURE',at:f.now()-100,positionPnlSol:-.02}];s.cash-=50e6;s.realized-=50e6;await f.engine.store.save(s);
+ const e=new ScalpWeek(new PaperStore(f.dir),f.adapter,{policy:{...c},initialSol:50,feeSol:c.feeSol,rentSol:c.rentSol,clock:f.now});await e.load();
+ assert.equal(e.state.cash,s.cash);assert.equal(e.state.realized,s.realized);assert.equal(e.status().accounting.verified,true);assert.equal(e.state.scalp.mintRisk.TEST_FIXTURE.lossStreak,2);
+ assert.ok((await readdir(f.dir)).includes('paper-week-state-before-scalp-risk-v3.json'));
+ assert.equal((await e.evaluate(market(f.now()))).reason_code,'E_MINT_LOSS_LOCK');
+});
+
+test('new time-stop observes deterioration after 3m; hard stop, take profit and legacy exits stay effective',()=>{
+ const p={entry:1,openedAt:at,peak:1.03,tpDone:false,memory:{},exitPolicy:scalpExitPolicy(c)};
+ assert.equal(scalpExit(p,1.03,at+c.timeStopMs),null);
+ assert.equal(scalpExit(p,1.02,at+c.timeStopMs+30000),null);
+ assert.equal(scalpExit(p,1.01,at+c.timeStopMs+c.timeStopConfirmMs).reason,'scalp-time-stop');
+ p.memory={};assert.equal(scalpExit(p,.89,at+c.timeStopMs).reason,'stop-loss');
+ p.memory={};assert.equal(scalpExit(p,1.16,at+c.timeStopMs).reason,'scalp-tp1');
+ p.memory={};assert.equal(scalpExit(p,1.02,at+c.timeStopMaxMs).reason,'scalp-time-stop');
+ const old={...p,memory:{},exitPolicy:{...p.exitPolicy,timeStopConfirmMs:undefined}};assert.equal(scalpExit(old,1.02,at+c.timeStopMs).reason,'scalp-time-stop');
+});
+
+function seedRiskPosition(f,id,mint='TEST_FIXTURE',pool='POOL_FIXTURE'){
+ const p={id,mint,pool,venue:'pumpswap',symbol:'FIXTURE',entry:.01,peak:.01,openedAt:f.now(),initialRaw:'100000000',raw:'100000000',decimals:6,initialCost:1e9+25000,basis:1e9+25000,rent:2039280,pnl:0,tpDone:false,tpSoldSteps:0,memory:{},strategyVersion:c.version,exitPolicy:scalpExitPolicy(c)};
+ f.engine.state.cash-=p.initialCost+p.rent;f.engine.state.positions.push(p);return p;
+}
+
+test('SELL HTTP429 persists exponential backoff across order expiry/restart and blocks BUY during recovery',async t=>{
+ const f=await setup(t),p=seedRiskPosition(f,'sell-fixture');let calls=0;
+ f.adapter.quote=async()=>{calls++;throw Object.assign(Error('HTTP 429'),{status:429});};
+ const m=()=>({...market(f.now()),spotPriceSol:.0088});f.engine.updatePrices([m()]);await f.engine.monitor();f.advance(c.fillDelayMs);await f.engine.fill([m()]);
+ assert.equal(calls,1);const retry=p.memory.sellRetry;assert.equal(retry.attempts,1);assert.equal(retry.nextAt,f.now()+c.quoteRateBackoffMs);
+ const cash=f.engine.state.cash;await f.engine.fill([m()]);assert.equal(calls,1);assert.equal(f.engine.state.cash,cash);
+ assert.equal((await f.engine.evaluate({...market(f.now()),mint:'OTHER'})).reason_code,'E_QUOTE_BACKOFF');
+ const restarted=new ScalpWeek(new PaperStore(f.dir),f.adapter,{policy:{...c},initialSol:50,feeSol:c.feeSol,rentSol:c.rentSol,clock:f.now});await restarted.load();
+ assert.equal(restarted.state.positions[0].memory.sellRetry.attempts,1);await restarted.fill([m()]);assert.equal(calls,1);
+ f.advance(c.quoteRateBackoffMs);await restarted.fill([m()]);assert.equal(calls,2);assert.equal(restarted.state.positions[0].memory.sellRetry.attempts,2);
+ f.advance(2*c.quoteRateBackoffMs);await restarted.fill([m()]);assert.equal(restarted.state.pending,null);assert.equal(calls,2);
+ restarted.updatePrices([m()]);await restarted.monitor();f.advance(c.fillDelayMs);await restarted.fill([m()]);assert.equal(calls,3);assert.equal(restarted.state.positions[0].memory.sellRetry.attempts,3);
+ assert.equal(restarted.state.cash,cash);assert.equal(restarted.status().accounting.verified,true);
+});
+
+test('one token with no SELL route yields to another stop instead of starving its exit',async t=>{
+ const f=await setup(t);const p1=seedRiskPosition(f,'bad-route'),p2=seedRiskPosition(f,'good-route','OTHER_FIXTURE','OTHER_POOL');
+ const markets=()=>[{...market(f.now()),spotPriceSol:.0088},{...market(f.now()),mint:p2.mint,pairAddress:p2.pool,spotPriceSol:.0088}];
+ f.adapter.quote=async o=>{if(o.mint===p1.mint)throw Error('NO_ROUTE');return {out:'870000000',at:f.now(),decimals:6,source:'TEST_FIXTURE'};};
+ f.engine.updatePrices(markets());await f.engine.monitor();f.advance(c.fillDelayMs);await f.engine.fill(markets());assert.equal(f.engine.state.pending.positionId,p1.id);
+ f.engine.updatePrices(markets());await f.engine.monitor();assert.equal(f.engine.state.pending.positionId,p2.id);f.advance(c.fillDelayMs);await f.engine.fill(markets());
+ assert.equal(f.engine.state.positions.some(p=>p.id===p2.id),false);assert.equal(f.engine.state.positions.some(p=>p.id===p1.id),true);assert.equal(f.engine.status().accounting.verified,true);
+});
+
+test('unverified SELL quote never changes virtual cash and is paced before retry',async t=>{
+ const f=await setup(t),p=seedRiskPosition(f,'invalid-sell');let calls=0;f.adapter.quote=async()=>{calls++;return {out:'1',at:f.now()-10000};};
+ const m=()=>({...market(f.now()),spotPriceSol:.0088});f.engine.updatePrices([m()]);await f.engine.monitor();f.advance(c.fillDelayMs);const cash=f.engine.state.cash;await f.engine.fill([m()]);
+ assert.equal(p.memory.sellRetry.lastCode,'QUOTE_UNVERIFIED');await f.engine.fill([m()]);assert.equal(calls,1);assert.equal(f.engine.state.cash,cash);
+});
+
+test('costly valid quotes are resized with fresh reverse proof, never booked above the new friction cap',async t=>{
+ const f=await setup(t),m=market(f.now());f.engine.safety.set(m.mint,{facts:facts(m,f.now())});
+ f.engine.samples.set(m.mint+':'+m.pairAddress,[{at:f.now()-20000,price:1,liquiditySol:100},{at:f.now()-10000,price:1.01,liquiditySol:100},{at:f.now(),price:1.02,liquiditySol:100}]);
+ const o={id:'cost-resize',side:'BUY',mint:m.mint,pool:m.pairAddress,amount:'1000000000',sizeBase:1,sizeIndex:0,infraRetries:0,signalId:'cost',decidedAt:f.now(),readyAt:f.now(),referencePriceSol:1.02,scalpContext:f.engine.context(m,'cost')};f.engine.state.pending=o;
+ f.adapter.quote=async()=>({out:'980000',expectedOut:'980392',at:f.now(),decimals:6,impactPct:1,roundTrip:{mint:m.mint,pool:m.pairAddress,inAmount:o.amount,sellInput:'980000',sellOut:'950000000',at:f.now(),impactPct:1}});
+ await f.engine.fill([m]);await Promise.all([...f.engine.quoteJobs.values()].map(j=>j.task));await f.engine.fill([m]);
+ assert.equal(f.engine.state.pending.amount,'500000000');assert.equal(f.engine.state.counts.virtualBuys,0);assert.equal(f.engine.state.scalp.consumed[m.mint],undefined);assert.equal(f.engine.quoteJobs.size,0);
+ const bad={out:'980000',expectedOut:'980392',at:f.now(),decimals:6,impactPct:1,roundTrip:{mint:m.mint,pool:m.pairAddress,inAmount:'1000000000',sellInput:'980000',sellOut:'950000000',at:f.now(),impactPct:1}};
+ assert.equal(stageD(bad,{...o,amount:'500000000'},c,f.now()).detail,'UNVERIFIED');
+});
+
+test('report compacts repeated execution evidence and emits each fill id once without losing numeric decisions',async t=>{
+ const f=await setup(t),m=market(f.now()),fill={type:'virtual_fill',simulation:true,id:'compact-buy',side:'BUY',positionId:'compact-buy',at:f.now(),ts:f.now()};await f.engine.store.record(fill);
+ await f.engine.logs.append([{...f.engine.context(m,'compact'),type:'execution',reason_code:'D_COST',metrics:{A:{m5:4},B:{top10Pct:12,mintRevoked:true,tokenProgram:'spl-token',coverage:{holders:true},top10Wallets:Array.from({length:30},()=>({address:'PRIVATE_FIXTURE',pct:1}))},C:{rise:2,samples:[{at:f.now(),price:1,liquiditySol:100}],observedWindow:Array.from({length:100},()=>({at:f.now(),price:1,liquiditySol:100}))},D:{roundTripLoss:5,detail:'FRICTION'}}},fill]);f.advance(100);
+ const name=await f.engine.reportPreview(),text=await readFile(path.join(f.dir,name),'utf8');const audit=text.split('SCALP AUDIT')[1];assert.doesNotMatch(audit,/PRIVATE_FIXTURE/);assert.match(audit,/"roundTripLoss":5/);assert.match(audit,/compact-execution-v2/);assert.match(audit,/"mintRevoked":true/);
+ const coverage=JSON.parse(text.split('EXPORT COVERAGE\n')[1]);assert.equal(coverage.duplicateFillsSuppressed,1);assert.equal(coverage.omittedObservations,0);assert.equal(coverage.uniqueFillIds,1);
+});
+
+test('provider absolute retryAt is honored for every quote without resetting after an order expires',async t=>{
+ const {quoteFailure}=await import('../scalp-risk.js');const f=await setup(t),p=seedRiskPosition(f,'provider-backoff');const o={side:'SELL',id:'retry-id',positionId:p.id,decidedAt:f.now()};const retryAt=f.now()+120000;
+ quoteFailure(f.engine.state,o,{retryAt},'HTTP_429',c,f.now());assert.equal(o.nextAttemptAt,retryAt);assert.equal(f.engine.quoteWaitUntil({side:'BUY'}),retryAt);assert.equal(p.memory.sellRetry.attempts,1);
+ const newOrder={side:'SELL',positionId:p.id,decidedAt:f.now()+120000};quoteFailure(f.engine.state,newOrder,{},'NO_QUOTE',c,f.now()+120000);assert.equal(p.memory.sellRetry.attempts,2);
+});
+
+test('partial losses cannot falsely blacklist a profitable position and a full risk registry cannot corrupt accounting',async t=>{
+ const {recordMintOutcome,entryGuard}=await import('../scalp-risk.js');const f=await setup(t),s=f.engine.state,policy={...c,cacheLimit:1};
+ recordMintOutcome(s,{side:'SELL',closed:true,mint:'M',positionId:'one',at:f.now(),positionPnlSol:-.01},policy);
+ recordMintOutcome(s,{side:'SELL',closed:true,mint:'M',positionId:'two',at:f.now()+1,pnlSol:-.01,positionPnlSol:.02},policy);assert.equal(s.scalp.mintRisk.M.lossStreak,0);
+ recordMintOutcome(s,{side:'SELL',closed:true,mint:'N',positionId:'three',at:f.now()+2,positionPnlSol:-.01},policy);assert.equal(s.scalp.riskRegistryFull,true);assert.equal(s.cash,s.initial);
+ assert.equal(entryGuard({mint:'N'},s,policy,f.now()+3,'n').reason_code,'E_RISK_REGISTRY_FULL');assert.equal(f.engine.status().accounting.verified,true);
+});
+
+test('PAPER adapter preserves upstream Retry-After as an absolute quote deadline',async t=>{
+ const {Connection,Keypair}=await import('@solana/web3.js');const {createPaperAdapter}=await import('../readonly.js');
+ t.mock.method(Connection.prototype,'getTokenSupply',async()=>({value:{decimals:6}}));
+ t.mock.method(globalThis,'fetch',async()=>Response.json({error:'RATE_LIMITED'},{status:429,headers:{'retry-after':'45'}}));
+ const mint=Keypair.generate().publicKey.toBase58(),adapter=createPaperAdapter('/tmp',{env:{},policy:c}),started=Date.now();
+ await assert.rejects(adapter.quote({side:'SELL',mint,amount:'100000000',readyAt:started},{...market(),mint}),e=>Number.isFinite(e.retryAt)&&e.retryAt>=started+44000);
+});
+
+test('historical closes cannot enable auto-relax for a new risk revision',async t=>{
+ const f=await setup(t);f.engine.state.scalp.sampleClosed=100;f.engine.state.scalp.revisionClosed=0;f.advance(c.dayMs);await f.engine.hourly();
+ assert.equal(f.engine.state.scalp.adjustment.eligible,false);assert.equal(f.engine.state.scalp.relaxLevel,0);assert.equal(f.engine.status().scalp.evaluationEligible,false);
 });

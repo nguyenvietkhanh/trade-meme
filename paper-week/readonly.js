@@ -80,13 +80,14 @@ let q;if(m.dexId==='pumpfun'&&!m.migratedPool){
   });},
   evidence:m=>facts.read({mint:m.mint,pool:m.pairAddress,solUsd:m.solUsd,rawMarket:m}),
   async quote(order,m){return withRpcPriority(order.side==='SELL'?'exit':'background',async()=>{
-   const q=await quoteLeg(order,m);
+   try{const q=await quoteLeg(order,m);
    if((policy.guardedEntry||policy.scalpEntry)&&order.side==='BUY'){
     const reverse=await quoteLeg({...order,side:'SELL',amount:q.out,readyAt:q.at,reason:'entry-roundtrip-proof'},m);
     q.roundTrip={mint:m.mint,pool:m.pairAddress,inAmount:order.amount,sellInput:q.out,sellOut:reverse.out,at:reverse.at,impactPct:reverse.impactPct,source:reverse.source};
     q.roundTripLossPct=(1-(Number(reverse.out)-50000)/Number(order.amount))*100;
    }
    return q;
+   }catch(error){const retryAt=raw.quoteFetch.diagnostics?.()?.retryAt;if(error&&typeof error==='object'&&Number.isFinite(retryAt)&&retryAt>Date.now())error.retryAt=retryAt;throw error;}
   });},
   async refreshHeld(positions,markets,solUsd){const out=[];await Promise.all(positions.slice(0,4).map(async p=>{let m=markets.find(m=>m.mint===p.mint&&m.pairAddress===p.pool)??{mint:p.mint,pairAddress:p.pool,dexId:p.venue??'pumpfun',symbol:p.symbol,solUsd};try{if(m.dexId==='pumpfun'){const route=await raw.curveRoute(p.mint,'SELL',p.pool);if(route.venue==='pumpfun'){const curves=await raw.curveMarketData([p.mint],solUsd);if(!curves[0])return;m={...m,...curves[0],spotPriceSol:curves[0].priceUsd/solUsd,priceAt:curves[0].updatedAt};}else{const price=await poolPrice(m,route.poolAddress);m={...m,...price,migratedPool:route.poolAddress};}}else m={...m,...await poolPrice(m,m.pairAddress)};out.push(m);}catch{/* Missing marks remain unavailable; never synthesize an exit. */}}));return out;},
   status:()=>({mode:'read-only',heliusConfigured:raw.heliusConfigured,rpcMode:raw.rpcMode,scalpRiskConfigured:!!env.PAPER_SCALP_RISK_URL,scalpRiskRequired:!!policy.rugRequired,research:facts?.projectResearch?.status()??{enabled:false,reason:'momentum strategy: holder/dev/socials do not gate paper orders'}})

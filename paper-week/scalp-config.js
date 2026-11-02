@@ -1,5 +1,6 @@
 import {readFileSync} from 'node:fs';
 export const SCALP_VERSION='paper-meme-scalp-entry-v1';
+export const SCALP_REVISION='scalp-risk-v3';
 export function scalpConfig(env=process.env){
  const defaults=JSON.parse(readFileSync(new URL('./scalp-config.json',import.meta.url),'utf8'));
  const override=env.PAPER_SCALP_CONFIG?JSON.parse(readFileSync(env.PAPER_SCALP_CONFIG,'utf8')):{};
@@ -13,6 +14,7 @@ export function scalpConfig(env=process.env){
   if(Array.isArray(value)&&(!Array.isArray(c[key])||!c[key].length))throw Error('INVALID_SCALP_CONFIG: '+name);
  }
  if(c.version!==SCALP_VERSION||c.cSamples!==3||c.cMaxStoredSamples<c.cSamples||c.cSpanMinMs<c.cGapMs*2||c.cTargetGapMs*2<c.cSpanMinMs||c.cSpanMaxMs<c.cSpanMinMs||c.minOrderSol<=0||c.fixedOrderSol<c.minOrderSol||c.maxCandidates>100||!Number.isInteger(c.maxPositions)||c.maxExposureFraction>1||c.poolFraction>1||c.maxBackground<1||c.maxBackground>4||c.scanMs<1000||c.cReadEveryMs<1000||c.cReadEveryMs>=c.cLastAgeMs||c.priceTtlMs<=0||c.slippageBps<=0||c.slippageBps>=10000||c.emergencySlippageBps>=10000||c.logQuotaMiB<=0)throw Error('INVALID_SCALP_CONFIG_BOUNDS');
+ if(!Number.isInteger(c.mintLossLimit)||c.mintLossLimit<1||c.mintLossCooldownMs<60000||c.sellRetryBaseMs<1000||c.quoteRateBackoffMs<1000||c.sellRetryMaxMs<Math.max(c.sellRetryBaseMs,c.quoteRateBackoffMs)||c.timeStopConfirmMs<1000||c.timeStopPullbackPct<=0||c.timeStopMaxMs<c.timeStopMs+c.timeStopConfirmMs||c.timeStopMaxMs>c.maxHoldMs)throw Error('INVALID_SCALP_RISK_BOUNDS');
  if(c.dBackoffMs.length!==c.dInfraRetries||c.dBackoffMs.some(x=>!Number.isFinite(x)||x<0)||c.dSizeFractions.some((x,i,a)=>!Number.isFinite(x)||x<=0||x>1||(i>0&&x>=a[i-1]))||c.cRiseMin>c.cRiseMax||c.tp1Fraction<=0||c.tp1Fraction>=1||c.stopPct<=0||c.stopPct>=100)throw Error('INVALID_SCALP_CONFIG_SEQUENCE');
- return {...c,scalpEntry:true,momentumOnly:true,guardedEntry:false,simulationOnly:true,maxEntryQuoteAgeMs:c.dQuoteAgeMs,maxSellQuoteAgeMs:c.dQuoteAgeMs};
+ return {...c,algorithmRevision:SCALP_REVISION,scalpEntry:true,momentumOnly:true,guardedEntry:false,simulationOnly:true,maxEntryQuoteAgeMs:c.dQuoteAgeMs,maxSellQuoteAgeMs:c.dQuoteAgeMs};
 }

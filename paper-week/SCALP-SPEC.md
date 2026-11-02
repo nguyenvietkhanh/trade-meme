@@ -45,13 +45,16 @@ quote is in flight; duplicate timestamps do not add observations.
 
 D quotes exact-input BUY, then SELL of the exact minimum token output being
 modeled. Impact<=2% each way; min-output roundtrip loss including two assumed
-network fees<=6%; quote age<=3s at fill; expected execution-price drift<=2%;
+network fees<=4.5%; quote age<=3s at fill; expected execution-price drift<=2%;
 TP1+15% must cover>=2.5x roundtrip loss. No-route quote errors try100%/50%/25%/min.
-Successful but poor quotes are D_COST and are never downsized to hide that failure.
+High-friction valid quotes can try the next smaller configured size, with a new
+reverse proof and paced retry. Final failure is D_COST; drift or unverified proof
+never receives a size-based bypass. D_RESIZE_PENDING is not a quality PASS.
 429/timeout/provider backoff are D_INFRA: initial attempt + at most3 retries at
 1s/2s/4s. They are not quality-bad-token observations and do not consume a BUY signal.
 
-E runs after D. Size=min(fixed paper size,1.5% physical pool SOL reserve), with
+E is rechecked after D. Held/reentry/per-mint loss and exit-priority guards also
+run after A, before expensive evidence/quotes. Size=min(fixed paper size,1.5% physical pool SOL reserve), with
 V5.4 configured loss-streak/drawdown/day-loss size factors (no timed pause).
 It requires cash for principal+two assumed fees+rent, no held mint, unused signal,
 30m same-mint cooldown and <=50% verified current fund exposure. No position-count
@@ -64,7 +67,8 @@ silently treated as the initial bankroll. No real-money mode is added.
 ## New-position exits
 
 Stop−10%; +15% sells50% of initial quantity. After confirmed TP1, stop moves to
-entry+2% and trailing8% applies. +30% exits all. If return<5% after3m exit;
+entry+2% and trailing8% applies. +30% exits all. Below+5% at3m starts a stall watch. Exit on >=1.5% deterioration from its
+initial price after60s, or below+5% at6m;
 maxhold10m. Fresh quotes after>=2s; minimum-output simulation with1.5% normal
 slippage,10% emergency. Fees .000025SOL/leg and rent .00203928SOL/token are
 explicit assumptions. A stop is a trigger, not a guarantee of its realized price.
@@ -126,10 +130,10 @@ contains session configuration, PnL, fills and the compressed dataset file index
 IDs and keeps strategy versions separate; it does not infer executable skipped PnL.
 
 The SPEC's low-trade relaxation and >=50-trade minimum are both enforced: no
-automatic adjustment until >=50 closed trades from THIS strategy. Then evaluate
+automatic adjustment until >=50 closed trades from THIS implementation revision. Then evaluate
 once per24h; if <5 entries, apply one ordered step: ratio/trades, C rise, liquidity,
 top10. Impact, roundtrip cost, authority and program checks are never auto-relaxed.
-Do not judge strategy effectiveness before>=300 scalp closed trades. 10–40 daily
+Do not judge strategy effectiveness before>=300 closed trades from the current revision. 10–40 daily
 signals is a target, not a throughput/profit guarantee, especially with B unconfigured.
 
 ## BUY-relative return reference (buy-fill-v1 patch)
@@ -186,3 +190,41 @@ EXPORT COVERAGE states audit counts, reasons, explicit omissions and read errors
 Exports cap24MiB; candidates reserve2MiB for execution rows, no unbounded inflation.
 The patch is not a profitability backtest; two observed closed positions do not
 justify fitting new thresholds. Entry/exit thresholds otherwise remain unchanged.
+
+## Risk revision: scalp-risk-v3
+
+Per-mint loss limit2 uses CLOSED position PnL. A profitable total position is not
+classified as a loss because its final partial SELL leg is negative.2 consecutive
+losses lock only that mint for24h from the second close. Positive closes reset
+the streak; partial closes do not. Retained closes seed locks on upgrade; the
+persisted registry is bounded and unknown mints fail closed if it is full.
+Available cash, exposure50%, token-program/authority/holders and quote freshness
+checks remain. No position-count cap or mandatory external rug source is added.
+
+SELL retry state lives on the position, not only the short-lived order. Non-rate
+failures start at2s; rate-limit failures start at5s, doubling to60s, respecting a
+longer provider retry deadline up to its600s ceiling. The PAPER adapter carries
+its upstream retryAt into this scheduler.429/backoff cools all quote requests;
+BUY is blocked during pending SELL recovery. Research forward reads yield to
+SELL pressure. Other eligible exits may proceed when one route is unavailable.
+Unverified quotes cause paced retry and never modify cash or positions.
+
+New entries cap roundtrip minimum-output loss4.5%. A 1SOL maximum order may be
+reduced through configured fractions100/50/25/min; each amount requires fresh
+forward/reverse proof. Normal and emergency slippage assumptions are unchanged.
+This tighter cap is experimental; it may reduce entries and is not proof of edge.
+
+New entries store the confirmed stall policy: below+5% after3m starts watching,
+not an immediate SELL. A >=1.5% fall from the watch price after60s, or continued
+below+5% at6m, triggers the full time exit. Fixed stop/TP/trailing/maxhold still
+apply first as coded. Old open positions retain the previous saved policy.
+
+Upgrade preserves ledger/session and creates a checkpoint. algorithmRevision
+is stored on positions/fills; old closes do not count toward v3 auto-relax or
+its evaluation minimum. No historical PnL is rewritten or cash reset.
+
+TXT emits one copy of each fill id across training/audit. Repeated execution
+holder lists and raw sample windows are replaced by their numeric summaries;
+raw detail remains in retained gzip. EXPORT COVERAGE adds duplicate suppression,
+unique fill ids and omissions by type. Size caps still apply; this cannot recover
+observations already omitted from an older uploaded TXT without its raw logs.

@@ -18,27 +18,39 @@ Windows: Ctrl+C before updates; run the pinned `UPDATE-PAPER-WEEK.ps1`, then
 `START-PAPER-WEEK.cmd`. Keep `paper-week.env`, `.paper-week`, Helius/Telegram settings
 and the separate Railway PAPER Volume. No session reset is required for an update.
 
-Latest PAPER implementation revision: `scalp-sampling-v2`. Fixes the 5-second
-confirmation/quote timing race without accepting stale prices or quotes. Raw
-reserve reads target2.5s; selected confirmation samples still have >=5s gaps
-and a15–45s span. Missing Pool creator can fall back to the mint-derived,
-program-owned pump curve. No public profile is accepted as creator evidence.
-Emergency minimum-output slippage assumption is now3% (was10%); normal1.5%.
-This changes the simulation assumption, not an observed live execution cost.
+Latest PAPER implementation revision: **`scalp-risk-v3`**. Existing virtual cash,
+PnL, trades and stored exits are preserved. Upgrade checkpoints the ledger to
+`paper-week-state-before-scalp-risk-v3.json`. No reset is required.
 
-UI exposes one TXT download for the current reporting period. At23:59 Vietnam,
-Telegram receives one daily TXT including summary, trades, staged decisions and
-coverage. Repeated candidate scans are grouped per mint/pool/reason/5min with
-counts and first/last timestamps. Execution/fill rows are retained individually.
-The export streams internal gzip logs; they remain local for detailed replay.
-TXT size is capped24MiB; omissions/read failures are explicit in EXPORT COVERAGE.
-No balance reset or deletion of existing records occurs on update.
+- After2 consecutive closed losses on one mint, block that mint for24h. Partial
+  exits use final position PnL, not the last SELL leg. Historical retained closes
+  seed the lock on upgrade, and restarting does not clear it. Other mints remain
+  eligible. Held/reentry/loss-lock checks run before RPC/quote work.
+- SELL errors persist bounded exponential retry per position, including across
+  order replacement/restart. HTTP429 or provider backoff pauses quotes until the
+  provider retry deadline. BUY waits while SELL recovery is active. A missing
+  route on one position yields to other eligible exits. No retry invents a fill.
+- Entry minimum-output roundtrip cap is4.5% (was6%). High-friction valid quotes
+  get bounded smaller-size attempts with a new reverse proof each time; drift,
+  unknown evidence and stale quotes are never accepted by resizing. Normal1.5%
+  and emergency3% slippage assumptions are unchanged.
+- For NEW positions,3m starts a stall watch below+5%. Exit if price deteriorates
+  >=1.5% from that watch after at least60s, or remains below+5% at6m. Fixed−10%,
+  TP1+15% sell50%, moved stop+2%, trailing8%, TP2+30%, maxhold10m remain. Existing
+  open positions keep their saved exits. No stop guarantees a maximum loss.
+- The single daily TXT compacts repeated holder/raw-window evidence and emits
+  each fill id once. Numeric decision metrics and counted candidate scans remain;
+  complete raw detail stays in local hourly gzip.24MiB cap and explicit omission
+  coverage remain. At23:59 Vietnam Telegram receives one consolidated TXT.
+- Auto-relax and evaluation minimums count closes from THIS revision; previous
+  revision results do not qualify the new rules. This is a new paper experiment,
+  not a profitable backtest or authorization to trade real funds.
 
 Config: `paper-week/scalp-config.json`; env fields use SCALP_ + UPPER_SNAKE_CASE,
 e.g. `SCALP_A_SWAP_LIQUIDITY_USD=8000`. Optional private JSON override path:
 `PAPER_SCALP_CONFIG`. Existing entry size is capped by pool liquidity and V5.4
 size factors. Exits for new positions:−10%, TP1+15% sell50%, moved stop+2%,
-trailing8%, TP2+30%, time stop3m/maxhold10m. Older positions retain stored exits.
+trailing8%, TP2+30%, stall watch3m, confirmed deterioration or6m stall exit/maxhold10m. Older positions retain stored exits.
 
 ```sh
 npm ci --omit=dev --ignore-scripts

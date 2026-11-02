@@ -27,7 +27,7 @@ CHAY/CAP NHAT WINDOWS
 6. Helius/Telegram cu giu nguyen. DiennguonRugtheocontract neu muonquaB.
 7. TelegramPnL+TXT23:59Asia/Ho_Chi_Minh. Funnelbaocao console/JSONLmoi gio.
 8. Lenhcu giuexitPolicycu. Lenhmoi dungstop10%,TP1+15%/50%,stop+2%,
-   trailing8%,TP2+30%,time-stop3phut/max10phut. Stopkhongbaodamgia khop.
+   trailing8%,TP2+30%,theodoi3phut, xacnhansuyyeu/thoat6phut, max10phut. Stopkhongbaodamgia khop.
 
 DU LIEU
 Hourlyscalp-YYYY-MM-DD-HH.jsonl.gz: gunzipraJSONL, khong phaimodel weights.
@@ -63,3 +63,18 @@ CAP NHAT scalp-sampling-v2
 - Execution/fill giuriengtungban. Loggz gocvangiu trongthu muc .paper-week.
 - TXTtoi da24MiB; catbot/loidoctap tin duocghiro oEXPORT COVERAGE.
 - Capnhatkhongreset50SOL,khongxoaP&L,khongdoilenhLIVE.
+
+BAN MOI scalp-risk-v3
+- Giu nguyen cash, P&L, trades, vi the. KHONG xoa/doi ten .paper-week khi update.
+- Sao luu ledger: paper-week-state-before-scalp-risk-v3.json.
+- Cung mint thua2vi the lien tiep: khoa mint24gio; mintkhac vanxetlenh.
+- Lay lichsuclose hienco de khoa, restartkhongxoa. PartialSELLkhongdemthua.
+- SELLretry luu trenvi the, tontrong429/retryAt, khongspam API moi1giay.
+- BUYchoSELLhoiphuc; route1mintloikhongchanthoatcacvithekhac.
+- Hao hutquotevong toi da4.5%; co thethu size1/.5/.25/min, phaiquote lai.
+- SL10%, TP1+15%ban50%, TP2+30%, stop sauTP+2%, trailing8%giunguyen.
+- LenhMOIMOI: phut3duoi+5%theodoi; suyyeu1.5%trong>=60s thithoat,
+  hoac phut6vanduoi+5%thithoat. Maxhold10phut. Lenhcu giupolicycu.
+- Khongdoi gia dinhslippage1.5%/3%de lam depketqua.
+- TXTvan1file, botlapB/rawsamples, fillidchixuat1lan, ghiroomission.
+- MarkerUI: scalp-risk-v3. Du300close RIENGBANMOI moiduocdanhgia.

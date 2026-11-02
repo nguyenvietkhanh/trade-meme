@@ -77,3 +77,16 @@ Execution/virtual_fill/forward/hourly rows remain separate. virtual_fill may
 also occur in RECORDS: always deduplicate by fill id, never count copies twice.
 EXPORT COVERAGE includes source errors and omitted observations (size cap).
 Current download covers the active report period; Telegram23:59 closes one day.
+
+scalp-risk-v3:
+positions/fills carry algorithmRevision. revisionClosed counts current-revision
+positions only; sampleClosed remains the cumulative strategy count.
+scalp.mintRisk: closed-position loss streak, last close, blockedUntil timestamp.
+SELL quote_unavailable includes nextAttemptAt and shared quoteBlockedUntil.
+position.memory.sellRetry persists attempts/deadline across order replacement.
+New stallWatch stores first watch time/price; older exitPolicy stays unchanged.
+execution detailFormat compact-execution-v2 retains numeric A/B/C/D/E while
+repeated holder wallets and raw windows remain in internal gzip. A candidate
+summary is an observation count, not a trade. No missing value is invented.
+EXPORT COVERAGE: duplicateFillsSuppressed, uniqueFillIds, omittedByType. Training
+and scalp audit are merged by fill id; the same fill must not be counted twice.
