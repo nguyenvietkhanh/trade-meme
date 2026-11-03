@@ -228,3 +228,11 @@ holder lists and raw sample windows are replaced by their numeric summaries;
 raw detail remains in retained gzip. EXPORT COVERAGE adds duplicate suppression,
 unique fill ids and omissions by type. Size caps still apply; this cannot recover
 observations already omitted from an older uploaded TXT without its raw logs.
+
+## V4 step 1: telemetry
+Unique A/B/C/D and BUY mint sets persist separately from the ledger, by reporting
+day and hourly interval. Repeated scans never inflate unique counts. If the
+bounded registry overflows, exact=false is explicit. M5 low/high/missing have
+separate codes. C stale/span includes sample timestamps, sample age and measured
+refresh call latency. All new orders, positions and fills retain entryTier; old
+records are legacy rather than retrospectively guessed.

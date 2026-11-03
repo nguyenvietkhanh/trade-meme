@@ -3,7 +3,7 @@
   "files": [
     {
       "path": "package.json",
-      "sha256": "b1be29a59ad1f7eadb612576e86dcb85db2380363d814711fe2d6b7b95fe5da1"
+      "sha256": "c2e392772900356c773a964c25efd07980e161c602d88366378a76f9fb27ba2b"
     },
     {
       "path": "README.md",
@@ -19,7 +19,7 @@
     },
     {
       "path": "paper-week/engine.js",
-      "sha256": "36d03435c50f6493c1633075e1fc53327112071e0c17b9e8ba3ae7fbf7589742"
+      "sha256": "676dbf4aac83da321e64cae807d3ada054a38297fbd6062bd217dec07c5e553f"
     },
     {
       "path": "paper-week/momentum.js",
@@ -67,11 +67,11 @@
     },
     {
       "path": "paper-week/scalp-stages.js",
-      "sha256": "4791ee76d49d8012646b0caf140c240c9455c3df3a65b918a9cc669dd5646169"
+      "sha256": "5908789d998775d63424e896ae493744a9ed1c0cad0cb39ddfdc545717a583fa"
     },
     {
       "path": "paper-week/scalp-engine.js",
-      "sha256": "deb69e56a1caf779b8783ac26ed70143873930fb7c0cc14f7e2f80b8aee091c3"
+      "sha256": "074aaf650bf7b8f0c2938db97d29eb3ca9810a345f40efd45811051eb656c0d9"
     },
     {
       "path": "paper-week/scalp-feed.js",
@@ -87,7 +87,7 @@
     },
     {
       "path": "paper-week/SCALP-SPEC.md",
-      "sha256": "d2e911883170a3667a0321ec7b69e726a5ae7933247ceb3fe88dd7f0f497e8e4"
+      "sha256": "00132a632629445440d19c0242faa26c87a59a7b0d04a234442cd59cba2ab71c"
     },
     {
       "path": "paper-week/SCALP-REQUEST.txt",
@@ -99,11 +99,15 @@
     },
     {
       "path": "paper-week/report-bundle.js",
-      "sha256": "8f69dbf1e944ec4bed7d1be200c5079708ade7e4264ae6104ad1aa364f4a486c"
+      "sha256": "17c4bbc4dfc576805b17a64e2dd772ebb9f28351add2f0800eb8adccd5aaf01b"
     },
     {
       "path": "paper-week/scalp-risk.js",
       "sha256": "6504da38b6d361fa3cd184ce29066dc5d2b5c16ff2dda2e460a2396165ac29aa"
+    },
+    {
+      "path": "paper-week/scalp-telemetry.js",
+      "sha256": "c6c8223c44d603ce4fc842f2963646026d98f3a88e2be73cae717dd014dbb2ea"
     }
   ]
 }

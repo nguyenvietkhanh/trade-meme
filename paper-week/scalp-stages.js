@@ -12,14 +12,15 @@ export function stageA(m,c,now){
  if(m.dexId==='pumpswap'){
   if(!num(v.liquidity)||v.liquidity<c.aSwapLiquidityUsd)return fail('A_LIQ');
   if(!num(age)||age<c.aSwapAgeMs)return fail('A_AGE');
-  if(!num(v.m5)||v.m5<c.aSwapM5Min||v.m5>c.aSwapM5Max)return fail('A_M5_RANGE');
+  if(!num(v.m5))return fail('A_M5_UNVERIFIED');
+  if(v.m5<c.aSwapM5Min)return fail('A_M5_LOW');if(v.m5>c.aSwapM5Max)return fail('A_M5_HIGH');
   if(!num(v.txns)||v.txns<c.aSwapTrades||buys<c.aSwapBuys||ratio===null||ratio<c.aRatio)return fail('A_FLOW');
   if(!num(v.volumeUsd)||v.volumeUsd<c.aSwapVolumeUsd)return fail('A_VOL');
   if(!num(v.h1)||v.h1<c.aSwapH1Min)return fail('A_H1_DUMP');
  }else{
   if(!num(v.mcap)||v.mcap<c.aCurveMcapUsd)return fail('A_LIQ');
   if(!num(age)||age<c.aCurveAgeMs)return fail('A_AGE');
-  if(!num(v.m1)||!num(v.m5)||v.m1<=0||v.m5<=0)return fail('A_M5_RANGE');
+  if(!num(v.m1)||!num(v.m5))return fail('A_M5_UNVERIFIED');if(v.m5<=0)return fail('A_M5_LOW');if(v.m1<=0)return fail('A_M1_LOW');
   if(!num(v.txns)||v.txns<c.aCurveTrades||ratio===null||ratio<c.aRatio)return fail('A_FLOW');
  }
  if(!num(v.sourceAgeMs)||v.sourceAgeMs<0||v.sourceAgeMs>c.scanMs*2)return fail('A_STALE');
@@ -38,7 +39,7 @@ export function stageB(f,m,c,now){
  if(f.rugDanger)return fail('B_RUG');return result('B','B_PASS',f);
 }
 export function stageC(rows,c,now){
- let s=rows.slice(-c.cMaxStoredSamples);if(s.length>c.cSamples){const last=s.at(-1),first=[...s].reverse().find(r=>last.at-r.at>=c.cSpanMinMs&&last.at-r.at<=c.cSpanMaxMs),middle=first?[...s].reverse().find(r=>last.at-r.at>=c.cGapMs&&r.at-first.at>=c.cGapMs):null;s=first&&middle?[first,middle,last]:s.slice(-c.cSamples);}const v={samples:s};const fail=code=>result('C',code,v);
+ let s=rows.slice(-c.cMaxStoredSamples);if(s.length>c.cSamples){const last=s.at(-1),first=[...s].reverse().find(r=>last.at-r.at>=c.cSpanMinMs&&last.at-r.at<=c.cSpanMaxMs),middle=first?[...s].reverse().find(r=>last.at-r.at>=c.cGapMs&&r.at-first.at>=c.cGapMs):null;s=first&&middle?[first,middle,last]:s.slice(-c.cSamples);}const v={samples:s,sampleTimestamps:s.map(r=>r.at),evaluatedAt:now,lastSampleAgeMs:s.length?now-s.at(-1).at:null,callLatencyMs:s.at(-1)?.callLatencyMs??null};const fail=code=>result('C',code,v);
  if(s.length!==c.cSamples)return fail('C_SPAN');
  const gaps=s.slice(1).map((r,i)=>r.at-s[i].at),span=s.at(-1).at-s[0].at;
  if(gaps.some(g=>g<c.cGapMs)||span<c.cSpanMinMs||span>c.cSpanMaxMs)return fail('C_SPAN');

@@ -12,7 +12,7 @@ $allowed = @('package.json', 'README.md', 'HUONG-DAN-PAPER-WEEK.txt', 'paper-wee
     'paper-week/server.js', 'paper-week/app.js', 'paper-week/index.html', 'paper-week/TRAINING-SCHEMA.txt',
     'paper-week/analyze.js', 'paper-week/store.js', 'paper-week/scalp-config.json', 'paper-week/scalp-config.js',
     'paper-week/scalp-stages.js', 'paper-week/scalp-engine.js', 'paper-week/scalp-feed.js',
-    'paper-week/scalp-log.js', 'paper-week/curve-feed.js', 'paper-week/SCALP-SPEC.md', 'paper-week/SCALP-REQUEST.txt', 'paper-week/position-entry.js', 'paper-week/report-bundle.js', 'paper-week/scalp-risk.js')
+    'paper-week/scalp-log.js', 'paper-week/curve-feed.js', 'paper-week/SCALP-SPEC.md', 'paper-week/SCALP-REQUEST.txt', 'paper-week/position-entry.js', 'paper-week/report-bundle.js', 'paper-week/scalp-risk.js', 'paper-week/scalp-telemetry.js')
 $tag = (Get-Date -Format 'yyyyMMdd-HHmmss') + '-' + [guid]::NewGuid().ToString('N').Substring(0, 8)
 $stage = Join-Path (Get-Location) ".paper-code-stage-$tag"
 $backup = Join-Path (Get-Location) ".paper-code-backup-$tag"

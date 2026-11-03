@@ -7,8 +7,8 @@ import {randomUUID} from 'node:crypto';
 import {SCALP_LOG_NAME} from './scalp-log.js';
 
 const compactB=b=>b?{top10Pct:b.top10Pct,devPct:b.devPct,holderCount:b.holderCount,tokenProgram:b.tokenProgram,mintRevoked:b.mintRevoked,freezeRevoked:b.freezeRevoked,extensionsSafe:b.extensionsSafe,rugDanger:b.rugDanger,rugRequired:b.rugRequired,rugSource:b.rugSource,creatorAddress:b.creatorAddress,creatorSource:b.creatorSource,coverage:b.coverage,missing:b.missing,rejected:b.rejected,reason_code:b.reason_code}:null;
-const compactC=c=>c?{rise:c.rise,steps:c.steps,drawdown:c.drawdown,samples:c.samples?.map(({at,price,liquiditySol})=>({at,price,liquiditySol})),sampleSources:[...new Set((c.samples??[]).map(r=>r.source).filter(Boolean))],observedWindowSamples:c.observedWindow?.length}:null;
-const compact=r=>({simulation:true,type:'candidate_summary',runId:r.runId,mint:r.mint,pool:r.pool,source:r.source,stage_reached:r.stage_reached,reason_code:r.reason_code,quality_rejection:r.quality_rejection,
+const compactC=c=>c?{rise:c.rise,steps:c.steps,drawdown:c.drawdown,sampleTimestamps:c.sampleTimestamps,evaluatedAt:c.evaluatedAt,lastSampleAgeMs:c.lastSampleAgeMs,callLatencyMs:c.callLatencyMs,callTiming:c.callTiming,samples:c.samples?.map(({at,price,liquiditySol,callLatencyMs})=>({at,price,liquiditySol,callLatencyMs})),sampleSources:[...new Set((c.samples??[]).map(r=>r.source).filter(Boolean))],observedWindowSamples:c.observedWindow?.length}:null;
+const compact=r=>({simulation:true,type:'candidate_summary',entryTier:r.entryTier??'legacy',runId:r.runId,mint:r.mint,pool:r.pool,source:r.source,stage_reached:r.stage_reached,reason_code:r.reason_code,quality_rejection:r.quality_rejection,
  latestMetrics:{A:r.metrics?.A,B:compactB(r.metrics?.B),C:compactC(r.metrics?.C),E:r.metrics?.E},context:r.context});
 const execution=r=>({...r,metrics:{...r.metrics,B:compactB(r.metrics?.B),C:compactC(r.metrics?.C)},detailFormat:'compact-execution-v2; full holder wallets/raw sample window retained in local gzip'});
 // A single plain TXT: fold repetitive candidate scans, retain execution/fill rows.
