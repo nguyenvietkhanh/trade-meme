@@ -14,13 +14,21 @@ export function recordMintOutcome(state,t,c){
  else if(t.positionPnlSol>0){lossStreak=0;blockedUntil=0;}
  risks[t.mint]={lossStreak,blockedUntil,lastClosedAt:t.at,lastPositionId:t.positionId,lastClosedPnlSol:t.positionPnlSol};
 }
+export function mintIsLocked(state,mint,c,now){
+ const r=state.scalp?.mintRisk?.[mint];if(!r)return false;
+ if(r.blockedUntil>now)return true;
+ if((r.lossStreak??0)<c.mintLossLimit)return false;
+ if(r.blockedUntil>0&&Number.isFinite(r.lastClosedAt)&&r.blockedUntil>=r.lastClosedAt){r.lossStreak=0;r.blockedUntil=0;r.lastLockReleasedAt=now;return false;}
+ // Repair corrupted/missing deadlines (including a stale lossStreak=18).
+ r.blockedUntil=now+c.mintLossCooldownMs;r.lockRepairedAt=now;return true;
+}
 export function entryGuard(m,state,c,now,signalId){
- const risk=state.scalp?.mintRisk?.[m.mint],lock=state.scalp?.consumed?.[m.mint];
+ const locked=mintIsLocked(state,m.mint,c,now),risk=state.scalp?.mintRisk?.[m.mint],lock=state.scalp?.consumed?.[m.mint];
  const metrics={mint:m.mint,blockedUntil:risk?.blockedUntil??0,lossStreak:risk?.lossStreak??0,quoteBlockedUntil:state.scalp?.quoteBlockedUntil??0};
  const fail=reason_code=>({stage_reached:'E',reason_code,pass:false,metrics});
  if(metrics.quoteBlockedUntil>now)return fail('E_QUOTE_BACKOFF');
  if(state.pending?.side==='SELL'||state.positions.some(p=>p.memory?.sellRetry||p.memory?.stopTriggered||p.memory?.trailingTriggered||p.memory?.timeStopTriggered||p.exitPolicy?.maxHoldMs&&now-p.openedAt>=p.exitPolicy.maxHoldMs))return fail('E_EXIT_PRIORITY');
- if(risk?.blockedUntil>now)return fail('E_MINT_LOSS_LOCK');
+ if(locked)return fail('E_MINT_LOSS_LOCK');
  if(!risk&&Object.keys(state.scalp?.mintRisk??{}).length>=c.cacheLimit)return fail('E_RISK_REGISTRY_FULL');
  if(state.positions.some(p=>p.mint===m.mint))return fail('E_HELD');
  if(lock?.signalId===signalId)return fail('E_CONSUMED');

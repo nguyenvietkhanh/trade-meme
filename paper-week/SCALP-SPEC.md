@@ -246,3 +246,11 @@ There are at most4 active work units; queued reads are separately bounded.
 Provider and engine delays use1/2/4/8s with jitter in[80%,120%], honoring longer
 Retry-After deadlines. C freshness8s/span max75s do not relabel old prices fresh.
 No swap/transaction endpoint or signer is added.
+
+## V4 step 3: avoid repeated source work
+NO_POOL is a bounded90s negative cache for PumpSwap lookups only. The first
+failure is observable once; it cannot suppress a valid unmigrated curve route.
+Loss-locked mints are removed before swap and curve discovery/RPC work. Existing
+held positions remain observable for protective exits. A loss streak at/above
+limit with a missing/invalid deadline is repaired immediately (including18);
+a genuinely expired lock releases and resets its streak once.

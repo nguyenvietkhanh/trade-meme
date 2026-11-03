@@ -1,6 +1,6 @@
 import {jitterDelay} from './scalp-queue.js';
 import {ScalpTelemetry} from './scalp-telemetry.js';
-import {recordMintOutcome,entryGuard,quoteFailure} from './scalp-risk.js';
+import {recordMintOutcome,entryGuard,quoteFailure,mintIsLocked} from './scalp-risk.js';
 import {dayFor} from './store.js';
 import {PaperWeek} from './engine.js';
 import {paperLedgerCheck} from './momentum.js';
@@ -12,11 +12,13 @@ export class ScalpWeek extends PaperWeek{
  async load(){await super.load();this.state.scalp??={consumed:{},startedAt:this.clock(),hourStartedAt:this.clock(),lastAdjustAt:this.clock(),relaxLevel:0,funnel:{},reasons:{},infra:0,forward:[]};for(const t of [...this.state.trades].sort((a,b)=>a.at-b.at))if(t.side==='BUY'||t.closed){const prior=this.state.scalp.consumed[t.mint];if(t.mint&&(!prior||t.at>prior.at))this.state.scalp.consumed[t.mint]={signalId:'legacy:'+t.id,orderId:t.id,at:t.at};}if(this.state.scalp.algorithmRevision!==this.policy.algorithmRevision)await this.store.checkpointPolicy(this.state,this.policy.algorithmRevision);
   this.state.scalp.mintRisk??={};
   for(const t of [...this.state.trades].sort((a,b)=>a.at-b.at))recordMintOutcome(this.state,t,this.policy);
+  for(const mint of Object.keys(this.state.scalp.mintRisk))mintIsLocked(this.state,mint,this.policy,this.clock());
   if(this.state.scalp.algorithmRevision!==this.policy.algorithmRevision){
    this.state.scalp.revisions=[...(this.state.scalp.revisions??[]),{at:this.clock(),from:this.state.scalp.algorithmRevision??'sampling-v2-or-earlier',to:this.policy.algorithmRevision}].slice(-12);
    if(this.state.pending?.side==='BUY')this.state.pending=null;this.state.scalp.algorithmRevision=this.policy.algorithmRevision;this.state.scalp.revisionClosed=0;
   }
   this.telemetry=new ScalpTelemetry(this.store.dir,{clock:this.clock});await this.telemetry.load();this.telemetry.startHour(this.state.scalp.hourStartedAt);this.logs=new ScalpLog(this.store.dir,this.policy);await this.logs.init();await this.store.save(this.state);}
+ isMintBlocked(mint){return mintIsLocked(this.state,mint,this.policy,this.clock());}
  async seen(rows,source='feed'){for(const m of rows??[]){if(typeof m.mint!=='string'||this.candidates.has(m.mint))continue;this.candidates.set(m.mint,{mint:m.mint,pool:m.pairAddress??null,source,firstSeenAt:this.clock()});this.state.counts.seen++;while(this.candidates.size>this.policy.cacheLimit)this.candidates.delete(this.candidates.keys().next().value);}}
  async observe(markets){await this.seen(markets);this.updatePrices(markets);}
  assumptions(){return {...super.assumptions(),entry:'MEME-SCALP A -> B -> C -> D -> E; missing on-chain safety is B_UNVERIFIED',algorithmRevision:this.policy.algorithmRevision,emergencySlippageAssumptionBps:this.policy.emergencySlippageBps,exit:this.entryExitPolicy(),riskNote:this.policy.stopPct+'% price stop is a trigger, not a guaranteed exit price; executable quotes and modeled friction determine virtual PnL',ai:false};}

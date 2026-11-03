@@ -301,3 +301,19 @@ test('quote transport uses env API key privately and backs off 1/2/4/8s with bou
  assert.equal(JSON.stringify(f.diagnostics()).includes('TEST_FIXTURE_KEY'),false);assert.equal(jitterDelay(8000,()=>1),9600);
  await assert.rejects(f('https://api.jup.ag/swap/v1/swap',{method:'POST'}),/READ_ONLY/);
 });
+
+test('lossStreak=18 with a missing deadline is repaired immediately; a genuine expired lock releases once',async t=>{
+ const {mintIsLocked}=await import('../scalp-risk.js');const f=await setup(t);f.engine.state.scalp.mintRisk.TEST_FIXTURE={lossStreak:18,blockedUntil:0,lastClosedAt:f.now()-1000};
+ assert.equal(mintIsLocked(f.engine.state,'TEST_FIXTURE',c,f.now()),true);const until=f.now()+c.mintLossCooldownMs;assert.equal(f.engine.state.scalp.mintRisk.TEST_FIXTURE.blockedUntil,until);
+ assert.equal((await f.engine.evaluate(market(f.now()))).reason_code,'E_MINT_LOSS_LOCK');assert.equal(f.calls(),0);
+ f.advance(c.mintLossCooldownMs);assert.equal(mintIsLocked(f.engine.state,'TEST_FIXTURE',c,f.now()),false);assert.equal(f.engine.state.scalp.mintRisk.TEST_FIXTURE.lossStreak,0);
+});
+
+test('NO_POOL lookup is negatively cached for 90s; locked mints never enter swap requests',async t=>{
+ const {ScalpFeed}=await import('../scalp-feed.js');const {Keypair}=await import('@solana/web3.js');const mint=Keypair.generate().publicKey.toBase58();let now=Date.now(),requests=0,locked=false;t.mock.method(Date,'now',()=>now);
+ const fetcher=async url=>{const s=String(url);if(s.includes('token-profiles'))return Response.json([{chainId:'solana',tokenAddress:mint}]);if(s.includes('tokens/v1/solana')){requests++;return Response.json([]);}return Response.json([]);};
+ const feed=new ScalpFeed({execution:{}},{policy:c,env:{},isMintBlocked:()=>locked,fetcher});
+ const tick=async()=>{await feed.refresh([]);await Promise.all(feed.jobs.values());};for(let i=0;i<3;i++)await tick();assert.equal(requests,1);
+ now+=89000;await tick();assert.equal(requests,1);now+=1001;await tick();assert.equal(requests,2);
+ now+=90001;locked=true;await tick();await tick();assert.equal(requests,2);assert.equal(feed.markets.some(m=>m.mint===mint),false);
+});

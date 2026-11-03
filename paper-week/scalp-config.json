@@ -135,5 +135,6 @@
   "timeStopConfirmMs": 60000,
   "timeStopPullbackPct": 1.5,
   "timeStopMaxMs": 360000,
-  "retryJitterPct": 0.2
+  "retryJitterPct": 0.2,
+  "noPoolCacheMs": 90000
 }
