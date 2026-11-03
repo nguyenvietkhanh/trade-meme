@@ -254,3 +254,20 @@ Loss-locked mints are removed before swap and curve discovery/RPC work. Existing
 held positions remain observable for protective exits. A loss streak at/above
 limit with a missing/invalid deadline is repaired immediately (including18);
 a genuinely expired lock releases and resets its streak once.
+
+## V4 step 4: supplied tier table
+scalp-tiers.json contains the operator's strict/relaxed/probe table. Selection
+runs A/B/C in that order and fixes the first passing tier on the order, position
+and every fill. Size factors1/.5/.25 multiply the existing soft-risk factor
+before the physical pool cap. maxOpenPositions is the total open-position gate
+when entering that tier (strict0 unlimited, relaxed10, probe8).
+Probe may admit UNKNOWN on-chain evidence only with an explicit unverified tag;
+known token/authority/rug failures and known values beyond its limits still fail.
+The supplied hardBlocks terminate fallback. Protected H1/step/drawdown thresholds
+cannot change in the tier JSON. No tier may override D or any exit parameter.
+At<100 entries in the rolling24h window, autoRelax enables the configured fallback
+tiers; at/above the target only strict is admitted. This is a target, not an order
+quota or profit guarantee. Fixed approved profiles do not require historical
+closes to be tuned, and the old automatic mutation of global thresholds is removed.
+PAPER_SCALP_TIERS_CONFIG may point to a private replacement table with the same
+validated schema. Legacy positions keep saved exits and the legacy tier label.

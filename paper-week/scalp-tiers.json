@@ -1,0 +1,28 @@
+{
+  "tierPolicy": {
+    "order": ["strict", "relaxed", "probe"],
+    "assign": "mint được chấm lần lượt từng tầng; gắn tầng đầu tiên qua được A,B,C",
+    "hardBlocks": ["NO_POOL", "E_MINT_LOSS_LOCK", "A_H1_DUMP", "C_STEP_DOWN", "C_DRAWDOWN", "D_COST", "D_INFRA", "E_QUOTE_BACKOFF"],
+    "note": "lý do thuộc hardBlocks không được nới theo tầng; stage D và toàn bộ luật thoát giữ nguyên mọi tầng để so sánh sạch"
+  },
+  "tiers": {
+    "strict": {
+      "sizeFactor": 1.0, "maxOpenPositions": 0,
+      "A": {"aSwapLiquidityUsd":8000,"aSwapAgeMs":300000,"aSwapM5Min":2,"aSwapM5Max":60,"aSwapTrades":12,"aSwapBuys":6,"aRatio":1.15,"aSwapVolumeUsd":1000,"aSwapH1Min":-30},
+      "B": {"requireSafety":true,"bTop10Pct":30,"bDevPct":8,"bSwapHolders":20},
+      "C": {"cSamples":3,"cSpanMinMs":15000,"cSpanMaxMs":75000,"cLastAgeMs":8000,"cRiseMin":1.5,"cRiseMax":12,"cStepMin":-0.3,"cDrawdownMax":1,"cLiquidityRetention":0.9}
+    },
+    "relaxed": {
+      "sizeFactor":0.5,"maxOpenPositions":10,
+      "A":{"aSwapLiquidityUsd":5000,"aSwapAgeMs":300000,"aSwapM5Min":1,"aSwapM5Max":80,"aSwapTrades":8,"aSwapBuys":5,"aRatio":1.10,"aSwapVolumeUsd":700,"aSwapH1Min":-30},
+      "B":{"requireSafety":true,"bTop10Pct":35,"bDevPct":10,"bSwapHolders":15},
+      "C":{"cSamples":3,"cSpanMinMs":15000,"cSpanMaxMs":75000,"cLastAgeMs":8000,"cRiseMin":1.0,"cRiseMax":15,"cStepMin":-0.3,"cDrawdownMax":1,"cLiquidityRetention":0.9}
+    },
+    "probe": {
+      "sizeFactor":0.25,"maxOpenPositions":8,
+      "A":{"aSwapLiquidityUsd":4000,"aSwapAgeMs":240000,"aSwapM5Min":0.5,"aSwapM5Max":80,"aSwapTrades":6,"aSwapBuys":4,"aRatio":1.05,"aSwapVolumeUsd":500,"aSwapH1Min":-30},
+      "B":{"requireSafety":false,"allowUnverified":true,"rejectIfKnownBad":true,"bTop10Pct":40,"bDevPct":12,"bSwapHolders":10},
+      "C":{"cSamples":3,"cSpanMinMs":15000,"cSpanMaxMs":75000,"cLastAgeMs":8000,"cRiseMin":0.8,"cRiseMax":15,"cStepMin":-0.3,"cDrawdownMax":1,"cLiquidityRetention":0.9}
+    }
+  }
+}

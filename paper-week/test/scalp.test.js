@@ -18,11 +18,11 @@ test('stage C enforces exact three samples, span, rising range, steps, and liqui
 test('stage D binds reverse amount, drift, quote age, impact and actual intended size',()=>{const o={mint:'M',pool:'P',amount:'1000000000',readyAt:at-2000,referencePriceSol:.01},q={out:'98500000',expectedOut:'100000000',at:at-1000,decimals:6,impactPct:1,roundTrip:{mint:'M',pool:'P',inAmount:o.amount,sellInput:'98500000',sellOut:'960000000',at,impactPct:1}};assert.equal(stageD(q,o,c,at).pass,true);assert.equal(stageD({...q,impactPct:3},o,c,at).reason_code,'D_COST');assert.equal(stageD({...q,expectedOut:'80000000'},o,c,at).detail,'DRIFT');assert.equal(stageD(q,o,c,at+3001).detail,'STALE');});
 test('stage E applies fixed/pool sizing, exposure, slots, consumed signals and 30m reentry',()=>{const m=market(),s={cash:50e9,initial:50e9,positions:[],trades:[],scalp:{consumed:{}}};assert.equal(plannedSize({...m,liquidityQuoteSol:10},s,c),.15);assert.equal(stageE(m,s,c,at,1,'signal').pass,true);s.scalp.consumed[m.mint]={signalId:'signal',at};assert.equal(stageE(m,s,c,at,1,'signal').reason_code,'E_CONSUMED');assert.equal(stageE(m,s,c,at+1,1,'other').reason_code,'E_REENTRY');assert.equal(stageE(m,s,c,at+c.reentryMs,1,'other').pass,true);});
 test('scalp exit follows -10, TP1, moved stop, trailing, TP2 and timed exits',()=>{const p={entry:1,openedAt:at,peak:1,tpDone:false,memory:{},exitPolicy:scalpExitPolicy(c)};assert.equal(scalpExit(p,.89,at).reason,'stop-loss');p.memory={};assert.equal(scalpExit(p,1.16,at).fraction,.5);p.tpDone=true;p.peak=1.25;assert.equal(scalpExit(p,1.01,at).reason,'stop-loss');p.memory={};assert.equal(scalpExit(p,1.14,at).reason,'scalp-trailing');p.memory={};assert.equal(scalpExit(p,1.31,at).reason,'scalp-tp2');p.memory={};p.tpDone=false;p.peak=1.04;assert.equal(scalpExit(p,1.04,at+c.timeStopMs),null);assert.equal(scalpExit(p,1.04,at+c.timeStopMaxMs).reason,'scalp-time-stop');assert.equal(scalpExit(p,1.06,at+c.maxHoldMs).reason,'scalp-max-hold');});
-test('all new scalar thresholds can be overridden from env, invalid bounds rejected',()=>{assert.equal(scalpConfig({SCALP_A_SWAP_LIQUIDITY_USD:'9000'}).aSwapLiquidityUsd,9000);assert.equal(scalpConfig({SCALP_ALGORITHM_REVISION:'old-config-label'}).algorithmRevision,'scalp-risk-v3');assert.throws(()=>scalpConfig({SCALP_C_SPAN_MIN_MS:'1'}));});
+test('all new scalar thresholds can be overridden from env, invalid bounds rejected',()=>{assert.equal(scalpConfig({SCALP_A_SWAP_LIQUIDITY_USD:'9000'}).aSwapLiquidityUsd,9000);assert.equal(scalpConfig({SCALP_ALGORITHM_REVISION:'old-config-label'}).algorithmRevision,'scalp-risk-v4');assert.throws(()=>scalpConfig({SCALP_C_SPAN_MIN_MS:'1'}));});
 async function setup(t){let now=at,calls=0;const dir=await mkdtemp(path.join(tmpdir(),'scalp-test-'));t.after(()=>rm(dir,{recursive:true,force:true}));const adapter={scalpSafety:async()=>{calls++;return null;},refreshCandidate:async m=>m,quote:async()=>{throw Error('NO_ROUTE');}};const store=new PaperStore(dir,{clock:()=>now}),engine=new ScalpWeek(store,adapter,{policy:{...c},initialSol:50,feeSol:c.feeSol,rentSol:c.rentSol,clock:()=>now,random:()=>.5});await engine.load();return {engine,adapter,dir,advance:n=>now+=n,now:()=>now,calls:()=>calls};}
 test('cheap rejection never calls RPC or quote and every A candidate is durably logged',async t=>{const f=await setup(t);await f.engine.step([{...market(f.now()),liquidityUsd:1}]);assert.equal(f.calls(),0);const file=(await readdir(f.dir)).find(n=>n.endsWith('.jsonl.gz'));const text=gunzipSync(await readFile(path.join(f.dir,file))).toString();assert.match(text,/A_LIQ/);assert.equal(f.engine.state.counts.virtualBuys,0);});
-test('missing rug/safety stays B_UNVERIFIED and retries only after 60s, not quality-bad',async t=>{const f=await setup(t);await f.engine.step([market(f.now())]);await Promise.all(f.engine.reads.values());f.advance(5000);await f.engine.step([market(f.now())]);assert.equal(f.calls(),1);assert.equal(f.engine.state.scalp.reasons.B_UNVERIFIED,2);f.advance(60000);await f.engine.step([market(f.now())]);await Promise.all(f.engine.reads.values());assert.equal(f.calls(),2);assert.equal(f.engine.state.counts.virtualBuys,0);});
-test('hourly funnel counts infrastructure separately, never auto-adjusts from fewer than 50 trades',async t=>{const f=await setup(t);await f.engine.step([market(f.now())]);f.advance(c.dayMs);await f.engine.step([market(f.now())]);assert.equal(f.engine.state.scalp.adjustment.eligible,false);assert.equal(f.engine.state.scalp.relaxLevel,0);assert.ok(f.engine.state.scalp.lastHour);});
+test('missing rug/safety stays B_UNVERIFIED and retries only after 60s, not quality-bad',async t=>{const f=await setup(t);await f.engine.step([market(f.now())]);await Promise.all(f.engine.reads.values());f.advance(5000);await f.engine.step([market(f.now())]);assert.equal(f.calls(),1);assert.equal(f.engine.state.scalp.reasons.B_UNVERIFIED,4);f.advance(60000);await f.engine.step([market(f.now())]);await Promise.all(f.engine.reads.values());assert.equal(f.calls(),2);assert.equal(f.engine.state.counts.virtualBuys,0);});
+test('hourly funnel reports fixed-profile fallback eligibility without mutating thresholds',async t=>{const f=await setup(t);await f.engine.step([market(f.now())]);f.advance(c.dayMs);await f.engine.step([market(f.now())]);assert.equal(f.engine.state.scalp.adjustment.eligible,true);assert.equal(f.engine.state.scalp.relaxLevel,0);assert.ok(f.engine.state.scalp.lastHour);});
 test('full fixture passes A through E, consumes the signal and trades using the new exit policy',async t=>{
  const f=await setup(t);f.adapter.scalpSafety=async m=>facts(m,f.now());f.adapter.refreshCandidate=async m=>({...m,priceAt:f.now(),priceSource:'RPC TEST_FIXTURE',spotPriceSol:1+(f.now()-at)/1000000});
  f.adapter.quote=async o=>{const px=1.02,expected=String(Math.floor(Number(o.amount)/1e9/px*1e6)),out=o.side==='BUY'?String(Math.floor(Number(expected)*.985)):String(Math.floor(Number(o.amount)/1e6*px*1e9*.985));return {at:f.now(),out,expectedOut:expected,decimals:6,impactPct:1,roundTrip:o.side==='BUY'?{mint:o.mint,pool:o.pool,inAmount:o.amount,sellInput:out,sellOut:String(Math.floor(Number(o.amount)*.97)),at:f.now(),impactPct:1}:undefined};};
@@ -168,8 +168,8 @@ test('mint loss lock counts final position PnL, survives restart and blocks befo
  await f.engine.store.save(s);const restored=new ScalpWeek(new PaperStore(f.dir),f.adapter,{policy:{...c},initialSol:50,feeSol:c.feeSol,rentSol:c.rentSol,clock:f.now,random:()=>.5});await restored.load();
  assert.equal(restored.state.scalp.mintRisk.TEST_FIXTURE.blockedUntil,until);assert.equal(restored.state.cash,s.cash);
  const result=await restored.evaluate(market(f.now()));assert.equal(result.reason_code,'E_MINT_LOSS_LOCK');assert.equal(f.calls(),0);
- const other=await restored.evaluate({...market(f.now()),mint:'OTHER_FIXTURE'});assert.equal(other.reason_code,'B_UNVERIFIED');
- f.advance(c.mintLossCooldownMs);const after=await restored.evaluate(market(f.now()));assert.equal(after.reason_code,'B_UNVERIFIED');
+ const other=await restored.evaluate({...market(f.now()),mint:'OTHER_FIXTURE'});assert.equal(other.reason_code,'C_SPAN');
+ f.advance(c.mintLossCooldownMs);const after=await restored.evaluate(market(f.now()));assert.equal(after.reason_code,'C_SPAN');
  recordMintOutcome(restored.state,close('new-loss',f.now()+1,-.01),c);assert.equal(restored.state.scalp.mintRisk.TEST_FIXTURE.lossStreak,1);
 });
 
@@ -178,7 +178,7 @@ test('existing trade history seeds per-mint locks on upgrade without resetting c
  s.trades=[{id:'old-loss-2',positionId:'old-2',side:'SELL',closed:true,mint:'TEST_FIXTURE',at:f.now()-1,positionPnlSol:-.03},{id:'old-loss-1',positionId:'old-1',side:'SELL',closed:true,mint:'TEST_FIXTURE',at:f.now()-100,positionPnlSol:-.02}];s.cash-=50e6;s.realized-=50e6;await f.engine.store.save(s);
  const e=new ScalpWeek(new PaperStore(f.dir),f.adapter,{policy:{...c},initialSol:50,feeSol:c.feeSol,rentSol:c.rentSol,clock:f.now,random:()=>.5});await e.load();
  assert.equal(e.state.cash,s.cash);assert.equal(e.state.realized,s.realized);assert.equal(e.status().accounting.verified,true);assert.equal(e.state.scalp.mintRisk.TEST_FIXTURE.lossStreak,2);
- assert.ok((await readdir(f.dir)).includes('paper-week-state-before-scalp-risk-v3.json'));
+ assert.ok((await readdir(f.dir)).includes('paper-week-state-before-scalp-risk-v4.json'));
  assert.equal((await e.evaluate(market(f.now()))).reason_code,'E_MINT_LOSS_LOCK');
 });
 
@@ -268,9 +268,9 @@ test('PAPER adapter preserves upstream Retry-After as an absolute quote deadline
  await assert.rejects(adapter.quote({side:'SELL',mint,amount:'100000000',readyAt:started},{...market(),mint}),e=>Number.isFinite(e.retryAt)&&e.retryAt>=started+44000);
 });
 
-test('historical closes cannot enable auto-relax for a new risk revision',async t=>{
+test('fixed tier fallback uses the order target, not old closes to learn new thresholds',async t=>{
  const f=await setup(t);f.engine.state.scalp.sampleClosed=100;f.engine.state.scalp.revisionClosed=0;f.advance(c.dayMs);await f.engine.hourly();
- assert.equal(f.engine.state.scalp.adjustment.eligible,false);assert.equal(f.engine.state.scalp.relaxLevel,0);assert.equal(f.engine.status().scalp.evaluationEligible,false);
+ assert.equal(f.engine.state.scalp.adjustment.eligible,true);assert.equal(f.engine.state.scalp.relaxLevel,0);assert.equal(f.engine.status().scalp.evaluationEligible,false);
 });
 
 
@@ -316,4 +316,45 @@ test('NO_POOL lookup is negatively cached for 90s; locked mints never enter swap
  const tick=async()=>{await feed.refresh([]);await Promise.all(feed.jobs.values());};for(let i=0;i<3;i++)await tick();assert.equal(requests,1);
  now+=89000;await tick();assert.equal(requests,1);now+=1001;await tick();assert.equal(requests,2);
  now+=90001;locked=true;await tick();await tick();assert.equal(requests,2);assert.equal(feed.markets.some(m=>m.mint===mint),false);
+});
+
+test('tier JSON rejects protected-guard changes and cannot override shared D/exits',async t=>{
+ const {writeFile}=await import('node:fs/promises');const {readTierPolicy,tierConfig}=await import('../scalp-tier.js');const f=await setup(t),file=path.join(f.dir,'tiers.json');const data={tierPolicy:structuredClone(c.tierPolicy),tiers:structuredClone(c.tiers)};
+ data.tiers.probe.C.cStepMin=-1;await writeFile(file,JSON.stringify(data));assert.throws(()=>readTierPolicy(file),/PROTECTED/);
+ data.tiers.probe.C.cStepMin=-.3;data.tiers.probe.D={dLossMax:100};await writeFile(file,JSON.stringify(data));assert.throws(()=>readTierPolicy(file),/TIER/);
+ for(const name of c.tierPolicy.order){const t=tierConfig(c,name);assert.deepEqual(scalpExitPolicy(t),scalpExitPolicy(c));assert.equal(t.dLossMax,c.dLossMax);assert.equal(t.simulationOnly,true);}
+});
+
+test('first ABC-passing tier is relaxed and remains attached through BUY and SELL',async t=>{
+ const f=await setup(t),m={...market(f.now()),liquidityUsd:6000,change5mPct:1.2,volume5mUsd:800,spotPriceSol:1.014};f.engine.safety.set(m.mint,{pool:m.pairAddress,until:f.now()+c.safetyTtlMs,facts:{...facts(m),top10Pct:32}});
+ f.engine.samples.set(m.mint+':'+m.pairAddress,[{at:f.now()-20000,price:1,liquiditySol:100},{at:f.now()-10000,price:1.012,liquiditySol:100},{at:f.now(),price:1.014,liquiditySol:100}]);
+ await f.engine.evaluate(m);assert.equal(f.engine.state.pending.entryTier,'relaxed');assert.equal(f.engine.state.pending.amount,'500000000');
+ f.adapter.quote=async o=>{const expected=String(Math.floor(Number(o.amount)/1e9/1.014*1e6)),out=String(Math.floor(Number(expected)*.985));return {out,expectedOut:expected,at:f.now(),decimals:6,impactPct:1,roundTrip:{mint:m.mint,pool:m.pairAddress,inAmount:o.amount,sellInput:out,sellOut:String(Math.floor(Number(o.amount)*.965)),at:f.now(),impactPct:1}};};
+ f.advance(c.fillDelayMs);await f.engine.fill([m]);await Promise.all([...f.engine.quoteJobs.values()].map(j=>j.task));await f.engine.fill([m]);
+ const p=f.engine.state.positions[0];assert.equal(p.entryTier,'relaxed');assert.equal(p.entryTierSnapshot.sizeFactor,.5);assert.equal(f.engine.state.trades[0].entryTier,'relaxed');assert.equal(f.engine.status().accounting.verified,true);
+ f.engine.updatePrices([{...m,priceAt:f.now(),spotPriceSol:p.entry*.85}]);await f.engine.monitor();assert.equal(f.engine.state.pending.entryTier,'relaxed');assert.equal(f.engine.state.pending.reason,'stop-loss');
+});
+
+test('probe explicitly admits unknown B at quarter size, but rejects known-bad facts',async t=>{
+ const f=await setup(t),m={...market(f.now()),liquidityUsd:4500,pairCreatedAt:f.now()-250000,change5mPct:.8,volume5mUsd:550,buys5m:6,sells5m:2};
+ f.engine.samples.set(m.mint+':'+m.pairAddress,[{at:f.now()-20000,price:1,liquiditySol:100},{at:f.now()-10000,price:1.005,liquiditySol:100},{at:f.now(),price:1.009,liquiditySol:100}]);
+ await f.engine.evaluate(m);assert.equal(f.engine.state.pending.entryTier,'probe');assert.equal(f.engine.state.pending.amount,'250000000');assert.equal(f.engine.state.pending.scalpContext.metrics.B.unverified,true);
+ f.engine.state.pending=null;f.engine.safety.set(m.mint,{pool:m.pairAddress,until:f.now()+c.safetyTtlMs,facts:{...facts(m),rejected:true,reason_code:'B_TOKEN'}});
+ const bad=await f.engine.evaluate(m);assert.equal(bad.reason_code,'B_TOKEN');assert.equal(f.engine.state.pending,null);
+});
+
+test('H1 dump, C step-down and C drawdown hard blocks stop tier fallback',async t=>{
+ const f=await setup(t),m=market(f.now());f.engine.safety.set(m.mint,{pool:m.pairAddress,until:f.now()+c.safetyTtlMs,facts:facts(m)});
+ assert.equal((await f.engine.evaluate({...m,change1hPct:-31})).reason_code,'A_H1_DUMP');assert.equal(f.engine.audit.length,1);
+ f.engine.audit=[];f.engine.samples.set(m.mint+':'+m.pairAddress,[{at:f.now()-20000,price:1,liquiditySol:100},{at:f.now()-10000,price:1.05,liquiditySol:100},{at:f.now(),price:1.04,liquiditySol:100}]);
+ assert.equal((await f.engine.evaluate(m)).reason_code,'C_STEP_DOWN');assert.equal(f.engine.audit.length,1);
+ f.engine.audit=[];f.engine.samples.set(m.mint+':'+m.pairAddress,[{at:f.now()-20000,price:1,liquiditySol:100},{at:f.now()-10000,price:1.05,liquiditySol:100},{at:f.now()-5000,price:1.025,liquiditySol:100},{at:f.now(),price:1.03,liquiditySol:100}]);
+ assert.equal((await f.engine.evaluate(m)).reason_code,'C_DRAWDOWN');assert.equal(f.engine.audit.length,1);assert.equal(f.engine.state.pending,null);
+});
+
+test('autoRelax enables configured fallbacks below 100 entries and never changes shared protection thresholds',async t=>{
+ const {activeTiers,tierConfig}=await import('../scalp-tier.js');const f=await setup(t);assert.equal(c.minDailyOrders,100);assert.deepEqual(activeTiers(c,f.engine.state,f.now()),['strict','relaxed','probe']);
+ f.engine.state.scalp.entryTimes=Array(100).fill(f.now());assert.deepEqual(activeTiers(c,f.engine.state,f.now()),['strict']);
+ const state={cash:50e9,initial:50e9,positions:Array.from({length:10},(_,i)=>({mint:'held'+i,basis:1e9})),trades:[],scalp:{consumed:{},fundSol:50}};
+ assert.equal(stageE(market(),state,tierConfig(c,'relaxed'),at,.5,'new').reason_code,'E_POSITIONS');assert.equal(stageE(market(),state,tierConfig(c,'strict'),at,1,'new').pass,true);
 });

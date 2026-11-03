@@ -1,6 +1,7 @@
+import {readTierPolicy} from './scalp-tier.js';
 import {readFileSync} from 'node:fs';
 export const SCALP_VERSION='paper-meme-scalp-entry-v1';
-export const SCALP_REVISION='scalp-risk-v3';
+export const SCALP_REVISION='scalp-risk-v4';
 export function scalpConfig(env=process.env){
  const defaults=JSON.parse(readFileSync(new URL('./scalp-config.json',import.meta.url),'utf8'));
  const override=env.PAPER_SCALP_CONFIG?JSON.parse(readFileSync(env.PAPER_SCALP_CONFIG,'utf8')):{};
@@ -17,5 +18,6 @@ export function scalpConfig(env=process.env){
  if(!Number.isInteger(c.mintLossLimit)||c.mintLossLimit<1||c.mintLossCooldownMs<60000||c.sellRetryBaseMs<1000||c.quoteRateBackoffMs<1000||c.sellRetryMaxMs<Math.max(c.sellRetryBaseMs,c.quoteRateBackoffMs)||c.timeStopConfirmMs<1000||c.timeStopPullbackPct<=0||c.timeStopMaxMs<c.timeStopMs+c.timeStopConfirmMs||c.timeStopMaxMs>c.maxHoldMs)throw Error('INVALID_SCALP_RISK_BOUNDS');
  if(c.retryJitterPct<0||c.retryJitterPct>.2)throw Error('INVALID_SCALP_JITTER');
  if(c.dBackoffMs.length!==c.dInfraRetries||c.dBackoffMs.some(x=>!Number.isFinite(x)||x<0)||c.dSizeFractions.some((x,i,a)=>!Number.isFinite(x)||x<=0||x>1||(i>0&&x>=a[i-1]))||c.cRiseMin>c.cRiseMax||c.tp1Fraction<=0||c.tp1Fraction>=1||c.stopPct<=0||c.stopPct>=100)throw Error('INVALID_SCALP_CONFIG_SEQUENCE');
- return {...c,algorithmRevision:SCALP_REVISION,scalpEntry:true,momentumOnly:true,guardedEntry:false,simulationOnly:true,maxEntryQuoteAgeMs:c.dQuoteAgeMs,maxSellQuoteAgeMs:c.dQuoteAgeMs};
+ const tiers=readTierPolicy(env.PAPER_SCALP_TIERS_CONFIG);
+ return {...c,...tiers,algorithmRevision:SCALP_REVISION,scalpEntry:true,momentumOnly:true,guardedEntry:false,simulationOnly:true,maxEntryQuoteAgeMs:c.dQuoteAgeMs,maxSellQuoteAgeMs:c.dQuoteAgeMs};
 }

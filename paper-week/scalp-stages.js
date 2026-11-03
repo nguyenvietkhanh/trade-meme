@@ -27,16 +27,18 @@ export function stageA(m,c,now){
  return result('A','A_PASS',v);
 }
 export function stageB(f,m,c,now){
- const fail=code=>result('B',code,f??{});
- if(!f||f.mint!==m.mint||f.pool!==m.pairAddress||!num(f.checkedAt)||f.checkedAt>now||now-f.checkedAt>c.safetyTtlMs)return fail('B_UNVERIFIED');
- if(f.rejected)return fail(f.reason_code??'B_TOKEN');
- if(f.coverage?.program!==true||f.coverage?.authorities!==true||f.coverage?.holders!==true||f.coverage?.exclusions!==true||(c.rugRequired&&f.coverage?.rug!==true))return fail('B_UNVERIFIED');
- if(!['spl-token','spl-token-2022'].includes(f.tokenProgram)||f.extensionsSafe!==true)return fail('B_TOKEN');
- if(f.mintRevoked!==true||f.freezeRevoked!==true)return fail('B_AUTHORITY');
- if(!num(f.top10Pct)||!num(f.devPct)||!num(f.holderCount)||(c.rugRequired&&typeof f.rugDanger!=='boolean'))return fail('B_UNVERIFIED');
- if(f.top10Pct>c.bTop10Pct)return fail('B_TOP10');if(f.devPct>c.bDevPct)return fail('B_DEV');
- if(f.holderCount<(m.dexId==='pumpfun'?c.bCurveHolders:c.bSwapHolders))return fail('B_HOLDERS');
- if(f.rugDanger)return fail('B_RUG');return result('B','B_PASS',f);
+ const fail=code=>result('B',code,f??{}),identity=f?.mint===m.mint&&f?.pool===m.pairAddress;
+ const probe=c.requireSafety===false&&c.allowUnverified===true;
+ if(identity){
+  if(f.rejected)return fail(f.reason_code??'B_TOKEN');
+  if(f.tokenProgram&&!['spl-token','spl-token-2022'].includes(f.tokenProgram)||f.extensionsSafe===false)return fail('B_TOKEN');
+  if(f.mintRevoked===false||f.freezeRevoked===false)return fail('B_AUTHORITY');if(f.rugDanger===true)return fail('B_RUG');
+  if(num(f.top10Pct)&&f.top10Pct>c.bTop10Pct)return fail('B_TOP10');if(num(f.devPct)&&f.devPct>c.bDevPct)return fail('B_DEV');
+  if(num(f.holderCount)&&f.holderCount<(m.dexId==='pumpfun'?c.bCurveHolders:c.bSwapHolders))return fail('B_HOLDERS');
+ }
+ const verified=identity&&num(f.checkedAt)&&f.checkedAt<=now&&now-f.checkedAt<=c.safetyTtlMs&&f.coverage?.program===true&&f.coverage?.authorities===true&&f.coverage?.holders===true&&f.coverage?.exclusions===true&&(!c.rugRequired||f.coverage?.rug===true)&&['spl-token','spl-token-2022'].includes(f.tokenProgram)&&f.extensionsSafe===true&&f.mintRevoked===true&&f.freezeRevoked===true&&num(f.top10Pct)&&num(f.devPct)&&num(f.holderCount)&&(!c.rugRequired||typeof f.rugDanger==='boolean');
+ if(!verified){if(!probe)return fail('B_UNVERIFIED');return {...result('B','B_PASS',{...f,unverified:true,verification:'unverified; probe-only admission, not safety certification'}),reason_code:'B_PASS_UNVERIFIED',unverified:true};}
+ return result('B','B_PASS',f);
 }
 export function stageC(rows,c,now){
  let s=rows.slice(-c.cMaxStoredSamples);if(s.length>c.cSamples){const last=s.at(-1),first=[...s].reverse().find(r=>last.at-r.at>=c.cSpanMinMs&&last.at-r.at<=c.cSpanMaxMs),middle=first?[...s].reverse().find(r=>last.at-r.at>=c.cGapMs&&r.at-first.at>=c.cGapMs):null;s=first&&middle?[first,middle,last]:s.slice(-c.cSamples);}const v={samples:s,sampleTimestamps:s.map(r=>r.at),evaluatedAt:now,lastSampleAgeMs:s.length?now-s.at(-1).at:null,callLatencyMs:s.at(-1)?.callLatencyMs??null};const fail=code=>result('C',code,v);
@@ -59,7 +61,7 @@ export function plannedSize(m,state,c){
  for(const t of losses){if(!(t.positionPnlSol<0))break;streak++;}
  let factor=streak>=c.lossStreakProbe?c.lossStreakProbeFactor:streak>=c.lossStreakSoft?c.lossStreakFactor:1;
  const r=state.scalp??{},fund=r.fundSol;if(num(fund)&&r.peakSol>0&&(r.peakSol-fund)/r.peakSol>=c.drawdownSoft)factor=Math.min(factor,c.drawdownFactor);if(num(fund)&&r.peakSol>0&&(r.peakSol-fund)/r.peakSol>=c.drawdownProbe)factor=Math.min(factor,c.lossStreakProbeFactor);if(r.dayStartSol>0&&(state.realized-(r.dayRealized??state.realized))/1e9<-r.dayStartSol*c.dailyLossSoftFraction)factor=Math.min(factor,c.dailyLossFactor);factor=Math.max(c.minSizeFactor,factor);
- return Math.floor(Math.min(c.fixedOrderSol*factor,reserve*c.poolFraction)*1e9)/1e9;
+ return Math.floor(Math.min(c.fixedOrderSol*factor*(c.entrySizeFactor??1),reserve*c.poolFraction)*1e9)/1e9;
 }
 export function stageE(m,state,c,now,size,signalId){
  const gate=entryGuard(m,state,c,now,signalId);if(!gate.pass)return gate;

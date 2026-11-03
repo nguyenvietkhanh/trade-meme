@@ -3,7 +3,7 @@
   "files": [
     {
       "path": "package.json",
-      "sha256": "9c97795f26e37c9956cd27f471176b19ff95ca4e97f0d0205aaa66030cb8b12b"
+      "sha256": "0b050ae77cb78641aafea111ef4cac2a4d4d65e440caa971070e7e4855a865ad"
     },
     {
       "path": "README.md",
@@ -19,7 +19,7 @@
     },
     {
       "path": "paper-week/engine.js",
-      "sha256": "676dbf4aac83da321e64cae807d3ada054a38297fbd6062bd217dec07c5e553f"
+      "sha256": "e6da3f1c10fa9d65228f7735274f3e17ca6b0b6303280500b646e01072804a72"
     },
     {
       "path": "paper-week/momentum.js",
@@ -59,19 +59,19 @@
     },
     {
       "path": "paper-week/scalp-config.json",
-      "sha256": "f3e16b6fbf35e780edc43042a56da7eeb6447cb83b4b0e5b8226b4e9cc37c436"
+      "sha256": "01fdb8970b24952e466b80151fa1a93cdf0492a689e5b2730f5ce0e87ebffb0a"
     },
     {
       "path": "paper-week/scalp-config.js",
-      "sha256": "ea8a82798e7024488dd1e2164916b931ea0dd96f18d743a393b1d6aaf6baebf2"
+      "sha256": "11e19c93f3a5db9b57cca8fe626c0f959cb47d6365b36a50abbcb5ddeae862b2"
     },
     {
       "path": "paper-week/scalp-stages.js",
-      "sha256": "5908789d998775d63424e896ae493744a9ed1c0cad0cb39ddfdc545717a583fa"
+      "sha256": "eea5b3a8b4eb288a1c23d03d6477f36abca6b84f322352d943c7071beed90c39"
     },
     {
       "path": "paper-week/scalp-engine.js",
-      "sha256": "ba4b07d38d344a98cf321b2f2d90e69a0117878d3f8452028a8335d3aa15e43b"
+      "sha256": "907d00e60948d95364205c1b8e96ec5fa323d4e688e89be88622dbdae6b62d09"
     },
     {
       "path": "paper-week/scalp-feed.js",
@@ -87,7 +87,7 @@
     },
     {
       "path": "paper-week/SCALP-SPEC.md",
-      "sha256": "150b1e4a630afa96ecd2e413bf436cef826f4027c582b64ee987d110c159879f"
+      "sha256": "f7752151e3ebbf722381da404bdf7e36c7b473887ffbe7243b2c46678c3e76e5"
     },
     {
       "path": "paper-week/SCALP-REQUEST.txt",
@@ -112,6 +112,14 @@
     {
       "path": "paper-week/scalp-queue.js",
       "sha256": "183dfb54760124381a6c66b6ac927ade3eaabcfcd49e5edf0dcce1dd7bfdd779"
+    },
+    {
+      "path": "paper-week/scalp-tier.js",
+      "sha256": "4073c2b4dd1aa1f279f5840d5caaf497378ece4974fdb7e6d28db61765365c17"
+    },
+    {
+      "path": "paper-week/scalp-tiers.json",
+      "sha256": "339074e3334005a45ebb98f0e51cbc84b277bbec96dacffb82dea9413a023043"
     }
   ]
 }
