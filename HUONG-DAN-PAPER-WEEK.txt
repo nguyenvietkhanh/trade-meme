@@ -1,80 +1,49 @@
-MEME PILOT - PAPER ONLY - MEME-SCALP ENTRY FILTER v1
-Rule hien tai: paper-meme-scalp-entry-v1. Khong AI, vi, private key hay ky/gui tx.
-Mac dinh phien moi50SOL ao. Cap nhat khong reset cash, lo, vi the hay bao cao.
+MEME PILOT LOCAL — PAPER / SOL ẢO — scalp-risk-v4
 
-CAN DOC
-paper-week/SCALP-SPEC.md: rule, config/env, log, retry va gioi han.
-paper-week/SCALP-REQUEST.txt: nguyen van SPEC da yeu cau.
-Moi nguong trong paper-week/scalp-config.json; envSCALP_UPPER_SNAKE_CASE.
-PAPER_SCALP_CONFIG co the tro denJSON override rieng khong bi update ghi de.
+Cập nhật giữ nguyên số dư, PnL, vị thế và lịch sử trong .paper-week.
+Không xóa/đổi tên .paper-week khi cập nhật. Không có ký/gửi giao dịch thật.
+Checkpoint: paper-week-state-before-scalp-risk-v4.json.
 
-QUAN TRONG: HIEN CHUA COAPI GMGN VA NGUONRUG
-- GMGNNOT_CONFIGURED: bo nguon nay, van quetprofiles/boosts/curve.
-- Rug khong bat buoc: SCALP_RUG_REQUIRED=false; chua kiem tra rug, khong gia PASS.
-- Bo gioi han so vi the: SCALP_MAX_POSITIONS=0. Van giu cash/exposure va on-chain.
-- Khong tu tao endpoint, APIkey, nhanPASS hay du lieu an toan.
-- Chi khi bat lai SCALP_RUG_REQUIRED=true moi canadapterRUG HTTPS.
-- PAPER_SCALP_GMGN_URL tuy chon, chi adapter ket noiAPI GMGN chinh thuc.
-- Khong gui bat kyAPIkey/Telegramtoken/privatekey vao chat.
+CHẠY / CẬP NHẬT
+1. Node.js 24+. Ctrl+C dừng bot trước khi cập nhật.
+2. PowerShell trong thư mục có START-PAPER-WEEK.cmd.
+3. Tải UPDATE-PAPER-WEEK.ps1 đúng revision được cung cấp rồi chạy updater.
+   Script kiểm tra SHA256, cú pháp và sao lưu code. Giữ private env/config.
+4. Chạy START-PAPER-WEEK.cmd; Ctrl+F5 trang http://127.0.0.1:3100.
+5. Kiểm tra marker scalp-risk-v4.
 
-CHAY/CAP NHAT WINDOWS
-1. Node.js24+. DungCtrl+C tatbot truoc khi cap nhat.
-2. PowerShell trong thu muc coSTART-PAPER-WEEK.cmd.
-3. ChayUPDATE-PAPER-WEEK.ps1 dungrevision duoc cung cap. Script kiemtraSHA256,
-   syntaxJS va sao luu code. Khong xoa .paper-week haypaper-week.env.
-4. ChaySTART-PAPER-WEEK.cmd. Xac nhanrulepaper-meme-scalp-entry-v1.
-5. Mohttp://127.0.0.1:3100. Maycanbat/khongsleep dequet va guiTelegram.
-6. Helius/Telegram cu giu nguyen. DiennguonRugtheocontract neu muonquaB.
-7. TelegramPnL+TXT23:59Asia/Ho_Chi_Minh. Funnelbaocao console/JSONLmoi gio.
-8. Lenhcu giuexitPolicycu. Lenhmoi dungstop10%,TP1+15%/50%,stop+2%,
-   trailing8%,TP2+30%,theodoi3phut, xacnhansuyyeu/thoat6phut, max10phut. Stopkhongbaodamgia khop.
+NĂM THAY ĐỔI V4
+1. Đếm mint duy nhất A/B/C/D; A_M5_LOW/HIGH; C có timestamp và latency.
+   Lệnh, vị thế, BUY/SELL có entryTier. Dữ liệu cũ chưa có tier là legacy.
+2. Hàng đợi D > C > A, tối đa 4 job chạy; SELL bảo vệ ưu tiên trong D.
+   Backoff 1/2/4/8 giây, jitter ±20%, tôn trọng Retry-After dài hơn.
+   C: mẫu cuối tối đa 8 giây, khoảng mẫu tối đa 75 giây.
+3. NO_POOL PumpSwap cache âm 90 giây; không loại curve hợp lệ vì cache này.
+   Mint đang khóa do thua bị loại khỏi nguồn; vị thế đang giữ vẫn được theo dõi.
+   lossStreak >= giới hạn nhưng thiếu/sai hạn khóa sẽ được sửa ngay.
+4. scalp-tiers.json là bảng strict/relaxed/probe đã được cung cấp.
+   Qua A/B/C ở tầng đầu tiên thì gắn tầng đó; factor 1 / 0.5 / 0.25.
+   maxOpenPositions là số vị thế toàn bot được phép khi vào tầng đó: 0 / 10 / 8.
+   Probe cho phép dữ liệu chưa xác minh nhưng không bỏ qua dữ liệu biết là xấu.
+   A_H1_DUMP, C_STEP_DOWN, C_DRAWDOWN, Stage D và luật thoát dùng chung.
+   autoRelax cho phép fallback khi dưới mục tiêu 100 BUY trong 24 giờ gần nhất;
+   không ép đủ 100 lệnh và không sửa các ngưỡng của bảng JSON.
+5. 23:59 Việt Nam gửi 1 TXT có bảng tier, expectancy sau phí, stop và funnel.
+   Phần chốt từng đoạn không được đếm thành nhiều vị thế thắng.
+   Giá dưới stop là giá minimum-output mô phỏng, không phải slippage thật.
+   Mốc bắt đầu đo và phần dữ liệu trước V4 được ghi rõ.
 
-DU LIEU
-Hourlyscalp-YYYY-MM-DD-HH.jsonl.gz: gunzipraJSONL, khong phaimodel weights.
-Co linktai trongUI. ToanboatrongRailwayVolumePAPERneu deploy rieng.
-+1/+5/+15phutla sampled; missinggia deNULL, khong bietdinhdaylientuc.
-Quota512MiB/9ngay: gandaylog sechanadmitA/BUY, van uu tienSELL bao ve.
-Bao caoTXT nho gomPnL/config/fill vaindexfileauditgzip daydu.
-node paper-week/analyze.js .paper-week: streamgzip va dedupfill, tachversion.
+API / DỮ LIỆU RIÊNG
+JUPITER_API_KEY (nếu có) điền trong paper-week.env; không gửi key vào chat.
+Helius/Telegram hiện có được giữ nguyên. Không cần ví hay private key.
+PAPER_SCALP_CONFIG: JSON cấu hình riêng.
+PAPER_SCALP_TIERS_CONFIG: JSON tier riêng, phải qua kiểm tra guard/schema.
+Bản mẫu: paper-week.env.example. Chi tiết: paper-week/SCALP-SPEC.md.
 
-50SOL/PHIENMOI
-Chi doiINITIAL_SOL khong thay so du ledgercu. Muonphienmoi:tatbot, archive
-.paper-week bangtenrieng, dat$env:PAPER_WEEK_INITIAL_SOL='50', chayCMD.
-Archivegiu lo/vi the/bao caocu nhungphienmoi khongtheodoivi thearchive.
-Khong ghi de ketqua cu thanh0 de lamdepbaocao.
+GIỮ QUY TẮC THOÁT
+SL -10%; TP1 +15% bán 50%; sau TP1 stop +2%, trailing 8%; TP2 +30%.
+Phút 3 theo dõi stall nếu dưới +5%; suy yếu 1.5% sau ít nhất 60 giây hoặc
+vẫn dưới +5% ở phút 6 thì thoát; max hold 10 phút. Lệnh cũ giữ policy đã lưu.
+Stop là điều kiện kích hoạt, không bảo đảm giá khớp hay mức lỗ tối đa.
 
-CO HA/CANHBAO
-Quet24/7, khongnghibuysauchuoi thua. CocothetheoV5.4 duocconfig.
-Chuam50lệnhdongSCALP thikhongtunoi. >=50va<5lenh/24hmoixetlanluot;
-impact/cost/authority/program khongn oi. >=300lenhdongmoi danhgiachienluoc.
-10-40tin hieu/ngaylamuctieu,khong phailoihua. Chua nguonBthi0BUYladungSPEC.
-Paperkhongmo phongMEV/front-running, auction/fillthat; ketquatienthatcothekemhon.
-Khong chonnhanh naycho serviceLIVE. RailwayPAPERcanservicerieng+Volume rieng.
-
-CAP NHAT scalp-sampling-v2
-- Sua BUY bi huy khi mau gia vua qua5giay trong luc choquote.
-- Doc gia muc tieu2.5giay; van can3mau cach nhau>=5giay trong15-45giay.
-- ChoRPC lam moi, quote het han thi laylai; khongBUY bang gia cu.
-- CreatorPoolthieu: chi fallback curvePDA cua mint, kiemtra ownerprogram.
-- Gia dinh min-output SELLkhan cap3%, truoc10%; khong phai slippage do thuc te.
-- Giao dienchi1nutTXT. Telegram23:59VietNamgui1TXTgom baocao+trade+audit.
-- TXT hien tai la kybaocao dangchay; file23:59la kyngay da dong.
-- Scangiongnhau goptheomint/reason/5phut: giusolan,giomidau/cuoi,metriccuoi.
-- Execution/fill giuriengtungban. Loggz gocvangiu trongthu muc .paper-week.
-- TXTtoi da24MiB; catbot/loidoctap tin duocghiro oEXPORT COVERAGE.
-- Capnhatkhongreset50SOL,khongxoaP&L,khongdoilenhLIVE.
-
-BAN MOI scalp-risk-v3
-- Giu nguyen cash, P&L, trades, vi the. KHONG xoa/doi ten .paper-week khi update.
-- Sao luu ledger: paper-week-state-before-scalp-risk-v3.json.
-- Cung mint thua2vi the lien tiep: khoa mint24gio; mintkhac vanxetlenh.
-- Lay lichsuclose hienco de khoa, restartkhongxoa. PartialSELLkhongdemthua.
-- SELLretry luu trenvi the, tontrong429/retryAt, khongspam API moi1giay.
-- BUYchoSELLhoiphuc; route1mintloikhongchanthoatcacvithekhac.
-- Hao hutquotevong toi da4.5%; co thethu size1/.5/.25/min, phaiquote lai.
-- SL10%, TP1+15%ban50%, TP2+30%, stop sauTP+2%, trailing8%giunguyen.
-- LenhMOIMOI: phut3duoi+5%theodoi; suyyeu1.5%trong>=60s thithoat,
-  hoac phut6vanduoi+5%thithoat. Maxhold10phut. Lenhcu giupolicycu.
-- Khongdoi gia dinhslippage1.5%/3%de lam depketqua.
-- TXTvan1file, botlapB/rawsamples, fillidchixuat1lan, ghiroomission.
-- MarkerUI: scalp-risk-v3. Du300close RIENGBANMOI moiduocdanhgia.
+Không coi quote là giao dịch thật. Không reset vốn để làm mất dấu khoản lỗ.

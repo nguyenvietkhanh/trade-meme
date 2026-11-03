@@ -16,12 +16,13 @@ export class ScalpTelemetry{
  record(stage,mint,pass=false){
   if(!stages.includes(stage)||typeof mint!=='string')return;const day=dayFor(this.clock()),data=this.days.get(day);if(!data)return;
   const hour=String(this.hourFrom??Math.floor(this.clock()/3600000)*3600000);data.hours[hour]??=Object.fromEntries(stages.map(s=>[s,{reached:new Set(),passed:new Set()}]));
-  for(const scope of [data.stages,data.hours[hour]])for(const field of pass?['reached','passed']:['reached']){const set=scope[stage][field];if(set.has(mint))continue;if(set.size>=this.maxMints){data.overflow=true;continue;}set.add(mint);this.dirty.add(day);}
+  for(const scope of [data.stages,data.hours[hour]])for(const field of pass?['reached','passed']:['reached']){const set=scope[stage][field];if(set.has(mint))continue;if(set.size>=this.maxMints){data.overflow=true;this.dirty.add(day);continue;}set.add(mint);this.dirty.add(day);}
  }
  snapshot(day=dayFor(this.clock()),hour=null){
   const data=this.days.get(day);let scope=data?.stages;if(hour!==null){scope=Object.fromEntries(stages.map(s=>[s,{reached:new Set(),passed:new Set()}]));for(const d of this.days.values())for(const stage of stages)for(const f of ['reached','passed'])for(const mint of d.hours?.[String(hour)]?.[stage]?.[f]??[])scope[stage][f].add(mint);}
   const counts=Object.fromEntries(stages.map(s=>[s,{uniqueMints:scope?.[s]?.reached.size??0,uniquePassed:scope?.[s]?.passed.size??0}]));
-  return {day,hour,trackingFrom:data?.trackingFrom??null,exact:!!data&&!data.overflow,stages:counts,scope:'unique mint addresses observed in this report day/hour; repeats count once',loaded:!!data};
+  const conversions={};for(const [a,b]of [['A','B'],['B','C'],['C','D'],['D','BUY']]){const left=scope?.[a]?.reached??new Set(),right=scope?.[b]?.reached??new Set(),converted=[...left].filter(m=>right.has(m)).length;conversions[a+'→'+b]={entered:left.size,converted,rate:left.size?converted/left.size:null,nextStageOnly:right.size-converted};}
+  return {day,hour,conversions,trackingFrom:data?.trackingFrom??null,exact:!!data&&!data.overflow&&(hour===null||[...this.days.values()].every(d=>!d.overflow)),stages:counts,scope:'unique mint addresses observed in this report day/hour; repeats count once',loaded:!!data};
  }
  async flush(){
   for(const day of [...this.dirty]){const d=this.days.get(day),mints=[],ids=new Map();const id=m=>{if(!ids.has(m)){ids.set(m,mints.length);mints.push(m);}return ids.get(m);};

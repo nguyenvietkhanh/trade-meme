@@ -271,3 +271,23 @@ quota or profit guarantee. Fixed approved profiles do not require historical
 closes to be tuned, and the old automatic mutation of global thresholds is removed.
 PAPER_SCALP_TIERS_CONFIG may point to a private replacement table with the same
 validated schema. Legacy positions keep saved exits and the legacy tier label.
+
+## V4 step 5: 23:59 report
+Daily tier rollups are saved atomically with the ledger trade/daily totals, so
+500-trade cache limits or observer-log truncation cannot change the totals.
+They count BUY entries and full closed positions; partial SELL legs never add a
+win. Expectancy is full closed-position PnL after modeled fees divided by closed
+positions. Fees are not subtracted twice. Normalized mean return is also shown
+because tier sizes differ. Realized PnL by booking day is distinct from full
+position PnL for positions closed that day, possibly spanning midnight.
+
+Two stop metrics are explicit: minimum-output modeled exit unit price below the
+active stop (including the moved post-TP stop), and full-position loss beyond the
+original stop percentage of principal. Neither is measured real execution slip.
+Pre-tracking aggregates stay separate; no tier is assigned retrospectively.
+
+Funnel A→B→C→D→BUY uses intersections of unique mint sets within the same tracked
+report period. Conversion cannot exceed100%; next-stage-only mints are counted
+separately. Tracking start and coverageComplete flag expose mid-day deployments.
+The report and current download include both machine-readable fields and a TXT
+table. Schedule, one-document delivery and receipt idempotency are unchanged.

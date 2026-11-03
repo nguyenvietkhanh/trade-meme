@@ -358,3 +358,25 @@ test('autoRelax enables configured fallbacks below 100 entries and never changes
  const state={cash:50e9,initial:50e9,positions:Array.from({length:10},(_,i)=>({mint:'held'+i,basis:1e9})),trades:[],scalp:{consumed:{},fundSol:50}};
  assert.equal(stageE(market(),state,tierConfig(c,'relaxed'),at,.5,'new').reason_code,'E_POSITIONS');assert.equal(stageE(market(),state,tierConfig(c,'strict'),at,1,'new').pass,true);
 });
+
+test('tier reporting counts final positions, keeps post-fee expectancy and separates modeled stop slip from total loss',async()=>{
+ const {recordTierTrade,tierReport}=await import('../scalp-report.js');const d={buys:0,closed:0,wins:0,fees:0,realized:0};
+ recordTierTrade(d,{side:'BUY',entryTier:'strict',at,feeSol:.000025});recordTierTrade(d,{side:'SELL',entryTier:'strict',at:at+1,closed:false,pnlSol:.04,feeSol:.000025,reason:'scalp-tp1'});
+ recordTierTrade(d,{side:'SELL',entryTier:'strict',at:at+2,closed:true,pnlSol:-.01,positionPnlSol:.03,initialPrincipalSol:1,feeSol:.000025,reason:'stop-loss',activeStopPriceSol:1.02,modeledExitPriceSol:1.01,lossBeyondInitialStop:false});
+ recordTierTrade(d,{side:'BUY',entryTier:'probe',at:at+3,feeSol:.000025});recordTierTrade(d,{side:'SELL',entryTier:'probe',at:at+4,closed:true,pnlSol:.0075,positionPnlSol:.0075,initialPrincipalSol:.25,feeSol:.000025,reason:'scalp-tp2'});
+ const r=tierReport(d),strict=r.rows.find(x=>x.entryTier==='strict'),probe=r.rows.find(x=>x.entryTier==='probe');assert.equal(strict.closed,1);assert.equal(strict.wins,1);assert.equal(strict.winRate,1);assert.equal(strict.expectancyAfterFeesSol,.03);assert.equal(strict.meanReturnAfterFeesPct,3);assert.equal(probe.meanReturnAfterFeesPct,3);assert.equal(strict.slippedPastStop,1);assert.equal(strict.lossBeyondInitialStop,0);assert.ok(Math.abs(strict.realizedAfterFeesSol-.03)<1e-12);
+});
+
+test('unique funnel conversion uses mint intersections, never scan counts or a ratio above 100 percent',async t=>{
+ const f=await setup(t),tel=f.engine.telemetry;for(let i=0;i<10;i++)tel.record('A','M',true);tel.record('A','N');tel.record('B','M',true);tel.record('C','M',true);tel.record('D','OUTSIDE');
+ const r=tel.snapshot();assert.equal(r.conversions['A→B'].entered,2);assert.equal(r.conversions['A→B'].converted,1);assert.equal(r.conversions['A→B'].rate,.5);assert.equal(r.conversions['C→D'].rate,0);assert.equal(r.conversions['C→D'].nextStageOnly,1);await tel.flush();
+});
+
+test('23:59 sends one TXT with durable tier/expectancy/stop/funnel tables and preserves the session',async t=>{
+ const {nextPaperReportEnd,paperReportEnd}=await import('../../src/paper-schedule.js');const {dayFor}=await import('../store.js');const f=await setup(t),p=seedRiskPosition(f,'report-stop');p.entryTier='probe';let sent=0,body;
+ const m=()=>({...market(f.now()),spotPriceSol:.0088});f.adapter.quote=async()=>({out:'870000000',at:f.now(),decimals:6,source:'TEST_FIXTURE'});f.engine.updatePrices([m()]);await f.engine.monitor();f.advance(c.fillDelayMs);await f.engine.fill([m()]);
+ const daily=f.engine.state.daily[dayFor(f.now())].tierStats.tiers.probe;assert.equal(daily.closed,1);assert.equal(daily.slippedPastStop,1);assert.equal(daily.lossBeyondInitialStop,1);const balance=f.engine.state.cash;
+ const end=nextPaperReportEnd(paperReportEnd(f.now()));f.advance(end-f.now());await f.engine.reportTick({configured:true,document:async(name,_caption,bytes)=>{sent++;body=bytes.toString();assert.match(name,/\.txt$/);return 81;}});
+ assert.equal(sent,1);assert.match(body,/TIER \/ KẾT QUẢ PAPER SAU PHÍ/);assert.match(body,/FUNNEL \/ MINT DUY NHẤT/);assert.match(body,/probe \| 0 \| 1/);assert.match(body,/expectancyAfterFeesSol/);assert.equal(f.engine.state.cash,balance);assert.equal(f.engine.status().accounting.verified,true);
+ const restored=new ScalpWeek(new PaperStore(f.dir),f.adapter,{policy:{...c},initialSol:50,feeSol:c.feeSol,rentSol:c.rentSol,clock:f.now,random:()=>.5});await restored.load();assert.equal(restored.state.daily[dayFor(at)].tierStats.tiers.probe.closed,1);assert.equal(restored.state.cash,balance);
+});

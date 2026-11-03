@@ -90,3 +90,17 @@ repeated holder wallets and raw windows remain in internal gzip. A candidate
 summary is an observation count, not a trade. No missing value is invented.
 EXPORT COVERAGE: duplicateFillsSuppressed, uniqueFillIds, omittedByType. Training
 and scalp audit are merged by fill id; the same fill must not be counted twice.
+
+scalp-risk-v4:
+entryTier = strict/relaxed/probe on new order, position, BUY and SELL. Historical
+unlabelled records export as legacy, without guessing old strategy thresholds.
+entryTierSnapshot preserves the approved A/B/C thresholds and size factor.
+B_PASS_UNVERIFIED is probe-only and never asserts verified chain safety.
+C metrics include selected sample timestamps, read timing/latency and sample age.
+Unique funnel sets persist outside the cash ledger in bounded funnel-DATE.json.
+Daily tierStats are updated atomically with booked trades. tierReport contains
+entries, closed/wins, expectancyAfterFeesSol, meanReturnAfterFeesPct, modeled stop
+comparison counts and original-stop overshoot counts; partial exits are not wins.
+Funnel conversion is the intersection of mint sets at adjacent stages divided by
+the prior stage's unique mints, with coverage start and completeness flags.
+A/B/C tier tests and scan observations are not separate filled orders.
