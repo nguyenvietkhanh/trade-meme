@@ -236,3 +236,13 @@ bounded registry overflows, exact=false is explicit. M5 low/high/missing have
 separate codes. C stale/span includes sample timestamps, sample age and measured
 refresh call latency. All new orders, positions and fills retain entryTier; old
 records are legacy rather than retrospectively guessed.
+
+## V4 step 2: quote infrastructure
+PAPER uses an env-configured JUPITER_API_KEY on the quote-only API host; keyless
+requests use the existing public quote route. The bounded shared queue admits
+waiting D before C before A, protective SELL first among D. Active I/O is not
+preempted. Sampling/held marks are C; safety/discovery/forward research are A.
+There are at most4 active work units; queued reads are separately bounded.
+Provider and engine delays use1/2/4/8s with jitter in[80%,120%], honoring longer
+Retry-After deadlines. C freshness8s/span max75s do not relabel old prices fresh.
+No swap/transaction endpoint or signer is added.

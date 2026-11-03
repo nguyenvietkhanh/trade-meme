@@ -1,3 +1,4 @@
+import {ScalpQueue,paperQuoteTransport} from './scalp-queue.js';
 import path from 'node:path';
 import {PublicKey} from '@solana/web3.js';
 import {PUMP_AMM_SDK,PUMP_AMM_PROGRAM_ID} from '@pump-fun/pump-swap-sdk';
@@ -24,8 +25,8 @@ export function poolReservePrice(amounts, tokenIndex, solIndex, decimals, virtua
 }
 export function readOnlyRpc(rpc){return new Proxy(Object.create(null),{get(_target,key){if(key==='commitment')return 'confirmed';if(typeof key!=='string'||!(/^(get[A-Z]|rpcDiagnostics$)/.test(key)))throw Error('PAPER_RPC_READ_ONLY');const fn=rpc[key];if(typeof fn!=='function')throw Error('PAPER_RPC_METHOD_UNAVAILABLE');return fn.bind(rpc);}});}
 export function createPaperAdapter(dir,{env=process.env,policy=projectRulesConfig({})}={}){
- const raw=new SolanaExecution();raw.rpc=readOnlyRpc(raw.rpc);
- const execution=Object.freeze({rpc:raw.rpc,curveMarketData:(...a)=>raw.curveMarketData(...a),inspectCurveMarket:(m)=>raw.inspectCurveMarket(m,undefined,{includeQuote:false}),inspectMarketFacts:m=>raw.inspectMarketFacts(m)});
+ const raw=new SolanaExecution();raw.rpc=readOnlyRpc(raw.rpc);const queue=new ScalpQueue({concurrency:policy.maxBackground??4});if(policy.scalpEntry)raw.quoteFetch=paperQuoteTransport({env});const schedule=(stage,work,options)=>queue.run(stage,work,options);
+ const execution=Object.freeze({rpc:raw.rpc,curveMarketData:(...a)=>schedule('A',()=>raw.curveMarketData(...a)),inspectCurveMarket:(m)=>raw.inspectCurveMarket(m,undefined,{includeQuote:false}),inspectMarketFacts:m=>raw.inspectMarketFacts(m)});
  const supplyCache=new Map();
  const facts=policy.momentumOnly?null:new RulesEvidence({execution,policy,walletsFile:path.resolve(env.PAPER_WEEK_WALLETS_FILE??path.join(dir,'wallets.txt'))});
  async function mintDecimals(mint){let cached=supplyCache.get(mint);if(!cached||Date.now()-cached.at>60000){const decimals=(await raw.rpc.getTokenSupply(new PublicKey(mint),'confirmed')).value.decimals;if(!Number.isInteger(decimals)||decimals<0||decimals>18)throw Error('PAPER_MINT_DECIMALS_UNVERIFIED');cached={decimals,at:Date.now()};supplyCache.set(mint,cached);while(supplyCache.size>256)supplyCache.delete(supplyCache.keys().next().value);}return cached.decimals;}
@@ -39,8 +40,9 @@ let q;if(m.dexId==='pumpfun'&&!m.migratedPool){
    if(q&&!q.failed)q={...q,minOut:(BigInt(q.outAmount)*BigInt(10000-legSlip)/10000n).toString()};} else q=await paperMarketQuote({mint:m.mint,side:order.side,amount:order.amount,slippageBps:legSlip,minObservedAt:order.readyAt},raw.quoteFetch);
    if(q?.failed)throw Error('PAPER_QUOTE_UNAVAILABLE');
    return {out:q.minOut??q.outAmount,expectedOut:q.outAmount,at:q.checkedAt,decimals,roundTripLossPct:q.roundTripLossPct??null,impactPct:q.impactPct??null,source:m.dexId==='pumpfun'&&!m.migratedPool?'pump-sdk-read-only':'jupiter-quote-only',slippageAssumptionBps:legSlip};}
+ async function readHeld(positions,markets,solUsd){const out=[];await Promise.all(positions.slice(0,4).map(async p=>{let m=markets.find(m=>m.mint===p.mint&&m.pairAddress===p.pool)??{mint:p.mint,pairAddress:p.pool,dexId:p.venue??'pumpfun',symbol:p.symbol,solUsd};try{if(m.dexId==='pumpfun'){const route=await raw.curveRoute(p.mint,'SELL',p.pool);if(route.venue==='pumpfun'){const curves=await raw.curveMarketData([p.mint],solUsd);if(!curves[0])return;m={...m,...curves[0],spotPriceSol:curves[0].priceUsd/solUsd,priceAt:curves[0].updatedAt};}else{const price=await poolPrice(m,route.poolAddress);m={...m,...price,migratedPool:route.poolAddress};}}else m={...m,...await poolPrice(m,m.pairAddress)};out.push(m);}catch{/* Missing marks remain unavailable; never synthesize an exit. */}}));return out;}
  return Object.freeze({execution,
-  async scalpSafety(m){return withRpcPriority('research',async()=>{
+  async scalpSafety(m){return schedule('A',()=>withRpcPriority('research',async()=>{
    const identity={mint:m.mint,pool:m.pairAddress,checkedAt:Date.now()};
    let risk=null;
    if(policy.rugRequired){
@@ -70,16 +72,16 @@ let q;if(m.dexId==='pumpfun'&&!m.migratedPool){
    if(!usableCreator(creator))return {...identity,coverage:{},missing:['DEV_IDENTITY_UNVERIFIED']};
    const holders=await raw.holderFacts(key,account.owner,excluded,vaults,creator);
    return {...identity,checkedAt:Date.now(),...holders,creatorAddress:creator,creatorSource,tokenProgram:program==='TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA'?'spl-token':'spl-token-2022',mintRevoked:true,freezeRevoked:true,extensionsSafe:true,rugDanger:risk?.danger??null,rugSource:risk?.source??null,rugRequired:!!policy.rugRequired,coverage:{program:true,authorities:true,holders:true,exclusions:true,rug:risk!==null}};
-  });},
-  async refreshCandidate(m){return withRpcPriority('background',async()=>{
+  }));},
+  async refreshCandidate(m){return schedule('C',()=>withRpcPriority('background',async()=>{
    const now=Date.now(),activityAt=m.activityCheckedAt??m.marketObservedAt??m.updatedAt;
    if(!Number.isFinite(activityAt)||activityAt>now||now-activityAt>(policy.momentumOnly?45000:30000)||!(m.solUsd>0)||!Number.isFinite(m.solUsdAt)||m.solUsdAt>now||now-m.solUsdAt>60000)return null;
-   const rows=await this.refreshHeld([{mint:m.mint,pool:m.pairAddress,symbol:m.symbol}],[m],m.solUsd);
+   const rows=await readHeld([{mint:m.mint,pool:m.pairAddress,symbol:m.symbol}],[m],m.solUsd);
    // A new reserve read refreshes price only; it cannot refresh old flow/social evidence.
    return rows[0]?{...rows[0],activityCheckedAt:activityAt}:null;
-  });},
+  }));},
   evidence:m=>facts.read({mint:m.mint,pool:m.pairAddress,solUsd:m.solUsd,rawMarket:m}),
-  async quote(order,m){return withRpcPriority(order.side==='SELL'?'exit':'background',async()=>{
+  async quote(order,m){return schedule('D',()=>withRpcPriority(order.side==='SELL'?'exit':'background',async()=>{
    try{const q=await quoteLeg(order,m);
    if((policy.guardedEntry||policy.scalpEntry)&&order.side==='BUY'){
     const reverse=await quoteLeg({...order,side:'SELL',amount:q.out,readyAt:q.at,reason:'entry-roundtrip-proof'},m);
@@ -88,8 +90,9 @@ let q;if(m.dexId==='pumpfun'&&!m.migratedPool){
    }
    return q;
    }catch(error){const retryAt=raw.quoteFetch.diagnostics?.()?.retryAt;if(error&&typeof error==='object'&&Number.isFinite(retryAt)&&retryAt>Date.now())error.retryAt=retryAt;throw error;}
-  });},
-  async refreshHeld(positions,markets,solUsd){const out=[];await Promise.all(positions.slice(0,4).map(async p=>{let m=markets.find(m=>m.mint===p.mint&&m.pairAddress===p.pool)??{mint:p.mint,pairAddress:p.pool,dexId:p.venue??'pumpfun',symbol:p.symbol,solUsd};try{if(m.dexId==='pumpfun'){const route=await raw.curveRoute(p.mint,'SELL',p.pool);if(route.venue==='pumpfun'){const curves=await raw.curveMarketData([p.mint],solUsd);if(!curves[0])return;m={...m,...curves[0],spotPriceSol:curves[0].priceUsd/solUsd,priceAt:curves[0].updatedAt};}else{const price=await poolPrice(m,route.poolAddress);m={...m,...price,migratedPool:route.poolAddress};}}else m={...m,...await poolPrice(m,m.pairAddress)};out.push(m);}catch{/* Missing marks remain unavailable; never synthesize an exit. */}}));return out;},
-  status:()=>({mode:'read-only',heliusConfigured:raw.heliusConfigured,rpcMode:raw.rpcMode,scalpRiskConfigured:!!env.PAPER_SCALP_RISK_URL,scalpRiskRequired:!!policy.rugRequired,research:facts?.projectResearch?.status()??{enabled:false,reason:'momentum strategy: holder/dev/socials do not gate paper orders'}})
+  }),{exit:order.side==='SELL'});},
+  refreshHeld:(positions,markets,solUsd,{priority='C'}={})=>schedule(priority,()=>readHeld(positions,markets,solUsd)),
+  schedule,
+  status:()=>({queue:queue.status(),jupiterKeyConfigured:!!env.JUPITER_API_KEY,mode:'read-only',heliusConfigured:raw.heliusConfigured,rpcMode:raw.rpcMode,scalpRiskConfigured:!!env.PAPER_SCALP_RISK_URL,scalpRiskRequired:!!policy.rugRequired,research:facts?.projectResearch?.status()??{enabled:false,reason:'momentum strategy: holder/dev/socials do not gate paper orders'}})
  });
 }

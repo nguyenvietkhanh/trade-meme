@@ -13,7 +13,7 @@
   "safetyRetryMs": 60000,
   "sourceTimeoutMs": 3000,
   "cacheLimit": 2048,
-  "maxBackground": 2,
+  "maxBackground": 4,
   "aSwapLiquidityUsd": 8000,
   "aSwapAgeMs": 300000,
   "aSwapM5Min": 2,
@@ -46,8 +46,8 @@
   "cGapMs": 5000,
   "cTargetGapMs": 7500,
   "cSpanMinMs": 15000,
-  "cSpanMaxMs": 45000,
-  "cLastAgeMs": 5000,
+  "cSpanMaxMs": 75000,
+  "cLastAgeMs": 8000,
   "cRiseMin": 1.5,
   "cRiseMax": 12,
   "cStepMin": -0.3,
@@ -58,11 +58,12 @@
   "dQuoteAgeMs": 3000,
   "dDriftMax": 2,
   "dEdgeMultiple": 2.5,
-  "dInfraRetries": 3,
+  "dInfraRetries": 4,
   "dBackoffMs": [
     1000,
     2000,
-    4000
+    4000,
+    8000
   ],
   "dSizeFractions": [
     1,
@@ -122,16 +123,17 @@
   "orderTimeoutMs": 60000,
   "exitOrderTimeoutMs": 10000,
   "sourceMaxBytes": 2097152,
-  "cMaxStoredSamples": 24,
+  "cMaxStoredSamples": 40,
   "rugRequired": false,
   "cReadEveryMs": 2500,
   "algorithmRevision": "scalp-risk-v3",
   "mintLossLimit": 2,
   "mintLossCooldownMs": 86400000,
-  "quoteRateBackoffMs": 5000,
-  "sellRetryBaseMs": 2000,
-  "sellRetryMaxMs": 60000,
+  "quoteRateBackoffMs": 1000,
+  "sellRetryBaseMs": 1000,
+  "sellRetryMaxMs": 8000,
   "timeStopConfirmMs": 60000,
   "timeStopPullbackPct": 1.5,
-  "timeStopMaxMs": 360000
+  "timeStopMaxMs": 360000,
+  "retryJitterPct": 0.2
 }

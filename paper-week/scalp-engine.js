@@ -1,3 +1,4 @@
+import {jitterDelay} from './scalp-queue.js';
 import {ScalpTelemetry} from './scalp-telemetry.js';
 import {recordMintOutcome,entryGuard,quoteFailure} from './scalp-risk.js';
 import {dayFor} from './store.js';
@@ -7,7 +8,7 @@ import {ScalpLog} from './scalp-log.js';
 import {stageA,stageB,stageC,stageD,stageE,plannedSize,scalpExit,scalpExitPolicy} from './scalp-stages.js';
 const key=m=>m.mint+':'+m.pairAddress;
 export class ScalpWeek extends PaperWeek{
- constructor(store,adapter,opts){super(store,adapter,opts);this.safety=new Map();this.samples=new Map();this.reads=new Map();this.nextScan=0;this.cycle=0;this.audit=[];this.ready=new Set();this.sampleTimings=new Map();}
+ constructor(store,adapter,opts){super(store,adapter,opts);this.safety=new Map();this.samples=new Map();this.reads=new Map();this.nextScan=0;this.cycle=0;this.audit=[];this.ready=new Set();this.sampleTimings=new Map();this.random=opts.random??Math.random;}
  async load(){await super.load();this.state.scalp??={consumed:{},startedAt:this.clock(),hourStartedAt:this.clock(),lastAdjustAt:this.clock(),relaxLevel:0,funnel:{},reasons:{},infra:0,forward:[]};for(const t of [...this.state.trades].sort((a,b)=>a.at-b.at))if(t.side==='BUY'||t.closed){const prior=this.state.scalp.consumed[t.mint];if(t.mint&&(!prior||t.at>prior.at))this.state.scalp.consumed[t.mint]={signalId:'legacy:'+t.id,orderId:t.id,at:t.at};}if(this.state.scalp.algorithmRevision!==this.policy.algorithmRevision)await this.store.checkpointPolicy(this.state,this.policy.algorithmRevision);
   this.state.scalp.mintRisk??={};
   for(const t of [...this.state.trades].sort((a,b)=>a.at-b.at))recordMintOutcome(this.state,t,this.policy);
@@ -21,7 +22,7 @@ export class ScalpWeek extends PaperWeek{
  assumptions(){return {...super.assumptions(),entry:'MEME-SCALP A -> B -> C -> D -> E; missing on-chain safety is B_UNVERIFIED',algorithmRevision:this.policy.algorithmRevision,emergencySlippageAssumptionBps:this.policy.emergencySlippageBps,exit:this.entryExitPolicy(),riskNote:this.policy.stopPct+'% price stop is a trigger, not a guaranteed exit price; executable quotes and modeled friction determine virtual PnL',ai:false};}
  entryExitPolicy(){return this.policy.scalpEntry?scalpExitPolicy(this.policy):super.entryExitPolicy();}
  exitPlan(p,price){return p.exitPolicy?.version===this.policy.version?scalpExit(p,price,this.clock()):super.exitPlan(p,price);}
- spawn(id,work,done){if(this.reads.has(id)||this.reads.size>=this.policy.maxBackground)return;const task=Promise.resolve().then(work).then(done).catch(()=>done(null)).finally(()=>this.reads.delete(id));this.reads.set(id,task);}
+ spawn(id,work,done){if(this.reads.has(id)||this.reads.size>=128)return;const task=Promise.resolve().then(work).then(done).catch(()=>done(null)).finally(()=>this.reads.delete(id));this.reads.set(id,task);}
  safetyRead(m){const now=this.clock(),prior=this.safety.get(m.mint);if(prior&&prior.pool===m.pairAddress&&now<prior.until)return prior.facts;
   this.spawn('B:'+m.mint,()=>this.adapter.scalpSafety(m),facts=>{const unknown=!facts||stageB(facts,m,this.policy,this.clock()).reason_code==='B_UNVERIFIED';this.safety.delete(m.mint);this.safety.set(m.mint,{pool:m.pairAddress,until:this.clock()+(unknown?this.policy.safetyRetryMs:this.policy.safetyTtlMs),facts});while(this.safety.size>this.policy.cacheLimit)this.safety.delete(this.safety.keys().next().value);});return null;
  }
@@ -49,7 +50,7 @@ export class ScalpWeek extends PaperWeek{
  }
  async executionLog(o,code,metrics={},quality=true){if(code.startsWith('E_'))quality=false;this.state.scalp.reasons[code]=(this.state.scalp.reasons[code]??0)+1;if(code.startsWith('E_'))this.state.scalp.funnel.E=(this.state.scalp.funnel.E??0)+1;return this.logs.append([{...o.scalpContext,entryTier:o.entryTier??'legacy',ts:this.clock(),type:'execution',stage_reached:/^[ABCDE]_/.test(code)?code[0]:'D',reason_code:code,quality_rejection:quality,metrics:{...o.scalpContext.metrics,D:metrics}}]);}
  quoteWaitUntil(o){return Math.max(super.quoteWaitUntil(o),this.state.scalp.quoteBlockedUntil??0);}
- async onQuoteFailure(o,error,code){quoteFailure(this.state,o,error,code,this.policy,this.clock());await this.store.save(this.state);}
+ async onQuoteFailure(o,error,code){quoteFailure(this.state,o,error,code,this.policy,this.clock(),this.random);await this.store.save(this.state);}
  resizeOrder(o){const c=this.policy,sizes=[...c.dSizeFractions.map(f=>o.sizeBase*f),c.minOrderSol].filter((v,i,a)=>v>=c.minOrderSol&&a.indexOf(v)===i);const amount=Number(o.amount)/1e9,next=sizes.find(v=>v<amount-1e-9);if(next===undefined)return false;o.amount=String(Math.floor(next*1e9));o.sizeIndex=(o.sizeIndex??0)+1;o.infraRetries=0;o.nextAttemptAt=this.clock()+c.dBackoffMs[0];return true;}
  async fill(markets){const s=this.state,o=s.pending,c=this.policy;if(!o||o.side!=='BUY')return super.fill(markets);if(this.clock()<o.readyAt||this.clock()<this.quoteWaitUntil(o))return;
   const m=markets.find(m=>m.mint===o.mint&&m.pairAddress===o.pool);if(!m||this.clock()-o.decidedAt>c.orderTimeoutMs){s.pending=null;return;}
@@ -66,11 +67,11 @@ export class ScalpWeek extends PaperWeek{
   let job=this.quoteJobs.get(o.id);if(!job){if(this.quoteJobs.size>=c.maxBackground)return;job={done:false};job.task=Promise.resolve().then(()=>this.adapter.quote(o,m)).then(value=>{job.value=value;job.done=true;},error=>{job.error=error;job.done=true;});this.quoteJobs.set(o.id,job);return;}
   if(!job.done)return;this.quoteJobs.delete(o.id);
   if(job.error){const e=job.error,infra=e.status===429||e.name==='TimeoutError'||e.name==='AbortError'||/429|TIMEOUT|BACKOFF|RPC_UNAVAILABLE|QUOTE_QUEUE_BUSY/.test(String(e.code??'')+String(e.message??''));
-   if(infra){await this.onQuoteFailure(o,e,e.status===429||/429|RATE_LIMITED/.test(String(e.code??'')+String(e.message??''))?'HTTP_429':/BACKOFF/.test(String(e.code??'')+String(e.message??''))?'BACKOFF':'D_INFRA');s.scalp.infra++;await this.executionLog(o,'D_INFRA',{attempt:o.infraRetries+1},false);if(o.infraRetries<c.dInfraRetries){o.nextAttemptAt=this.clock()+c.dBackoffMs[o.infraRetries];o.infraRetries++;return;}s.pending=null;return;}
+   if(infra){await this.onQuoteFailure(o,e,e.status===429||/429|RATE_LIMITED/.test(String(e.code??'')+String(e.message??''))?'HTTP_429':/BACKOFF/.test(String(e.code??'')+String(e.message??''))?'BACKOFF':'D_INFRA');s.scalp.infra++;await this.executionLog(o,'D_INFRA',{attempt:o.infraRetries+1},false);if(o.infraRetries<c.dInfraRetries){o.nextAttemptAt=this.clock()+jitterDelay(c.dBackoffMs[o.infraRetries],this.random,c.retryJitterPct);o.infraRetries++;return;}s.pending=null;return;}
    if(this.resizeOrder(o))return;await this.executionLog(o,'D_COST',{detail:'NO_EXECUTABLE_ROUTE'});s.pending=null;return;
   }
   const d=stageD(job.value,o,c,this.clock());this.telemetry.record('D',m.mint,d.pass);if(!d.pass){
-   if(d.detail==='STALE'&&o.infraRetries<c.dInfraRetries){await this.executionLog(o,'D_INFRA',{...d.metrics,detail:'QUOTE_EXPIRED_DURING_REFRESH'},false);s.scalp.infra++;o.nextAttemptAt=this.clock()+c.dBackoffMs[o.infraRetries++];return;}
+   if(d.detail==='STALE'&&o.infraRetries<c.dInfraRetries){await this.executionLog(o,'D_INFRA',{...d.metrics,detail:'QUOTE_EXPIRED_DURING_REFRESH'},false);s.scalp.infra++;o.nextAttemptAt=this.clock()+jitterDelay(c.dBackoffMs[o.infraRetries++],this.random,c.retryJitterPct);return;}
    if(d.detail==='FRICTION'&&this.resizeOrder(o)){await this.executionLog(o,'D_RESIZE_PENDING',{...d.metrics,detail:d.detail,nextSizeSol:Number(o.amount)/1e9},false);return;}
    await this.executionLog(o,'D_COST',{...d.metrics,detail:d.detail});s.pending=null;return;}
   const view=await this.decision(m);o.scalpContext.metrics.E=view.inputs.scalp_metrics.E;if(view.result.verdict!=='VALID_SETUP'){const code=view.result.reason_code;await this.executionLog(o,code,d.metrics);s.pending=null;return;}
@@ -79,7 +80,7 @@ export class ScalpWeek extends PaperWeek{
   s.scalp.consumed[m.mint]={signalId:o.signalId,orderId:o.id,at:this.clock()};await this.store.save(s);if(!await this.executionLog(o,'E_PASS',d.metrics,false)){s.pending=null;return;}this.quoteJobs.set(o.id,{done:true,value:job.value,task:Promise.resolve()});await super.fill(markets);
  }
  async forwardTick(markets){const c=this.policy,s=this.state.scalp;for(const f of s.forward){const m=markets.find(m=>m.mint===f.mint&&m.pairAddress===f.pool),price=m?.spotPriceSol,at=m?.priceAt??m?.updatedAt;if(price>0&&at<=this.clock()&&this.clock()-at<=c.priceTtlMs&&at>(f.lastAt??f.at)){f.high=Math.max(f.high,price);f.low=Math.min(f.low,price);f.samples++;f.lastAt=at;f.lastPrice=price;}
-   for(const minute of c.forwardMinutes){if(f.done.includes(minute)||this.clock()<f.at+minute*60000)continue;const row=m&&at>=f.at+minute*60000&&this.clock()-at<=c.priceTtlMs?{price,at}:null;if(!row&&this.clock()<f.at+minute*60000+c.forwardGraceMs){this.spawn('F:'+key({mint:f.mint,pairAddress:f.pool}),()=>this.adapter.refreshHeld([{mint:f.mint,pool:f.pool,venue:f.venue}],markets,m?.solUsd??this.lastSolUsd),rows=>{const x=rows?.[0];if(x){f.lastAt=x.priceAt;f.lastPrice=x.spotPriceSol;f.high=Math.max(f.high,x.spotPriceSol);f.low=Math.min(f.low,x.spotPriceSol);f.samples++;}});if(f.lastAt>=f.at+minute*60000&&this.clock()-f.lastAt<=c.priceTtlMs){f.done.push(minute);await this.logForward(f,minute,f.lastPrice,f.lastAt);}continue;}
+   for(const minute of c.forwardMinutes){if(f.done.includes(minute)||this.clock()<f.at+minute*60000)continue;const row=m&&at>=f.at+minute*60000&&this.clock()-at<=c.priceTtlMs?{price,at}:null;if(!row&&this.clock()<f.at+minute*60000+c.forwardGraceMs){this.spawn('F:'+key({mint:f.mint,pairAddress:f.pool}),()=>this.adapter.refreshHeld([{mint:f.mint,pool:f.pool,venue:f.venue}],markets,m?.solUsd??this.lastSolUsd,{priority:'A'}),rows=>{const x=rows?.[0];if(x){f.lastAt=x.priceAt;f.lastPrice=x.spotPriceSol;f.high=Math.max(f.high,x.spotPriceSol);f.low=Math.min(f.low,x.spotPriceSol);f.samples++;}});if(f.lastAt>=f.at+minute*60000&&this.clock()-f.lastAt<=c.priceTtlMs){f.done.push(minute);await this.logForward(f,minute,f.lastPrice,f.lastAt);}continue;}
     f.done.push(minute);await this.logForward(f,minute,row?.price??null,row?.at??null);
    }
   }s.forward=s.forward.filter(f=>f.done.length<c.forwardMinutes.length);

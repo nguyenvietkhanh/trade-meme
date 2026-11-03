@@ -1,3 +1,4 @@
+import {jitterDelay} from './scalp-queue.js';
 // PAPER-only entry locks and quote retry state. No wallet or transaction capability.
 export function recordMintOutcome(state,t,c){
  if(t.side!=='SELL'||!t.closed||!Number.isFinite(t.positionPnlSol)||!t.mint||!Number.isFinite(t.at))return;
@@ -26,13 +27,13 @@ export function entryGuard(m,state,c,now,signalId){
  if(lock&&now-lock.at<c.reentryMs)return fail('E_REENTRY');
  return {stage_reached:'E',reason_code:'E_PASS',pass:true,metrics};
 }
-export function quoteFailure(state,o,error,code,c,now){
+export function quoteFailure(state,o,error,code,c,now,random=Math.random){
  const rateLimited=code==='HTTP_429'||code==='BACKOFF';
  const p=o.side==='SELL'?state.positions.find(p=>p.id===o.positionId):null,previous=p?.memory?.sellRetry;
  const attempts=(previous?.attempts??0)+1;
  const base=rateLimited?c.quoteRateBackoffMs:c.sellRetryBaseMs;
  const advertised=Math.max(Number(error?.retryMs??error?.retryAfterMs)||0,Number.isFinite(error?.retryAt)?error.retryAt-now:0);
- const delay=Math.max(Math.min(c.sellRetryMaxMs,base*2**Math.min(attempts-1,10)),Number.isFinite(advertised)?Math.min(600000,Math.max(0,advertised)):0);
+ const delay=Math.max(jitterDelay(Math.min(c.sellRetryMaxMs,base*2**Math.min(attempts-1,10)),random,c.retryJitterPct),Number.isFinite(advertised)?Math.min(600000,Math.max(0,advertised)):0);
  if(rateLimited)state.scalp.quoteBlockedUntil=Math.max(state.scalp.quoteBlockedUntil??0,now+delay);
  if(p){
   p.memory??={};p.memory.sellRetry={attempts,nextAt:now+delay,firstTriggeredAt:previous?.firstTriggeredAt??o.decidedAt,lastCode:code,lastFailedAt:now};
